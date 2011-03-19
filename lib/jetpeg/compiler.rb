@@ -1,6 +1,12 @@
 require "treetop"
 require "jetpeg/compiler/metagrammar"
 
+class String
+  def append_code(str)
+    insert(index(" #") || -1, str)
+  end
+end
+
 module JetPEG
   module Compiler
     def self.compile(code)
@@ -43,9 +49,9 @@ module JetPEG
         @content += "#{'  ' * @indention}#{line}\n" 
       end
       
-      def new_pos_var
+      def new_position
         @pos_var_counter += 1
-        "pos#{@pos_var_counter}"
+        Position.new("pos#{@pos_var_counter}", 0)
       end
     end
     
@@ -69,7 +75,7 @@ module JetPEG
       def find_expression(name)
         @named_expressions[name]
       end
-      
+            
       def compile(root_rule_name = nil)
         root_rule = root_rule_name ? @named_expressions[root_rule_name] : @named_expressions.values.first
         root_rule.own_method_requested = true
@@ -79,20 +85,40 @@ module JetPEG
         output.puts "class #{@name}Parser"
         
         output.indent do
+          methods = []
+          @named_expressions.each do |name, expr|
+            methods << expr.create_method(output) if expr.has_own_method?
+          end
+          
           output.puts "def parse(input)"
           output.indent do
-            output.puts "@input = input"
-            output.puts "#{root_rule.name}(0) == @input.size"
+            output.puts "#{root_rule.name}(input, 0) == input.size"
           end
           output.puts "end"
           output.puts ""
-
-          @named_expressions.each do |name, expr|
-            expr.write_method output if expr.has_own_method?
+          
+          methods.each do |code|
+            write_code output, code
+            output.puts ""
           end
         end
         
         output.puts "end"
+      end
+      
+      def write_code(output, array)
+        array.each do |part|
+          case part
+          when String
+            output.puts part
+          when Array
+            output.indent do
+              write_code output, part
+            end
+          else
+            raise ArgumenrError
+          end
+        end
       end
     end
 
@@ -127,32 +153,12 @@ module JetPEG
         @own_method_requested || @recursive
       end
       
-      def write_method(output)
-        pos_var = output.new_pos_var
-        output.puts "def #{name}(#{pos_var})"
-        output.indent do
-          matcher = create_matcher output, Position.new(pos_var, 0)
-          code = matcher.code
-          code.last << " && #{matcher.exit_pos}"
-          write_code output, code
-        end
-        output.puts "end"
-        output.puts ""
-      end
-      
-      def write_code(output, array)
-        array.each do |part|
-          case part
-          when String
-            output.puts part
-          when Array
-            output.indent do
-              write_code output, part
-            end
-          else
-            raise ArgumenrError
-          end
-        end
+      def create_method(output)
+        pos_var = output.new_position
+        matcher = create_matcher output, pos_var
+        code = matcher.code
+        code.last.append_code " && #{matcher.exit_pos}"
+        ["def #{name}(input, #{pos_var})", code, "end"]
       end
     end
     
@@ -165,8 +171,8 @@ module JetPEG
         inner_expression.fixed_length
       end
       
-      def create_matcher(output, pos)
-        inner_expression.create_matcher output, pos
+      def create_matcher(output, entry_pos)
+        inner_expression.create_matcher output, entry_pos
       end
     end
     
@@ -187,15 +193,16 @@ module JetPEG
         end
       end
       
-      def create_matcher(output, pos)
+      def create_matcher(output, entry_pos)
         code = []
+        pos = entry_pos
         children.each_index do |i|
           matcher = children[i].create_matcher output, pos
           pos = matcher.exit_pos
           code.concat matcher.code
-          code.last << " &&" if i < children.size - 1
+          code.last.append_code " &&" if i < children.size - 1
         end
-        Matcher.new ["(", code, ")"], pos
+        Matcher.new ["( # sequence", code, ")"], pos
       end
     end
     
@@ -220,27 +227,27 @@ module JetPEG
         end
       end
       
-      def create_matcher(output, pos)
+      def create_matcher(output, entry_pos)
         if fixed_length
           code = []
           children.each_index do |i|
-            matcher = children[i].create_matcher output, pos
+            matcher = children[i].create_matcher output, entry_pos
             code.concat matcher.code
-            code.last << " ||" if i < children.size - 1
+            code.last.append_code " ||" if i < children.size - 1
           end
-          Matcher.new ["(", code, ")"], pos + fixed_length
+          Matcher.new ["( # choice", code, ")"], entry_pos + fixed_length
         else
           code = []
-          pos_var = output.new_pos_var
           children.each_index do |i|
-            matcher = children[i].create_matcher output, pos
+            matcher = children[i].create_matcher output, entry_pos
             child_code = matcher.code
-            child_code.last << " &&"
-            child_code << "#{pos_var} = #{matcher.exit_pos}"
+            child_code.last.append_code " &&"
+            child_code << matcher.exit_pos.to_s
             code.push "(", child_code, ")"
-            code.last << " ||" if i < children.size - 1
+            code.last.append_code " ||" if i < children.size - 1
           end
-          Matcher.new ["(", code, ")"], Position.new(pos_var, 0)
+          pos_var = output.new_position
+          Matcher.new ["(#{pos_var} = ( # choice", code, "))"], pos_var
         end
       end
     end
@@ -254,14 +261,14 @@ module JetPEG
         nil
       end
       
-      def create_matcher(output, pos)
+      def create_matcher(output, entry_pos)
         code = []
-        pos_var = output.new_pos_var
-        code << "#{pos_var} = #{pos}"
+        pos_var = output.new_position
+        code << "#{pos_var} = #{entry_pos}"
         
-        matcher = expression.create_matcher output, Position.new(pos_var, 0)
+        matcher = expression.create_matcher output, pos_var
         
-        exit_pos_assignment = if matcher.exit_pos.variable == pos_var
+        exit_pos_assignment = if matcher.exit_pos.variable == pos_var.variable
           "#{pos_var} += #{matcher.exit_pos.offset}"
         else
           "#{pos_var} = #{matcher.exit_pos}"
@@ -269,8 +276,8 @@ module JetPEG
           
         code.push "while", ["(", matcher.code, ")", exit_pos_assignment], "end"
         
-        code << success_expression(pos, pos_var)
-        Matcher.new ["begin", code , "end"], Position.new(pos_var, 0)
+        code << success_expression(entry_pos, pos_var)
+        Matcher.new ["begin", code , "end"], pos_var
       end
     end
     
@@ -297,24 +304,34 @@ module JetPEG
     end
     
     class PositiveLookahead < Lookahead
-      def create_matcher(output, pos)
-        matcher = expression.create_matcher output, pos
-        Matcher.new matcher.code, pos
+      def create_matcher(output, entry_pos)
+        matcher = expression.create_matcher output, entry_pos
+        Matcher.new matcher.code, entry_pos
       end
     end
     
     class NegativeLookahead < Lookahead
-      def create_matcher(output, pos)
-        matcher = expression.create_matcher output, pos
+      def create_matcher(output, entry_pos)
+        matcher = expression.create_matcher output, entry_pos
         code = matcher.code
         code.first.insert 0, "!"
-        Matcher.new code, pos
+        Matcher.new code, entry_pos
       end
     end
     
     class Terminal < ParsingExpression
       def children
         []
+      end
+    end
+        
+    class AnyCharacterTerminal < Terminal
+      def fixed_length
+        1
+      end
+      
+      def create_matcher(output, entry_pos)
+        Matcher.new ["true"], entry_pos + 1
       end
     end
     
@@ -327,18 +344,8 @@ module JetPEG
         string.size
       end
       
-      def create_matcher(output, pos)
-        Matcher.new ["(@input[#{pos}, #{string.size}] == #{string.inspect})"], pos + string.size
-      end
-    end
-    
-    class AnyCharacterTerminal < Terminal
-      def fixed_length
-        1
-      end
-      
-      def create_matcher(output, pos)
-        Matcher.new ["true"], pos + 1
+      def create_matcher(output, entry_pos)
+        Matcher.new ["(input[#{entry_pos}, #{string.size}] == #{string.inspect})"], entry_pos + string.size
       end
     end
     
@@ -347,8 +354,8 @@ module JetPEG
         1
       end
       
-      def create_matcher(output, pos)
-        Matcher.new ["(@input[#{pos}, 1] =~ /[#{characters.text_value}]/)"], pos + 1
+      def create_matcher(output, entry_pos)
+        Matcher.new ["(input[#{entry_pos}, 1] =~ /[#{characters.text_value}]/)"], entry_pos + 1
       end
     end
     
@@ -369,12 +376,12 @@ module JetPEG
         end
       end
       
-      def create_matcher(output, pos)
+      def create_matcher(output, entry_pos)
         if referenced_expression.recursive
-          pos_var = output.new_pos_var
-          Matcher.new ["(#{pos_var} = #{name.text_value}(#{pos}))"], Position.new(pos_var, 0)
+          pos_var = output.new_position
+          Matcher.new ["(#{pos_var} = #{name.text_value}(input, #{entry_pos}))"], pos_var
         else
-          referenced_expression.create_matcher output, pos
+          referenced_expression.create_matcher output, entry_pos
         end
       end
     end
