@@ -1,0 +1,176 @@
+module JetPEG
+  module Compiler
+    grammar Metagrammar
+      rule jetpeg_file
+        requires:(ws? require_statement)* ws? module_or_grammar:(module_declaration / grammar) ws? <Grammar> {
+          def construct
+            module_or_grammar.construct_grammar self
+          end
+        }
+      end
+
+      rule require_statement
+        ws? "require" [ \t]+ [^\n\r]+ [\n\r]
+      end
+
+      rule module_declaration
+        'module' ws name:([A-Z] alphanumeric_char*) ws module_contents:(module_declaration / grammar) ws 'end' {
+          def construct_grammar(grammar)
+            grammar.add_surrounding_module name.text
+            module_contents.construct_grammar grammar
+          end
+        }
+      end
+
+      rule grammar
+        'grammar' ws grammar_name ws rules:parsing_rule* ws? 'end' {
+          def construct_grammar(grammar)
+            grammar.name = grammar_name.text_value
+            rules.elements.each do |rule|
+              rule.expression.name = rule.rule_name.name.text_value
+              grammar.add_named_expression rule.expression
+            end
+          end
+        }
+      end
+
+      rule grammar_name
+        ([A-Z] alphanumeric_char*)
+      end
+
+      rule include_declaration
+        'include' ws [A-Z] (alphanumeric_char / '::')*
+      end
+
+      rule parsing_rule
+        'rule' ws rule_name expression:choice ws 'end' ws
+      end
+
+      rule choice
+        head:sequence tail:('/' ws alternative:sequence)+ <Choice> /
+        sequence
+      end
+
+      rule sequence
+        head:lookahead tail:lookahead+ <Sequence> /
+        lookahead
+      end
+      
+      rule lookahead
+        '&' expression:repetition <PositiveLookahead> /
+        '!' expression:repetition <NegativeLookahead> /
+        repetition
+      end
+      
+      rule repetition
+        expression:primary '*' ws <ZeroOrMore> /
+        expression:primary '+' ws <OneOrMore> /
+        expression:primary occurrence_range ws /
+        primary
+      end
+      
+      rule primary
+        terminal /
+        rule_name /
+        parenthesized_expression
+      end
+
+      rule label
+        (alpha_char alphanumeric_char*) ':' /
+        ''
+      end
+
+      rule suffix
+        repetition_suffix / optional_suffix
+      end
+
+      rule optional_suffix
+        '?' <Optional>
+      end
+
+      rule node_class_declarations
+        node_class_expression trailing_inline_module
+      end
+
+      rule occurrence_range
+        ws? min:([0-9])* '..' max:([0-9])* <OccurrenceRange>
+      end
+
+      rule parenthesized_expression
+        '(' ws inner_expression:choice ')' ws <ParenthesizedExpression>
+      end
+
+      rule rule_name
+        !keyword name:(alpha_char alphanumeric_char*) ws <RuleName>
+      end
+
+      rule terminal
+        quoted_string / character_class / anything_symbol
+      end
+
+      rule quoted_string
+        (single_quoted_string / double_quoted_string)
+      end
+
+      rule double_quoted_string
+        '"' (!'"' ("\\\\" / '\"' / .))* '"' ws <StringTerminal>
+      end
+
+      rule single_quoted_string
+        "'" (!"'" ("\\\\" / "\\'" / .))* "'" ws <StringTerminal>
+      end
+
+      rule character_class
+        '[' characters:(!']' ('\\' . /!'\\' .))+ ']' ws <CharacterClassTerminal>
+      end
+
+      rule anything_symbol
+        '.' ws <AnyCharacterTerminal>
+      end
+
+      rule node_class_expression
+        ws '<' (!'>' .)+ '>'
+        /
+        ''
+      end
+
+      rule trailing_inline_module
+        ws inline_module
+        /
+        ''
+      end
+
+      rule predicate_block
+        '' inline_module <PredicateBlock>
+      end
+
+      rule inline_module
+        '{' (inline_module / ![{}] .)* '}' <InlineModule>
+      end
+
+      rule keyword
+        ('rule' / 'end') !non_ws_char
+      end
+
+      rule non_ws_char
+        !ws .
+      end
+
+      rule alpha_char
+        [A-Za-z_]
+      end
+
+      rule alphanumeric_char
+        alpha_char / [0-9]
+      end
+
+      rule ws
+        ([ \t\n\r] / line_comment)*
+      end
+      
+      rule line_comment
+        '#' [^\n]*
+      end
+    end
+  end
+end
