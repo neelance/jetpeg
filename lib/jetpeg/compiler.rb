@@ -171,6 +171,10 @@ module JetPEG
         inner_expression.fixed_length
       end
       
+      def first_character_class
+        inner_expression.first_character_class
+      end
+      
       def create_matcher(output, entry_pos)
         inner_expression.create_matcher output, entry_pos
       end
@@ -191,6 +195,10 @@ module JetPEG
           end
           length
         end
+      end
+      
+      def first_character_class
+        children.first.first_character_class
       end
       
       def create_matcher(output, entry_pos)
@@ -224,6 +232,13 @@ module JetPEG
             end
           end
           length
+        end
+      end
+      
+      def first_character_class
+        @first_character_class ||= begin
+          classes = @children.map { |child| child.first_character_class }
+          classes.all? ? classes.join : nil
         end
       end
       
@@ -273,8 +288,14 @@ module JetPEG
         else
           "#{pos_var} = #{matcher.exit_pos}"
         end
-          
-        code.push "while", ["(", matcher.code, ")", exit_pos_assignment], "end"
+        
+        first_character_guard = if expression.first_character_class && expression.first_character_class.size < 10
+          "input[#{pos_var}, 1] =~ /[#{expression.first_character_class}]/ && "
+        else
+          ""
+        end
+        
+        code.push "#{first_character_guard}while", ["(", matcher.code, ")", exit_pos_assignment], "end"
         
         code << success_expression(entry_pos, pos_var)
         Matcher.new ["begin", code , "end"], pos_var
@@ -285,11 +306,19 @@ module JetPEG
       def success_expression(old_pos, new_pos)
         "true"
       end
+      
+      def first_character_class
+        nil
+      end
     end
     
     class OneOrMore < Repetition
       def success_expression(old_pos, new_pos)
         "#{new_pos} != #{old_pos}"
+      end
+      
+      def first_character_class
+        expression.first_character_class
       end
     end
     
@@ -300,6 +329,10 @@ module JetPEG
       
       def fixed_length
         0
+      end
+      
+      def first_character_class
+        nil
       end
     end
     
@@ -330,6 +363,10 @@ module JetPEG
         1
       end
       
+      def first_character_class
+        nil
+      end
+      
       def create_matcher(output, entry_pos)
         Matcher.new ["true"], entry_pos + 1
       end
@@ -344,6 +381,14 @@ module JetPEG
         string.size
       end
       
+      def first_character_class
+        case string[0, 1]
+        when '-' then '\-'
+        when '\\' then '\\\\'
+        else string[0, 1]
+        end
+      end
+      
       def create_matcher(output, entry_pos)
         Matcher.new ["(input[#{entry_pos}, #{string.size}] == #{string.inspect})"], entry_pos + string.size
       end
@@ -352,6 +397,10 @@ module JetPEG
     class CharacterClassTerminal < Terminal
       def fixed_length
         1
+      end
+      
+      def first_character_class
+        characters.text_value[0, 1] != '^' ? characters.text_value : nil
       end
       
       def create_matcher(output, entry_pos)
@@ -376,8 +425,16 @@ module JetPEG
         end
       end
       
-      def create_matcher(output, entry_pos)
+      def first_character_class
         if referenced_expression.recursive
+          nil
+        else
+          referenced_expression.first_character_class
+        end
+      end
+      
+      def create_matcher(output, entry_pos)
+        if referenced_expression.has_own_method?
           pos_var = output.new_position
           Matcher.new ["(#{pos_var} = #{name.text_value}(input, #{entry_pos}))"], pos_var
         else
