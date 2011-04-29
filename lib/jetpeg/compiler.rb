@@ -52,7 +52,7 @@ module JetPEG
         builder.position_at_end failed_block
         builder.ret LLVM::FALSE
 
-        the_function.verify      
+        the_function.verify
       end
 
       mod.verify
@@ -106,7 +106,7 @@ module JetPEG
         @named_expressions[name]
       end
             
-      def compile(root_rule_name = nil)
+      def compile(root_rule_name = nil) # TODO not functional atm
         root_rule = root_rule_name ? @named_expressions[root_rule_name] : @named_expressions.values.first
         root_rule.own_method_requested = true
         root_rule.mark_recursions []
@@ -142,11 +142,6 @@ module JetPEG
         write_array.call output_array, 0
         
         output
-      end
-      
-      def new_position
-        @pos_var_counter += 1
-        Position.new("pos#{@pos_var_counter}", 0)
       end
     end
 
@@ -244,53 +239,48 @@ module JetPEG
         [expression]
       end
       
-      def create_matcher(context, entry_pos)
-        pos_var = context.new_position
+      def build(builder, start_input, failed_block)
+        exit_block = builder.create_block "optional_exit"
         
-        matcher = expression.create_matcher context, entry_pos
-        code = matcher.code
+        optional_failed_block = builder.create_block "optional_failed"
+        input = expression.build builder, start_input, optional_failed_block
+        optional_successful_block = builder.insert_block
+        builder.br exit_block
         
-        code.first.insert 0, "(#{pos_var} = ("
-        code.last << " && #{matcher.exit_pos}) || #{entry_pos})"
+        builder.position_at_end optional_failed_block
+        builder.br exit_block
         
-        Matcher.new code, pos_var
+        builder.position_at_end exit_block
+        builder.phi LLVM::Pointer(LLVM::Int8), start_input, optional_failed_block, input, optional_successful_block, "optional_end_input"
       end
     end
     
-    class Repetition < ParsingExpression
+    class ZeroOrMore < ParsingExpression
       def children
         [expression]
       end
       
-      def create_matcher(context, entry_pos)
-        code = []
-        pos_var = context.new_position
-        code << "#{pos_var} = #{entry_pos}"
+      def build(builder, start_input, failed_block)
+        start_block = builder.insert_block
+        loop_block = builder.create_block "repetition_loop"
+        exit_block = builder.create_block "repetition_exit"
+        builder.br loop_block
         
-        matcher = expression.create_matcher context, pos_var
+        builder.position_at_end loop_block
+        input = builder.phi LLVM::Pointer(LLVM::Int8), start_input, start_block, "loop_input"
+        next_input = expression.build builder, input, exit_block
+        input.add_incoming next_input, builder.insert_block
+        builder.br loop_block
         
-        exit_pos_assignment = if matcher.exit_pos.variable == pos_var.variable
-          "#{pos_var} += #{matcher.exit_pos.offset}"
-        else
-          "#{pos_var} = #{matcher.exit_pos}"
-        end
-        
-        code.push "while", ["(", matcher.code, ")", exit_pos_assignment], "end"
-        
-        code << success_expression(entry_pos, pos_var)
-        Matcher.new ["begin", code , "end"], pos_var
+        builder.position_at_end exit_block
+        input
       end
     end
     
-    class ZeroOrMore < Repetition
-      def success_expression(old_pos, new_pos)
-        "true"
-      end
-    end
-    
-    class OneOrMore < Repetition
-      def success_expression(old_pos, new_pos)
-        "#{new_pos} != #{old_pos}"
+    class OneOrMore < ZeroOrMore
+      def build(builder, start_input, failed_block)
+        input = expression.build builder, start_input, failed_block
+        super builder, input, failed_block
       end
     end
     
@@ -305,18 +295,21 @@ module JetPEG
     end
     
     class PositiveLookahead < Lookahead
-      def create_matcher(context, entry_pos)
-        matcher = expression.create_matcher context, entry_pos
-        Matcher.new matcher.code, entry_pos
+      def build(builder, start_input, failed_block)
+        expression.build builder, start_input, failed_block
+        start_input
       end
     end
     
     class NegativeLookahead < Lookahead
-      def create_matcher(context, entry_pos)
-        matcher = expression.create_matcher context, entry_pos
-        code = matcher.code
-        code.first.insert 0, "!"
-        Matcher.new code, entry_pos
+      def build(builder, start_input, failed_block)
+        lookahead_failed_block = builder.create_block "lookahead_failed"
+
+        expression.build builder, start_input, lookahead_failed_block
+        builder.br failed_block
+        
+        builder.position_at_end lookahead_failed_block
+        start_input
       end
     end
     
@@ -338,7 +331,7 @@ module JetPEG
     
     class StringTerminal < Terminal
       def string
-        @string ||= eval text_value
+        @string ||= eval text_value # TODO avoid eval here
       end
       
       def fixed_length
@@ -408,41 +401,9 @@ module JetPEG
         expression.fixed_length
       end
       
-      def create_matcher(context, entry_pos)
-        expression.create_matcher context, entry_pos
-      end
-    end
-    
-    class Position
-      attr_reader :variable, :offset
-      
-      def initialize(variable, offset)
-        @variable = variable
-        @offset = offset
-      end
-      
-      def +(length)
-        Position.new @variable, @offset + length
-      end
-      
-      def to_s
-        if @offset == 0
-          @variable
-        else
-          "#{@variable} + #{@offset}"
-        end
-      end
-    end
-    
-    class Matcher
-      attr_reader :code, :exit_pos
-      
-      def initialize(code, exit_pos)
-        @code = code
-        @exit_pos = exit_pos
+      def build(builder, start_input, failed_block)
+        expression.build builder, start_input, failed_block
       end
     end
   end
 end
-
-puts JetPEG::Compiler.compile_rule("'abc' 'def'").match("abcdef")
