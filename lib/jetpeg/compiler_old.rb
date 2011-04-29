@@ -1,22 +1,11 @@
 require "treetop"
 require "jetpeg/compiler/metagrammar"
 
-require 'llvm/core'
-require 'llvm/execution_engine'
-require 'llvm/transforms/scalar'
-
-module LLVM
-  TRUE = LLVM::Int1.from_i(-1)
-  FALSE = LLVM::Int1.from_i(0)
-  
-  class Builder
-    def create_block(name)
-      LLVM::BasicBlock.create self.insert_block.parent, name
-    end
+class String
+  def append_code(str)
+    insert(index(" #") || -1, str)
   end
 end
-
-LLVM.init_x86
 
 module JetPEG
   module Compiler
@@ -34,54 +23,15 @@ module JetPEG
       expression = metagrammar_parser.parse code, :root => :choice
       raise metagrammar_parser.failure_reason if expression.nil?
       
-      mod = LLVM::Module.create("Parser")
-
-      function = mod.functions.add("rule", [LLVM::Pointer(LLVM::Int8), LLVM::Int], LLVM::Int1) do |the_function, input, length|
-        entry = the_function.basic_blocks.append "entry"
-        
-        builder = LLVM::Builder.create
-        builder.position_at_end(entry)
-        
-        failed_block = builder.create_block "failed"
-        
-        input_current = expression.build builder, input, failed_block
-        input_end = builder.gep input, length, "input_end"
-        at_end = builder.icmp :eq, input_current, input_end, "at_end"
-        builder.ret at_end
-        
-        builder.position_at_end failed_block
-        builder.ret LLVM::FALSE
-
-        the_function.verify      
-      end
-
-      mod.verify
+      context = Grammar.new
+      pos_var = context.new_position
+      matcher = expression.create_matcher context, pos_var
       
-      engine = LLVM::ExecutionEngine.create_jit_compiler(mod)
-      
-      optimize = false
-      if optimize
-        pass_manager = LLVM::PassManager.new engine
-        pass_manager.instcombine!
-        pass_manager.reassociate!
-        pass_manager.gvn!
-        pass_manager.simplifycfg!
-        pass_manager.run mod
-      end
-      
-      CompiledRule.new(engine, function)
+      matcher
     end
     
     class CompiledRule
-      def initialize(engine, function)
-        @engine = engine
-        @function = function
-      end
-      
-      def match(input)
-        input_ptr = FFI::MemoryPointer.from_string input
-        @engine.run_function(@function, input_ptr, input.size).to_b
-      end
+      def initialize
     end
     
     class Grammar < Treetop::Runtime::SyntaxNode
@@ -187,6 +137,10 @@ module JetPEG
       def fixed_length
         nil
       end
+      
+      def first_character_class
+        nil
+      end
     end
     
     class Sequence < ParsingExpression
@@ -201,9 +155,26 @@ module JetPEG
         end
       end
       
-      def build(builder, start_input, failed_block)
-        children.inject(start_input) do |input, child|
-          child.build builder, input, failed_block
+      def first_character_class
+        children.first && children.first.first_character_class
+      end
+      
+      def create_matcher(context, entry_pos)
+        case children.size
+        when 0
+          Matcher.new ["true"], entry_pos
+        when 1
+          children.first.create_matcher context, entry_pos
+        else
+          code = []
+          pos = entry_pos
+          children.each_index do |i|
+            matcher = children[i].create_matcher context, pos
+            pos = matcher.exit_pos
+            code.concat matcher.code
+            code.last.append_code " &&" if i < children.size - 1
+          end
+          Matcher.new ["( # sequence", code, ")"], pos
         end
       end
     end
@@ -220,22 +191,36 @@ module JetPEG
         end
       end
       
-      def build(builder, start_input, failed_block)
-        successful_block = builder.create_block "choice_successful"
-        phi_values = []
-        
-        children.each do |child|
-          next_child_block = builder.create_block "choice_next_child"
-          input = child.build builder, start_input, next_child_block
-          phi_values.push input, builder.insert_block
-          builder.br successful_block
-          
-          builder.position_at_end next_child_block
+      def first_character_class
+        @first_character_class ||= begin
+          classes = @children.map(&:first_character_class)
+          classes.all? ? classes.join : nil
         end
-        builder.br failed_block
-        
-        builder.position_at_end successful_block
-        builder.phi LLVM::Pointer(LLVM::Int8), *phi_values, "choice_end_input"
+      end
+      
+      def create_matcher(context, entry_pos)
+        if fixed_length
+          code = []
+          children.each_index do |i|
+            matcher = children[i].create_matcher context, entry_pos
+            code.concat matcher.code
+            code.last.append_code " ||" if i < children.size - 1
+          end
+          Matcher.new ["( # choice", code, ")"], entry_pos + fixed_length
+        else
+          code = []
+          children.each_index do |i|
+            matcher = children[i].create_matcher context, entry_pos
+            child_code = []
+            child_code.concat matcher.code
+            child_code.last.append_code " &&"
+            child_code << matcher.exit_pos.to_s
+            code.push "(", child_code, ")"
+            code.last.append_code " ||" if i < children.size - 1
+          end
+          pos_var = context.new_position
+          Matcher.new ["(#{pos_var} = ( # choice", code, "))"], pos_var
+        end
       end
     end
     
@@ -275,7 +260,13 @@ module JetPEG
           "#{pos_var} = #{matcher.exit_pos}"
         end
         
-        code.push "while", ["(", matcher.code, ")", exit_pos_assignment], "end"
+        first_character_guard = if expression.first_character_class && expression.first_character_class.size < 10
+          "input[#{pos_var}, 1] =~ /[#{expression.first_character_class.gsub('/', '\/')}]/ && "
+        else
+          ""
+        end
+        
+        code.push "#{first_character_guard}while", ["(", matcher.code, ")", exit_pos_assignment], "end"
         
         code << success_expression(entry_pos, pos_var)
         Matcher.new ["begin", code , "end"], pos_var
@@ -291,6 +282,10 @@ module JetPEG
     class OneOrMore < Repetition
       def success_expression(old_pos, new_pos)
         "#{new_pos} != #{old_pos}"
+      end
+      
+      def first_character_class
+        expression.first_character_class
       end
     end
     
@@ -331,8 +326,8 @@ module JetPEG
         1
       end
       
-      def build(builder, start_input, failed_block)
-        builder.gep start_input, LLVM::Int(1), "new_input"
+      def create_matcher(context, entry_pos)
+        Matcher.new ["true"], entry_pos + 1
       end
     end
     
@@ -344,17 +339,17 @@ module JetPEG
       def fixed_length
         string.size
       end
-      
-      def build(builder, start_input, failed_block)
-        string.chars.inject(start_input) do |input, char|
-          input_char = builder.load input, "char"
-          matching = builder.icmp :eq, input_char, LLVM::Int8.from_i(char.ord), "matching"
-          next_char_block = builder.create_block "string_terminal_next_char"
-          builder.cond matching, next_char_block, failed_block
-          
-          builder.position_at_end next_char_block
-          builder.gep input, LLVM::Int(1), "new_input"
+
+      def first_character_class
+        case string[0, 1]
+        when '-' then '\-'
+        when '\\' then '\\\\'
+        else string[0, 1]
         end
+      end
+      
+      def create_matcher(context, entry_pos)
+        Matcher.new ["(input[#{entry_pos}, #{string.size}] == #{string.inspect})"], entry_pos + string.size
       end
     end
     
@@ -365,6 +360,10 @@ module JetPEG
       
       def fixed_length
         1
+      end
+      
+      def first_character_class
+        pattern[0, 1] != '^' ? pattern : nil
       end
       
       def create_matcher(context, entry_pos)
@@ -389,6 +388,10 @@ module JetPEG
         referenced_expression.recursive ? nil : referenced_expression.fixed_length
       end
 
+      def first_character_class
+        referenced_expression.recursive ? nil : referenced_expression.first_character_class
+      end
+
       def create_matcher(context, entry_pos)
         if referenced_expression.has_own_method?
           pos_var = context.new_position
@@ -406,6 +409,10 @@ module JetPEG
       
       def fixed_length
         expression.fixed_length
+      end
+      
+      def first_character_class
+        expression.first_character_class
       end
       
       def create_matcher(context, entry_pos)
@@ -444,5 +451,3 @@ module JetPEG
     end
   end
 end
-
-puts JetPEG::Compiler.compile_rule("'abc' 'def'").match("abcdef")

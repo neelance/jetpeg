@@ -2,7 +2,7 @@ module JetPEG
   module Compiler
     grammar Metagrammar
       rule jetpeg_file
-        requires:(ws? require_statement)* ws? module_or_grammar:(module_declaration / grammar) ws? <Grammar> {
+        requires:(ws require_statement)* ws module_or_grammar:(module_declaration / grammar) ws <Grammar> {
           def construct
             module_or_grammar.construct_grammar self
           end
@@ -10,20 +10,20 @@ module JetPEG
       end
 
       rule require_statement
-        ws? "require" [ \t]+ [^\n\r]+ [\n\r]
+        ws "require" [ \t]+ [^\n\r]+ [\n\r]
       end
 
       rule module_declaration
         'module' ws name:([A-Z] alphanumeric_char*) ws module_contents:(module_declaration / grammar) ws 'end' {
           def construct_grammar(grammar)
-            grammar.add_surrounding_module name.text
+            grammar.add_surrounding_module name.text_value
             module_contents.construct_grammar grammar
           end
         }
       end
 
       rule grammar
-        'grammar' ws grammar_name ws rules:parsing_rule* ws? 'end' {
+        'grammar' ws grammar_name ws rules:parsing_rule* ws 'end' {
           def construct_grammar(grammar)
             grammar.name = grammar_name.text_value
             rules.elements.each do |rule|
@@ -50,10 +50,17 @@ module JetPEG
         head:sequence tail:('/' ws alternative:sequence)+ <Choice> /
         sequence
       end
-
+      
       rule sequence
-        head:lookahead tail:lookahead+ <Sequence> /
-        lookahead
+        head:labeled tail:labeled* ('<' class_name:(!'>' .)+ '>' ws)? ('{' module_content '}' ws)? <Sequence>
+      end
+
+      rule module_content
+        (![{}] . / '{' module_content '}')*
+      end
+            
+      rule labeled
+        (name:(alpha_char alphanumeric_char*) ':')? expression:lookahead
       end
       
       rule lookahead
@@ -63,9 +70,9 @@ module JetPEG
       end
       
       rule repetition
+        expression:primary '?' ws <Optional> /
         expression:primary '*' ws <ZeroOrMore> /
         expression:primary '+' ws <OneOrMore> /
-        expression:primary occurrence_range ws /
         primary
       end
       
@@ -75,29 +82,16 @@ module JetPEG
         parenthesized_expression
       end
 
-      rule label
-        (alpha_char alphanumeric_char*) ':' /
-        ''
-      end
-
       rule suffix
         repetition_suffix / optional_suffix
-      end
-
-      rule optional_suffix
-        '?' <Optional>
       end
 
       rule node_class_declarations
         node_class_expression trailing_inline_module
       end
 
-      rule occurrence_range
-        ws? min:([0-9])* '..' max:([0-9])* <OccurrenceRange>
-      end
-
       rule parenthesized_expression
-        '(' ws inner_expression:choice ')' ws <ParenthesizedExpression>
+        '(' ws expression:choice ')' ws <ParenthesizedExpression>
       end
 
       rule rule_name
@@ -128,32 +122,8 @@ module JetPEG
         '.' ws <AnyCharacterTerminal>
       end
 
-      rule node_class_expression
-        ws '<' (!'>' .)+ '>'
-        /
-        ''
-      end
-
-      rule trailing_inline_module
-        ws inline_module
-        /
-        ''
-      end
-
-      rule predicate_block
-        '' inline_module <PredicateBlock>
-      end
-
-      rule inline_module
-        '{' (inline_module / ![{}] .)* '}' <InlineModule>
-      end
-
       rule keyword
-        ('rule' / 'end') !non_ws_char
-      end
-
-      rule non_ws_char
-        !ws .
+        ('rule' / 'end') &single_ws
       end
 
       rule alpha_char
@@ -165,7 +135,11 @@ module JetPEG
       end
 
       rule ws
-        ([ \t\n\r] / line_comment)*
+        single_ws*
+      end
+      
+      rule single_ws
+        [ \t\n\r] / line_comment
       end
       
       rule line_comment
