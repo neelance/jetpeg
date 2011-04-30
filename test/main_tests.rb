@@ -105,4 +105,14 @@ class MainTests < Test::Unit::TestCase
     assert !rule.match("a")
     assert !rule.match("XX")
   end
+  
+  def test_rule_definition
+    grammar = JetPEG::Compiler.compile_grammar "
+      rule test
+        'a'
+      end
+    "
+    assert grammar["test"].match("a")
+    assert !grammar["test"].match("X")
+  end
 end

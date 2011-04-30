@@ -23,7 +23,7 @@ module JetPEG
       end
 
       rule grammar
-        'grammar' ws grammar_name ws rules:parsing_rule* ws 'end' {
+        'grammar' ws grammar_name ws rules:parsing_rules ws 'end' {
           def construct_grammar(grammar)
             grammar.name = grammar_name.text_value
             rules.elements.each do |rule|
@@ -40,6 +40,10 @@ module JetPEG
 
       rule include_declaration
         'include' ws [A-Z] (alphanumeric_char / '::')*
+      end
+      
+      rule parsing_rules
+        ws rules:parsing_rule*
       end
 
       rule parsing_rule

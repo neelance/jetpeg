@@ -4,6 +4,7 @@ require "jetpeg/compiler/metagrammar"
 require 'llvm/core'
 require 'llvm/execution_engine'
 require 'llvm/transforms/scalar'
+require 'llvm/transforms/ipo'
 
 module LLVM
   TRUE = LLVM::Int1.from_i(-1)
@@ -20,71 +21,75 @@ LLVM.init_x86
 
 module JetPEG
   module Compiler
-    def self.compile(code)
+    LLVM_STRING = LLVM::Pointer(LLVM::Int8)
+    
+    def self.parse(code, root)
       metagrammar_parser = MetagrammarParser.new
-      grammar = metagrammar_parser.parse code
-      raise metagrammar_parser.failure_reason if grammar.nil?
-      
-      grammar.construct
-      grammar.compile
+      result = metagrammar_parser.parse code, :root => root
+      raise metagrammar_parser.failure_reason if result.nil?
+      result
     end
     
     def self.compile_rule(code)
-      metagrammar_parser = MetagrammarParser.new
-      expression = metagrammar_parser.parse code, :root => :choice
-      raise metagrammar_parser.failure_reason if expression.nil?
-      
-      mod = LLVM::Module.create("Parser")
-
-      function = mod.functions.add("rule", [LLVM::Pointer(LLVM::Int8), LLVM::Int], LLVM::Int1) do |the_function, input, length|
-        entry = the_function.basic_blocks.append "entry"
-        
+      expression = parse code, :choice
+      expression.mod = LLVM::Module.create "Parser"
+      expression
+    end
+    
+    def self.compile_grammar(code)
+      rules = parse(code, :parsing_rules).rules
+      mod = LLVM::Module.create "Parser"
+      Grammar.new mod, rules
+    end
+    
+    def self.execute(expression, parse_input)
+      parse_function = expression.mod.functions.add("parse", [LLVM_STRING, LLVM::Int], LLVM::Int1) do |function, input, length|
+        entry = function.basic_blocks.append "entry"
         builder = LLVM::Builder.create
-        builder.position_at_end(entry)
+        builder.position_at_end entry
         
-        failed_block = builder.create_block "failed"
-        
-        input_current = expression.build builder, input, failed_block
-        input_end = builder.gep input, length, "input_end"
-        at_end = builder.icmp :eq, input_current, input_end, "at_end"
+        rule_end_input = builder.call expression.function, input
+        real_end_input = builder.gep input, length, "input_end"
+        at_end = builder.icmp :eq, rule_end_input, real_end_input, "at_end"
         builder.ret at_end
         
-        builder.position_at_end failed_block
-        builder.ret LLVM::FALSE
-
-        the_function.verify
+        function.verify
       end
 
-      mod.verify
+      expression.mod.verify
       
-      engine = LLVM::ExecutionEngine.create_jit_compiler(mod)
-      
+      engine = LLVM::ExecutionEngine.create_jit_compiler expression.mod
+
       optimize = false
       if optimize
         pass_manager = LLVM::PassManager.new engine
+        pass_manager.inline!
         pass_manager.instcombine!
         pass_manager.reassociate!
         pass_manager.gvn!
         pass_manager.simplifycfg!
-        pass_manager.run mod
+        pass_manager.run expression.mod
       end
-      
-      CompiledRule.new(engine, function)
+
+      input_ptr = FFI::MemoryPointer.from_string parse_input
+      engine.run_function(parse_function, input_ptr, parse_input.size).to_b
     end
     
-    class CompiledRule
-      def initialize(engine, function)
-        @engine = engine
-        @function = function
+    class Grammar
+      def initialize(mod, rules)
+        @rules = {}
+        rules.elements.each do |element|
+          element.expression.mod = mod
+          @rules[element.rule_name.text_value.strip] = element.expression
+        end
       end
       
-      def match(input)
-        input_ptr = FFI::MemoryPointer.from_string input
-        @engine.run_function(@function, input_ptr, input.size).to_b
+      def [](name)
+        @rules[name]
       end
     end
     
-    class Grammar < Treetop::Runtime::SyntaxNode
+    class GrammarOld < Treetop::Runtime::SyntaxNode
       attr_accessor :name
       
       def initialize(*args)
@@ -146,7 +151,7 @@ module JetPEG
     end
 
     class ParsingExpression < Treetop::Runtime::SyntaxNode
-      attr_accessor :name, :own_method_requested, :recursive, :reference_count
+      attr_accessor :name, :mod, :own_method_requested, :recursive, :reference_count
       
       def initialize(*args)
         super
@@ -181,6 +186,27 @@ module JetPEG
       
       def fixed_length
         nil
+      end
+      
+      def function
+        @function ||= @mod.functions.add("rule", [LLVM_STRING], LLVM_STRING) do |function, input|
+          entry = function.basic_blocks.append "entry"
+          builder = LLVM::Builder.create
+          builder.position_at_end entry
+  
+          failed_block = builder.create_block "failed"
+          rule_end_input = build builder, input, failed_block
+          builder.ret rule_end_input
+  
+          builder.position_at_end failed_block
+          builder.ret LLVM_STRING.null_pointer
+          
+          function.verify 
+        end
+      end
+      
+      def match(input)
+        Compiler.execute self, input
       end
     end
     
@@ -217,12 +243,12 @@ module JetPEG
       
       def build(builder, start_input, failed_block)
         successful_block = builder.create_block "choice_successful"
-        phi_values = []
+        phi_values = {}
         
         children.each do |child|
           next_child_block = builder.create_block "choice_next_child"
           input = child.build builder, start_input, next_child_block
-          phi_values.push input, builder.insert_block
+          phi_values[builder.insert_block] = input
           builder.br successful_block
           
           builder.position_at_end next_child_block
@@ -230,7 +256,7 @@ module JetPEG
         builder.br failed_block
         
         builder.position_at_end successful_block
-        builder.phi LLVM::Pointer(LLVM::Int8), *phi_values, "choice_end_input"
+        builder.phi LLVM_STRING, phi_values, "choice_end_input"
       end
     end
     
@@ -251,7 +277,7 @@ module JetPEG
         builder.br exit_block
         
         builder.position_at_end exit_block
-        builder.phi LLVM::Pointer(LLVM::Int8), start_input, optional_failed_block, input, optional_successful_block, "optional_end_input"
+        builder.phi LLVM_STRING, { optional_failed_block => start_input, optional_successful_block => input }, "optional_end_input"
       end
     end
     
@@ -267,9 +293,9 @@ module JetPEG
         builder.br loop_block
         
         builder.position_at_end loop_block
-        input = builder.phi LLVM::Pointer(LLVM::Int8), start_input, start_block, "loop_input"
+        input = builder.phi LLVM_STRING, { start_block => start_input }, "loop_input"
         next_input = expression.build builder, input, exit_block
-        input.add_incoming next_input, builder.insert_block
+        input.add_incoming builder.insert_block => next_input
         builder.br loop_block
         
         builder.position_at_end exit_block
