@@ -360,8 +360,41 @@ module JetPEG
         1
       end
       
-      def create_matcher(context, entry_pos)
-        Matcher.new ["(input[#{entry_pos}, 1] =~ /[#{pattern.gsub('/', '\/')}]/)"], entry_pos + 1
+      def build(builder, start_input, failed_block)
+        is_inverted = !inverted.text_value.empty?
+        input_char = builder.load start_input, "char"
+        successful_block = builder.create_block "character_class_successful" unless is_inverted
+        
+        selections.elements.each do |selection|
+          next_selection_block = builder.create_block "character_class_next_selection"
+          selection.build builder, input_char, (is_inverted ? failed_block : successful_block), next_selection_block
+          builder.position_at_end next_selection_block
+        end
+        
+        unless is_inverted
+          builder.br failed_block
+          builder.position_at_end successful_block
+        end
+        
+        builder.gep start_input, LLVM::Int(1), "new_input"
+      end
+    end
+    
+    class CharacterClassSingleCharacter < Treetop::Runtime::SyntaxNode
+      def build(builder, input_char, successful_block, failed_block)
+        matching = builder.icmp :eq, input_char, LLVM::Int8.from_i(char.text_value.ord), "matching"
+        builder.cond matching, successful_block, failed_block
+      end
+    end
+    
+    class CharacterClassRange < Treetop::Runtime::SyntaxNode
+      def build(builder, input_char, successful_block, failed_block)
+        begin_char_successful = builder.create_block "character_class_range_begin_char_successful"
+        matching = builder.icmp :uge, input_char, LLVM::Int8.from_i(begin_char.char.text_value.ord), "begin_matching"
+        builder.cond matching, begin_char_successful, failed_block
+        builder.position_at_end begin_char_successful
+        matching = builder.icmp :ule, input_char, LLVM::Int8.from_i(end_char.char.text_value.ord), "end_matching"
+        builder.cond matching, successful_block, failed_block
       end
     end
     

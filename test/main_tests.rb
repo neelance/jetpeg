@@ -20,6 +20,23 @@ class MainTests < Test::Unit::TestCase
     assert !rule.match("99")
   end
   
+  def test_character_class_terminal
+    rule = JetPEG::Compiler.compile_rule "[b-df\\-h]"
+    assert rule.match("b")
+    assert rule.match("c")
+    assert rule.match("d")
+    assert rule.match("f")
+    assert rule.match("-")
+    assert rule.match("h")
+    assert !rule.match("a")
+    assert !rule.match("e")
+    assert !rule.match("g")
+    
+    rule = JetPEG::Compiler.compile_rule "[^a]"
+    assert rule.match("b")
+    assert !rule.match("a")
+  end
+  
   def test_sequence
     rule = JetPEG::Compiler.compile_rule "'abc' 'def'"
     assert rule.match("abcdef")

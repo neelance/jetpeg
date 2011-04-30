@@ -115,7 +115,15 @@ module JetPEG
       end
 
       rule character_class
-        '[' characters:(!']' ('\\' . /!'\\' .))+ ']' ws <CharacterClassTerminal>
+        '[' inverted:'^'? selections:(character_class_range / character_class_single_character)+ ']' ws <CharacterClassTerminal>
+      end
+      
+      rule character_class_single_character
+        ('\\' / !']') char:. <CharacterClassSingleCharacter>
+      end
+      
+      rule character_class_range
+        begin_char:character_class_single_character '-' end_char:character_class_single_character <CharacterClassRange>
       end
 
       rule anything_symbol
