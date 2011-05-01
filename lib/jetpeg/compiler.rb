@@ -37,119 +37,32 @@ module JetPEG
     end
     
     def self.compile_grammar(code)
-      rules = parse(code, :parsing_rules).rules
+      rules = parse(code, :grammar).rules
       mod = LLVM::Module.create "Parser"
       Grammar.new mod, rules
-    end
-    
-    def self.execute(expression, parse_input)
-      parse_function = expression.mod.functions.add("parse", [LLVM_STRING, LLVM::Int], LLVM::Int1) do |function, input, length|
-        entry = function.basic_blocks.append "entry"
-        builder = LLVM::Builder.create
-        builder.position_at_end entry
-        
-        rule_end_input = builder.call expression.function, input
-        real_end_input = builder.gep input, length, "input_end"
-        at_end = builder.icmp :eq, rule_end_input, real_end_input, "at_end"
-        builder.ret at_end
-        
-        function.verify
-      end
-
-      expression.mod.verify
-      
-      engine = LLVM::ExecutionEngine.create_jit_compiler expression.mod
-
-      optimize = false
-      if optimize
-        pass_manager = LLVM::PassManager.new engine
-        pass_manager.inline!
-        pass_manager.instcombine!
-        pass_manager.reassociate!
-        pass_manager.gvn!
-        pass_manager.simplifycfg!
-        pass_manager.run expression.mod
-      end
-
-      input_ptr = FFI::MemoryPointer.from_string parse_input
-      engine.run_function(parse_function, input_ptr, parse_input.size).to_b
     end
     
     class Grammar
       def initialize(mod, rules)
         @rules = {}
         rules.elements.each do |element|
-          element.expression.mod = mod
-          @rules[element.rule_name.text_value.strip] = element.expression
+          expression = element.expression
+          expression.name = element.rule_name.name.text_value
+          expression.mod = mod
+          expression.parent = self
+          @rules[expression.name] = expression
         end
       end
       
       def [](name)
         @rules[name]
       end
+      
+      def parse(code)
+        @rules.values.first.match code
+      end
     end
     
-    class GrammarOld < Treetop::Runtime::SyntaxNode
-      attr_accessor :name
-      
-      def initialize(*args)
-        super unless args.empty?
-        @surrounding_modules = []
-        @named_expressions = {}
-        @pos_var_counter = 0
-      end
-      
-      def add_surrounding_module(name)
-        @surrounding_modules << name
-      end
-      
-      def add_named_expression(expr)
-        @named_expressions[expr.name] = expr
-      end
-      
-      def find_expression(name)
-        @named_expressions[name]
-      end
-            
-      def compile(root_rule_name = nil) # TODO not functional atm
-        root_rule = root_rule_name ? @named_expressions[root_rule_name] : @named_expressions.values.first
-        root_rule.own_method_requested = true
-        root_rule.mark_recursions []
-
-        methods = []
-        methods.push "def parse(input)", ["#{root_rule.name}(input, 0) == input.size"], "end", ""
-        
-        methods.concat @named_expressions.values.select(&:has_own_method?).map { |expr|
-          pos_var = new_position
-          matcher = expr.create_matcher self, pos_var
-          code = matcher.code
-          code.last.append_code " && #{matcher.exit_pos}"
-          ["def #{expr.name}(input, #{pos_var})", code, "end", ""]
-        }.flatten(1)
-
-        parser_class = ["class #{@name}Parser", methods, "end"]
-        
-        output_array = @surrounding_modules.reverse.inject(parser_class) { |content, mod| ["module #{mod}", content, "end"] }
-
-        output = ""
-        write_array = lambda { |array, indention|
-          array.each do |part|
-            case part
-            when String
-              output << "#{'  ' * indention}#{part}\n"
-            when Array
-              write_array.call part, indention + 1
-            else
-              raise ArgumenrError
-            end
-          end
-        }
-        write_array.call output_array, 0
-        
-        output
-      end
-    end
-
     class ParsingExpression < Treetop::Runtime::SyntaxNode
       attr_accessor :name, :mod, :own_method_requested, :recursive, :reference_count
       
@@ -158,6 +71,8 @@ module JetPEG
         @own_method_requested = false
         @recursive = false
         @reference_count = 0
+        @rule_function = nil
+        @parse_function = nil
       end
       
       def grammar
@@ -184,29 +99,64 @@ module JetPEG
         @own_method_requested || @recursive || @reference_count >= 10
       end
       
-      def fixed_length
+      def fixed_length # TODO remove if not necessary any more
         nil
       end
       
-      def function
-        @function ||= @mod.functions.add("rule", [LLVM_STRING], LLVM_STRING) do |function, input|
-          entry = function.basic_blocks.append "entry"
-          builder = LLVM::Builder.create
-          builder.position_at_end entry
-  
-          failed_block = builder.create_block "failed"
-          rule_end_input = build builder, input, failed_block
-          builder.ret rule_end_input
-  
-          builder.position_at_end failed_block
-          builder.ret LLVM_STRING.null_pointer
-          
-          function.verify 
+      def rule_function
+        if @rule_function.nil?
+          @mod.functions.add(@name, [LLVM_STRING], LLVM_STRING) do |function, input|
+            @rule_function = function # set here to avoid infinite recursion
+            entry = function.basic_blocks.append "entry"
+            builder = LLVM::Builder.create
+            builder.position_at_end entry
+    
+            failed_block = builder.create_block "failed"
+            rule_end_input = build builder, input, failed_block
+            builder.ret rule_end_input
+    
+            builder.position_at_end failed_block
+            builder.ret LLVM_STRING.null_pointer
+            
+            function.verify 
+          end
         end
+        @rule_function
       end
       
-      def match(input)
-        Compiler.execute self, input
+      def match(parse_input)
+        if @parse_function.nil?
+          @parse_function = @mod.functions.add("parse", [LLVM_STRING, LLVM::Int], LLVM::Int1) do |function, input, length|
+            entry = function.basic_blocks.append "entry"
+            builder = LLVM::Builder.create
+            builder.position_at_end entry
+            
+            rule_end_input = builder.call rule_function, input
+            real_end_input = builder.gep input, length, "input_end"
+            at_end = builder.icmp :eq, rule_end_input, real_end_input, "at_end"
+            builder.ret at_end
+            
+            function.verify
+          end
+    
+          @mod.verify
+          
+          @engine = LLVM::ExecutionEngine.create_jit_compiler @mod
+    
+          optimize = false
+          if optimize
+            pass_manager = LLVM::PassManager.new @engine
+            pass_manager.inline!
+            pass_manager.instcombine!
+            pass_manager.reassociate!
+            pass_manager.gvn!
+            pass_manager.simplifycfg!
+            pass_manager.run @mod
+          end
+        end
+  
+        input_ptr = FFI::MemoryPointer.from_string parse_input
+        @engine.run_function(@parse_function, input_ptr, parse_input.size).to_b
       end
     end
     
@@ -407,19 +357,34 @@ module JetPEG
     end
     
     class CharacterClassSingleCharacter < Treetop::Runtime::SyntaxNode
+      def character
+        char_element.text_value
+      end
+      
       def build(builder, input_char, successful_block, failed_block)
-        matching = builder.icmp :eq, input_char, LLVM::Int8.from_i(char.text_value.ord), "matching"
+        matching = builder.icmp :eq, input_char, LLVM::Int8.from_i(character.ord), "matching"
         builder.cond matching, successful_block, failed_block
+      end
+    end
+    
+    class CharacterClassEscapedCharacter < CharacterClassSingleCharacter
+      def character
+        case char_element.text_value
+        when "r" then "\r"
+        when "n" then "\n"
+        when "t" then "\t"
+        else char_element.text_value
+        end
       end
     end
     
     class CharacterClassRange < Treetop::Runtime::SyntaxNode
       def build(builder, input_char, successful_block, failed_block)
         begin_char_successful = builder.create_block "character_class_range_begin_char_successful"
-        matching = builder.icmp :uge, input_char, LLVM::Int8.from_i(begin_char.char.text_value.ord), "begin_matching"
+        matching = builder.icmp :uge, input_char, LLVM::Int8.from_i(begin_char.character.ord), "begin_matching"
         builder.cond matching, begin_char_successful, failed_block
         builder.position_at_end begin_char_successful
-        matching = builder.icmp :ule, input_char, LLVM::Int8.from_i(end_char.char.text_value.ord), "end_matching"
+        matching = builder.icmp :ule, input_char, LLVM::Int8.from_i(end_char.character.ord), "end_matching"
         builder.cond matching, successful_block, failed_block
       end
     end
@@ -441,13 +406,13 @@ module JetPEG
         referenced_expression.recursive ? nil : referenced_expression.fixed_length
       end
 
-      def create_matcher(context, entry_pos)
-        if referenced_expression.has_own_method?
-          pos_var = context.new_position
-          Matcher.new ["(#{pos_var} = #{name.text_value}(input, #{entry_pos}))"], pos_var
-        else
-          referenced_expression.create_matcher context, entry_pos
-        end
+      def build(builder, start_input, failed_block)
+        rule_end_input = builder.call grammar[name.text_value].rule_function, start_input
+        rule_successful = builder.icmp :ne, rule_end_input, LLVM_STRING.null_pointer, "rule_successful"
+        successful_block = builder.create_block "rule_call_successful"
+        builder.cond rule_successful, successful_block, failed_block
+        builder.position_at_end successful_block
+        rule_end_input
       end
     end
     

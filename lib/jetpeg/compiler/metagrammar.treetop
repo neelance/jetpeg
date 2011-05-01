@@ -1,48 +1,7 @@
 module JetPEG
   module Compiler
     grammar Metagrammar
-      rule jetpeg_file
-        requires:(ws require_statement)* ws module_or_grammar:(module_declaration / grammar) ws <Grammar> {
-          def construct
-            module_or_grammar.construct_grammar self
-          end
-        }
-      end
-
-      rule require_statement
-        ws "require" [ \t]+ [^\n\r]+ [\n\r]
-      end
-
-      rule module_declaration
-        'module' ws name:([A-Z] alphanumeric_char*) ws module_contents:(module_declaration / grammar) ws 'end' {
-          def construct_grammar(grammar)
-            grammar.add_surrounding_module name.text_value
-            module_contents.construct_grammar grammar
-          end
-        }
-      end
-
       rule grammar
-        'grammar' ws grammar_name ws rules:parsing_rules ws 'end' {
-          def construct_grammar(grammar)
-            grammar.name = grammar_name.text_value
-            rules.elements.each do |rule|
-              rule.expression.name = rule.rule_name.name.text_value
-              grammar.add_named_expression rule.expression
-            end
-          end
-        }
-      end
-
-      rule grammar_name
-        ([A-Z] alphanumeric_char*)
-      end
-
-      rule include_declaration
-        'include' ws [A-Z] (alphanumeric_char / '::')*
-      end
-      
-      rule parsing_rules
         ws rules:parsing_rule*
       end
 
@@ -123,7 +82,8 @@ module JetPEG
       end
       
       rule character_class_single_character
-        ('\\' / !']') char:. <CharacterClassSingleCharacter>
+        '\\' char_element:. <CharacterClassEscapedCharacter> /
+        (!']') char_element:. <CharacterClassSingleCharacter>
       end
       
       rule character_class_range

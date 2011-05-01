@@ -2,7 +2,6 @@ require "jetpeg/compiler"
 
 module JetPEG
   def self.load(file)
-    code = Compiler.compile IO.read("#{file}.jetpeg")
-    Object.class_eval code
+    Compiler.compile_grammar IO.read("#{file}.jetpeg")
   end
 end

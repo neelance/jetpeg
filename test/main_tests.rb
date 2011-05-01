@@ -35,6 +35,10 @@ class MainTests < Test::Unit::TestCase
     rule = JetPEG::Compiler.compile_rule "[^a]"
     assert rule.match("b")
     assert !rule.match("a")
+    
+    rule = JetPEG::Compiler.compile_rule "[\\n]"
+    assert rule.match("\n")
+    assert !rule.match("n")
   end
   
   def test_sequence
@@ -114,5 +118,32 @@ class MainTests < Test::Unit::TestCase
     "
     assert grammar["test"].match("a")
     assert !grammar["test"].match("X")
+  end
+  
+  def test_rule_reference
+    grammar = JetPEG::Compiler.compile_grammar "
+      rule test
+        a
+      end
+      rule a
+        'b'
+      end
+    "
+    assert grammar["test"].match("b")
+    assert !grammar["test"].match("X")
+    assert !grammar["test"].match("a")
+  end
+  
+  def test_recursive_rule_reference
+    grammar = JetPEG::Compiler.compile_grammar "
+      rule test
+        '(' test ')' / ''
+      end
+    "
+    assert grammar["test"].match("")
+    assert grammar["test"].match("()")
+    assert grammar["test"].match("((()))")
+    assert !grammar["test"].match("()))")
+    assert !grammar["test"].match("((()")
   end
 end
