@@ -146,4 +146,24 @@ class MainTests < Test::Unit::TestCase
     assert !grammar["test"].match("()))")
     assert !grammar["test"].match("((()")
   end
+  
+  def test_label
+    rule = JetPEG::Compiler.compile_rule "'a' char:. 'c'"
+    result = rule.match "abc"
+    assert result[:char] == "b"
+    
+    rule = JetPEG::Compiler.compile_rule "word:('a' 'b' 'c')"
+    result = rule.match "abc"
+    assert result[:word] == "abc"
+    
+    rule = JetPEG::Compiler.compile_rule "word:[abc]*"
+    result = rule.match "abc"
+    assert result[:word] == "abc"
+  end
+  
+  def disabled_test_sub_rule
+    rule = JetPEG::Compiler.compile_rule "word:('a' char:. 'c')"
+    result = rule.match "abc"
+    assert result[:word][:char] == "b"
+  end
 end

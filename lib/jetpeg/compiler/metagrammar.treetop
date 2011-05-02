@@ -23,7 +23,8 @@ module JetPEG
       end
             
       rule labeled
-        (name:(alpha_char alphanumeric_char*) ':')? expression:lookahead
+        name:(alpha_char alphanumeric_char*) ':' expression:lookahead <Label> /
+        lookahead
       end
       
       rule lookahead
@@ -45,14 +46,6 @@ module JetPEG
         parenthesized_expression
       end
 
-      rule suffix
-        repetition_suffix / optional_suffix
-      end
-
-      rule node_class_declarations
-        node_class_expression trailing_inline_module
-      end
-
       rule parenthesized_expression
         '(' ws expression:choice ')' ws <ParenthesizedExpression>
       end
@@ -66,14 +59,7 @@ module JetPEG
       end
 
       rule quoted_string
-        (single_quoted_string / double_quoted_string)
-      end
-
-      rule double_quoted_string
-        '"' (!'"' ("\\\\" / '\"' / .))* '"' ws <StringTerminal>
-      end
-
-      rule single_quoted_string
+        '"' (!'"' ("\\\\" / '\"' / .))* '"' ws <StringTerminal> /
         "'" (!"'" ("\\\\" / "\\'" / .))* "'" ws <StringTerminal>
       end
 

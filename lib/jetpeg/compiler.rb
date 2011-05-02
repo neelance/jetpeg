@@ -42,8 +42,26 @@ module JetPEG
       Grammar.new mod, rules
     end
     
+    class State
+      attr_reader :input, :labels
+      
+      def initialize(input)
+        @input = input
+        @labels = {}
+      end
+      
+      def merge!(other_state)
+        @input = other_state.input
+        @labels.merge! other_state.labels
+        self
+      end
+    end
+    
     class Grammar
+      attr_reader :mod
+      
       def initialize(mod, rules)
+        @mod = mod
         @rules = {}
         rules.elements.each do |element|
           expression = element.expression
@@ -61,18 +79,47 @@ module JetPEG
       def parse(code)
         @rules.values.first.match code
       end
+      
+      def optimize!
+        @rules.values.first.optimize!
+      end
     end
     
+    class DummyBuilder
+      def phi(*args)
+        self
+      end
+      
+      def method_missing(name, *args)
+        # ignore
+      end
+    end
+    
+    class RuleDataStructure
+      attr_reader :labels, :llvm, :ffi
+      
+      def initialize(labels)
+        @labels = labels
+        
+        @llvm = LLVM::Struct(*([LLVM_STRING, LLVM_STRING] * labels.size))
+        
+        @ffi = Class.new FFI::Struct
+        @ffi.layout(*labels.map{ |name| ["#{name}_begin".to_sym, :pointer, "#{name}_end".to_sym, :pointer] }.flatten)
+      end
+      
+      def empty?
+        @labels.empty?
+      end
+    end
+        
     class ParsingExpression < Treetop::Runtime::SyntaxNode
-      attr_accessor :name, :mod, :own_method_requested, :recursive, :reference_count
+      attr_accessor :name, :mod
       
       def initialize(*args)
         super
-        @own_method_requested = false
-        @recursive = false
-        @reference_count = 0
         @rule_function = nil
         @parse_function = nil
+        @execution_engine = nil
       end
       
       def grammar
@@ -81,100 +128,103 @@ module JetPEG
         element
       end
       
-      def mark_recursions(inside_expressions)
-        return if @recursive
-        
-        if inside_expressions.include? self
-          raise if @name.nil?
-          @recursive = true
-          return
+      def data_structure
+        @data_structure ||= begin
+          @data_structure = RuleDataStructure.new [] # avoid recursion
+          dummy_state = build DummyBuilder.new, nil, nil
+          RuleDataStructure.new dummy_state.labels.keys
         end
-        
-        children.each do |child|
-          child.mark_recursions inside_expressions + [self]
-        end
-      end
-      
-      def has_own_method?
-        @own_method_requested || @recursive || @reference_count >= 10
-      end
-      
-      def fixed_length # TODO remove if not necessary any more
-        nil
       end
       
       def rule_function
         if @rule_function.nil?
-          @mod.functions.add(@name, [LLVM_STRING], LLVM_STRING) do |function, input|
-            @rule_function = function # set here to avoid infinite recursion
+          @mod.functions.add(@name, [LLVM_STRING, LLVM::Pointer(data_structure.llvm)], LLVM_STRING) do |function, input, data_ptr|
+            @rule_function = function
             entry = function.basic_blocks.append "entry"
             builder = LLVM::Builder.create
             builder.position_at_end entry
     
             failed_block = builder.create_block "failed"
-            rule_end_input = build builder, input, failed_block
-            builder.ret rule_end_input
+            end_state = build builder, input, failed_block
+            
+            unless data_structure.empty?
+              fill_data_structure_block = builder.create_block "fill_data_structure"
+              return_block = builder.create_block "return"
+              data_ptr_given = builder.icmp :ne, data_ptr, LLVM::Pointer(data_structure.llvm).null_pointer
+              builder.cond data_ptr_given, fill_data_structure_block, return_block
+              
+              builder.position_at_end fill_data_structure_block
+              data = builder.load data_ptr
+              end_state.labels.each_with_index do |(name, (begin_input, end_input)), index|
+                data = builder.insert_value data, begin_input, index * 2
+                data = builder.insert_value data, end_input, index * 2 + 1
+              end
+              data = builder.store data, data_ptr
+              builder.ret end_state.input
+  
+              builder.position_at_end return_block
+              builder.ret end_state.input
+            else
+              builder.ret end_state.input
+            end
     
             builder.position_at_end failed_block
             builder.ret LLVM_STRING.null_pointer
-            
-            function.verify 
           end
+          @rule_function.linkage = :private
         end
         @rule_function
       end
       
-      def match(parse_input)
-        if @parse_function.nil?
-          @parse_function = @mod.functions.add("parse", [LLVM_STRING, LLVM::Int], LLVM::Int1) do |function, input, length|
-            entry = function.basic_blocks.append "entry"
-            builder = LLVM::Builder.create
-            builder.position_at_end entry
-            
-            rule_end_input = builder.call rule_function, input
-            real_end_input = builder.gep input, length, "input_end"
-            at_end = builder.icmp :eq, rule_end_input, real_end_input, "at_end"
-            builder.ret at_end
-            
-            function.verify
-          end
-    
-          @mod.verify
-          
-          @engine = LLVM::ExecutionEngine.create_jit_compiler @mod
-    
-          optimize = false
-          if optimize
-            pass_manager = LLVM::PassManager.new @engine
-            pass_manager.inline!
-            pass_manager.instcombine!
-            pass_manager.reassociate!
-            pass_manager.gvn!
-            pass_manager.simplifycfg!
-            pass_manager.run @mod
-          end
+      def to_ptr
+        rule_function.to_ptr
+      end
+      
+      def execution_engine
+        if @execution_engine.nil?
+          rule_function.linkage = :external
+          @mod.verify!
+          @execution_engine = LLVM::ExecutionEngine.create_jit_compiler @mod
         end
-  
-        input_ptr = FFI::MemoryPointer.from_string parse_input
-        @engine.run_function(@parse_function, input_ptr, parse_input.size).to_b
+        @execution_engine
+      end
+      
+      def optimize!
+        @execution_engine = nil
+        pass_manager = LLVM::PassManager.new execution_engine
+        pass_manager.inline!
+        pass_manager.instcombine!
+        pass_manager.reassociate!
+        pass_manager.gvn!
+        pass_manager.simplifycfg!
+        pass_manager.run @mod
+      end
+      
+      def match(input)
+        input_ptr = FFI::MemoryPointer.from_string input
+        data = !data_structure.empty? && data_structure.ffi.new
+        input_end_ptr = execution_engine.run_function(rule_function, input_ptr, data && data.pointer).to_value_ptr
+        
+        if input_ptr.address + input.size == input_end_ptr.address
+          values = {}
+          data_structure.labels.each do |name|
+            values[name] = input[(data["#{name}_begin".to_sym].address - input_ptr.address)...(data["#{name}_end".to_sym].address - input_ptr.address)]
+          end
+          values
+        else
+          nil
+        end
       end
     end
     
     class Sequence < ParsingExpression
       def children
-        @children ||= ([head] + tail.elements).map { |child| child.expression }
-      end
-      
-      def fixed_length
-        @fixed_length ||= begin
-          lengths = children.map(&:fixed_length)
-          lengths.all? ? lengths.reduce(0, :+) : nil
-        end
+        @children ||= [head] + tail.elements
       end
       
       def build(builder, start_input, failed_block)
-        children.inject(start_input) do |input, child|
-          child.build builder, input, failed_block
+        children.inject(State.new(start_input)) do |state, child|
+          state.merge! child.build(builder, state.input, failed_block)
         end
       end
     end
@@ -184,21 +234,14 @@ module JetPEG
         @children ||= [head] + tail.elements.map(&:alternative)
       end
       
-      def fixed_length
-        @fixed_length ||= begin
-          lengths = children.map(&:fixed_length).uniq
-          lengths.size == 1 ? lengths.first : nil
-        end
-      end
-      
       def build(builder, start_input, failed_block)
         successful_block = builder.create_block "choice_successful"
         phi_values = {}
         
         children.each do |child|
           next_child_block = builder.create_block "choice_next_child"
-          input = child.build builder, start_input, next_child_block
-          phi_values[builder.insert_block] = input
+          state = child.build builder, start_input, next_child_block
+          phi_values[builder.insert_block] = state.input
           builder.br successful_block
           
           builder.position_at_end next_child_block
@@ -206,20 +249,17 @@ module JetPEG
         builder.br failed_block
         
         builder.position_at_end successful_block
-        builder.phi LLVM_STRING, phi_values, "choice_end_input"
+        end_input = builder.phi LLVM_STRING, phi_values, "choice_end_input"
+        State.new end_input
       end
     end
     
     class Optional < ParsingExpression
-      def children
-        [expression]
-      end
-      
       def build(builder, start_input, failed_block)
         exit_block = builder.create_block "optional_exit"
         
         optional_failed_block = builder.create_block "optional_failed"
-        input = expression.build builder, start_input, optional_failed_block
+        state = expression.build builder, start_input, optional_failed_block
         optional_successful_block = builder.insert_block
         builder.br exit_block
         
@@ -227,16 +267,13 @@ module JetPEG
         builder.br exit_block
         
         builder.position_at_end exit_block
-        builder.phi LLVM_STRING, { optional_failed_block => start_input, optional_successful_block => input }, "optional_end_input"
+        end_input = builder.phi LLVM_STRING, { optional_failed_block => start_input, optional_successful_block => state.input }, "optional_end_input"
+        State.new end_input
       end
     end
     
     class ZeroOrMore < ParsingExpression
-      def children
-        [expression]
-      end
-      
-      def build(builder, start_input, failed_block)
+       def build(builder, start_input, failed_block)
         start_block = builder.insert_block
         loop_block = builder.create_block "repetition_loop"
         exit_block = builder.create_block "repetition_exit"
@@ -244,40 +281,30 @@ module JetPEG
         
         builder.position_at_end loop_block
         input = builder.phi LLVM_STRING, { start_block => start_input }, "loop_input"
-        next_input = expression.build builder, input, exit_block
-        input.add_incoming builder.insert_block => next_input
+        next_state = expression.build builder, input, exit_block
+        input.add_incoming builder.insert_block => next_state.input
         builder.br loop_block
         
         builder.position_at_end exit_block
-        input
+        State.new input
       end
     end
     
     class OneOrMore < ZeroOrMore
       def build(builder, start_input, failed_block)
-        input = expression.build builder, start_input, failed_block
-        super builder, input, failed_block
+        state = expression.build builder, start_input, failed_block
+        super builder, state.input, failed_block
       end
     end
     
-    class Lookahead < ParsingExpression
-      def children
-        [expression]
-      end
-      
-      def fixed_length
-        0
-      end
-    end
-    
-    class PositiveLookahead < Lookahead
+    class PositiveLookahead < ParsingExpression
       def build(builder, start_input, failed_block)
         expression.build builder, start_input, failed_block
-        start_input
+        State.new start_input
       end
     end
     
-    class NegativeLookahead < Lookahead
+    class NegativeLookahead < ParsingExpression
       def build(builder, start_input, failed_block)
         lookahead_failed_block = builder.create_block "lookahead_failed"
 
@@ -285,37 +312,24 @@ module JetPEG
         builder.br failed_block
         
         builder.position_at_end lookahead_failed_block
-        start_input
+        State.new start_input
       end
     end
-    
-    class Terminal < ParsingExpression
-      def children
-        []
-      end
-    end
-        
-    class AnyCharacterTerminal < Terminal
-      def fixed_length
-        1
-      end
-      
+            
+    class AnyCharacterTerminal < ParsingExpression
       def build(builder, start_input, failed_block)
-        builder.gep start_input, LLVM::Int(1), "new_input"
+        end_input = builder.gep start_input, LLVM::Int(1), "new_input"
+        State.new end_input
       end
     end
     
-    class StringTerminal < Terminal
+    class StringTerminal < ParsingExpression
       def string
         @string ||= eval text_value # TODO avoid eval here
       end
       
-      def fixed_length
-        string.size
-      end
-      
       def build(builder, start_input, failed_block)
-        string.chars.inject(start_input) do |input, char|
+        end_input = string.chars.inject(start_input) do |input, char|
           input_char = builder.load input, "char"
           matching = builder.icmp :eq, input_char, LLVM::Int8.from_i(char.ord), "matching"
           next_char_block = builder.create_block "string_terminal_next_char"
@@ -324,18 +338,11 @@ module JetPEG
           builder.position_at_end next_char_block
           builder.gep input, LLVM::Int(1), "new_input"
         end
+        State.new end_input
       end
     end
     
-    class CharacterClassTerminal < Terminal
-      def pattern
-        characters.text_value
-      end
-      
-      def fixed_length
-        1
-      end
-      
+    class CharacterClassTerminal < ParsingExpression
       def build(builder, start_input, failed_block)
         is_inverted = !inverted.text_value.empty?
         input_char = builder.load start_input, "char"
@@ -352,7 +359,8 @@ module JetPEG
           builder.position_at_end successful_block
         end
         
-        builder.gep start_input, LLVM::Int(1), "new_input"
+        end_input = builder.gep start_input, LLVM::Int(1), "new_input"
+        State.new end_input
       end
     end
     
@@ -390,43 +398,28 @@ module JetPEG
     end
     
     class RuleName < ParsingExpression
-      def referenced_expression
-        @referenced_expression ||= begin
-          exp = grammar.find_expression name.text_value
-          exp.reference_count += 1
-          exp
-        end
-      end
-      
-      def children
-        [referenced_expression]
-      end
-      
-      def fixed_length
-        referenced_expression.recursive ? nil : referenced_expression.fixed_length
-      end
-
       def build(builder, start_input, failed_block)
-        rule_end_input = builder.call grammar[name.text_value].rule_function, start_input
+        referenced = grammar[name.text_value]
+        rule_end_input = builder.call referenced, start_input, LLVM::Pointer(referenced.data_structure.llvm).null_pointer
         rule_successful = builder.icmp :ne, rule_end_input, LLVM_STRING.null_pointer, "rule_successful"
         successful_block = builder.create_block "rule_call_successful"
         builder.cond rule_successful, successful_block, failed_block
         builder.position_at_end successful_block
-        rule_end_input
+        State.new rule_end_input
       end
     end
     
     class ParenthesizedExpression < ParsingExpression
-      def children
-        [expression]
-      end
-      
-      def fixed_length
-        expression.fixed_length
-      end
-      
       def build(builder, start_input, failed_block)
         expression.build builder, start_input, failed_block
+      end
+    end
+    
+    class Label < ParsingExpression
+      def build(builder, start_input, failed_block)
+        state = expression.build builder, start_input, failed_block
+        state.labels[name.text_value.to_sym] = [start_input, state.input]
+        state
       end
     end
   end
