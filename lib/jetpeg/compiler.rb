@@ -67,9 +67,9 @@ module JetPEG
     end
     
     class PhiGeneratorHash
-      def initialize(builder, type)
+      def initialize(builder, type, generator_class)
         @builder = builder
-        @phis = Hash.new { |h, k| h[k] = PhiGenerator.new(builder, type) }
+        @phis = Hash.new { |h, k| h[k] = generator_class.new(builder, type) }
         @blocks = []
       end
       
@@ -99,9 +99,15 @@ module JetPEG
     end
     
     class BranchingState < State
+      class PhiLabelValueGenerator < PhiGenerator
+        def generate(name = "")
+          PhiLabelValue.new @values.values.first, super
+        end
+      end
+      
       def initialize(builder)
         @input_phi = PhiGenerator.new builder, LLVM_STRING
-        @label_phis = PhiGeneratorHash.new builder, LLVM_POSITION
+        @label_phis = PhiGeneratorHash.new builder, LLVM_POSITION, PhiLabelValueGenerator
       end
       
       def <<(state)
@@ -154,23 +160,68 @@ module JetPEG
       end
     end
     
-    class RuleDataStructure
-      attr_reader :labels, :llvm_type, :ffi_type
+    class LabelValue
+      attr_reader :llvm_type, :ffi_type, :to_ptr
+    end
+    
+    class PositionLabelValue < LabelValue
+      def initialize(builder, begin_pos, end_pos)
+        @llvm_type = LLVM_POSITION
+        @ffi_type = FFI_POSITION
+        
+        pos = LLVM_POSITION.null
+        pos = builder.insert_value pos, begin_pos, 0
+        pos = builder.insert_value pos, end_pos, 1
+        @to_ptr = pos && pos.to_ptr
+      end
       
-      def initialize(labels)
+      def read(data, input, input_address)
+        input[(data[:begin].address - input_address)...(data[:end].address - input_address)]
+      end
+    end
+    
+    class NestedLabelValue < LabelValue
+      attr_reader :labels
+      
+      def initialize(builder, labels)
         @labels = labels
-        
-        @llvm_type = LLVM::Struct(*([LLVM_POSITION] * labels.size))
-        
+        @llvm_type = LLVM::Struct(*labels.values.map(&:llvm_type))
         @ffi_type = Class.new FFI::Struct
-        @ffi_type.layout(*labels.map{ |name| [name, FFI_POSITION] }.flatten)
+        @ffi_type.layout(*labels.map{ |name, value| [name, value.ffi_type] }.flatten)
+        
+        data = llvm_type.null
+        labels.each_with_index do |(name, value), index|
+          data = builder.insert_value data, value, index
+        end
+        @to_ptr = data && data.to_ptr
+      end
+      
+      def read(data, input, input_address)
+        values = {}
+        @labels.each do |name, type|
+          values[name] = type.read data[name], input, input_address
+        end
+        values
       end
       
       def empty?
         @labels.empty?
       end
     end
-        
+    
+    class PhiLabelValue < LabelValue
+      def initialize(inner_type, phi)
+        @inner_type = inner_type
+        @llvm_type = inner_type.llvm_type
+        @ffi_type = inner_type.ffi_type
+        @to_ptr = phi.to_ptr
+      end
+      
+      def read(data, input, input_address)
+        @inner_type.read data, input, input_address
+      end
+    end
+    
     class ParsingExpression < Treetop::Runtime::SyntaxNode
       attr_accessor :name, :mod
       
@@ -189,9 +240,10 @@ module JetPEG
       
       def data_structure
         @data_structure ||= begin
-          @data_structure = RuleDataStructure.new [] # avoid recursion
-          dummy_state = build DummyBuilder.new, nil, nil
-          RuleDataStructure.new dummy_state.labels.keys
+          builder = DummyBuilder.new
+          @data_structure = NestedLabelValue.new(builder, {}) # avoid recursion
+          dummy_state = build builder, nil, nil
+          NestedLabelValue.new builder, dummy_state.labels
         end
       end
       
@@ -207,11 +259,8 @@ module JetPEG
             end_state = build builder, input, failed_block
             
             unless data_structure.empty?
-              data = data_structure.llvm_type.null
-              end_state.labels.each_with_index do |(name, pos), index|
-                data = builder.insert_value data, pos, index
-              end
-              data = builder.store data, data_ptr
+              data = NestedLabelValue.new builder, end_state.labels
+              builder.store data, data_ptr
             end
             
             builder.ret end_state.input
@@ -254,12 +303,7 @@ module JetPEG
         input_end_ptr = execution_engine.run_function(rule_function, input_ptr, data && data.pointer).to_value_ptr
         
         if input_ptr.address + input.size == input_end_ptr.address
-          values = {}
-          data_structure.labels.each do |name|
-            pos = data[name]
-            values[name] = input[(pos[:begin].address - input_ptr.address)...(pos[:end].address - input_ptr.address)]
-          end
-          values
+          data_structure.read data, input, input_ptr.address
         else
           nil
         end
@@ -464,10 +508,12 @@ module JetPEG
     class Label < ParsingExpression
       def build(builder, start_input, failed_block)
         state = expression.build builder, start_input, failed_block
-        pos = LLVM_POSITION.null
-        pos = builder.insert_value pos, start_input, 0
-        pos = builder.insert_value pos, state.input, 1
-        state.labels[name.text_value.to_sym] = pos
+        value = if state.labels.empty?
+          PositionLabelValue.new builder, start_input, state.input
+        else
+          NestedLabelValue.new builder, state.labels
+        end
+        state.labels = { name.text_value.to_sym => value }
         state
       end
     end

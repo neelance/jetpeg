@@ -161,7 +161,7 @@ class MainTests < Test::Unit::TestCase
     assert result[:word] == "abc"
   end
   
-  def disabled_test_sub_label
+  def test_nested_label
     rule = JetPEG::Compiler.compile_rule "word:('a' char:. 'c')"
     result = rule.match "abc"
     assert result[:word][:char] == "b"
