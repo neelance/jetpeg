@@ -151,6 +151,9 @@ class MainTests < Test::Unit::TestCase
     rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' / 'def'"
     result = rule.match "abc"
     assert result[:char] == "b"
+    assert result[:char] === "b"
+    assert "b" == result[:char]
+    assert "b" === result[:char]
     
     rule = JetPEG::Compiler.compile_rule "word:('a' 'b' 'c')"
     result = rule.match "abc"
@@ -159,6 +162,22 @@ class MainTests < Test::Unit::TestCase
     rule = JetPEG::Compiler.compile_rule "(word:[abc]+)?"
     result = rule.match "abc"
     assert result[:word] == "abc"
+  end
+  
+  def test_label_merge
+    rule = JetPEG::Compiler.compile_rule "char:'a' / char:'b' / 'c'"
+    result = rule.match "a"
+    assert result[:char] == "a"
+    result = rule.match "b"
+    assert result[:char] == "b"
+    result = rule.match "c"
+    assert result[:char] == nil
+  end
+  
+  def test_invalid_label_merge
+    assert_raise SyntaxError do
+      JetPEG::Compiler.compile_rule "word:'a' / word:(char:'b' / 'c')"
+    end
   end
   
   def test_nested_label
