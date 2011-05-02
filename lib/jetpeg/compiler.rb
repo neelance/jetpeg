@@ -22,6 +22,10 @@ LLVM.init_x86
 module JetPEG
   module Compiler
     LLVM_STRING = LLVM::Pointer(LLVM::Int8)
+    LLVM_POSITION = LLVM::Struct(LLVM_STRING, LLVM_STRING)
+    
+    FFI_POSITION = Class.new FFI::Struct
+    FFI_POSITION.layout :begin, :pointer, :end, :pointer
     
     def self.parse(code, root)
       metagrammar_parser = MetagrammarParser.new
@@ -42,17 +46,72 @@ module JetPEG
       Grammar.new mod, rules
     end
     
-    class State
-      attr_reader :input, :labels
+    class PhiGenerator
+      def initialize(builder, type)
+        @builder = builder
+        @type = type
+        @values = {}
+      end
       
-      def initialize(input)
+      def <<(value)
+        @values[@builder.insert_block] = value
+      end
+      
+      def fill_blocks(blocks)
+        blocks.each { |block| @values[block] ||= @type.null }
+      end
+      
+      def generate(name = "")
+        @builder.phi @type, @values, name
+      end
+    end
+    
+    class PhiGeneratorHash
+      def initialize(builder, type)
+        @builder = builder
+        @phis = Hash.new { |h, k| h[k] = PhiGenerator.new(builder, type) }
+        @blocks = []
+      end
+      
+      def merge!(hash)
+        @blocks << @builder.insert_block
+        hash.each { |name, value| @phis[name] << value }
+      end
+      
+      def generate
+        Hash[@phis.map{ |name, phi| phi.fill_blocks @blocks; [name, phi.generate(name.to_s)] }]
+      end
+    end
+    
+    class State
+      attr_accessor :input, :labels
+      
+      def initialize(input = nil)
         @input = input
         @labels = {}
       end
       
-      def merge!(other_state)
-        @input = other_state.input
-        @labels.merge! other_state.labels
+      def merge!(state)
+        @input = state.input
+        @labels.merge! state.labels
+        self
+      end
+    end
+    
+    class BranchingState < State
+      def initialize(builder)
+        @input_phi = PhiGenerator.new builder, LLVM_STRING
+        @label_phis = PhiGeneratorHash.new builder, LLVM_POSITION
+      end
+      
+      def <<(state)
+        @input_phi << state.input
+        @label_phis.merge! state.labels
+      end
+      
+      def generate
+        @input = @input_phi.generate "input"
+        @labels = @label_phis.generate
         self
       end
     end
@@ -96,15 +155,15 @@ module JetPEG
     end
     
     class RuleDataStructure
-      attr_reader :labels, :llvm, :ffi
+      attr_reader :labels, :llvm_type, :ffi_type
       
       def initialize(labels)
         @labels = labels
         
-        @llvm = LLVM::Struct(*([LLVM_STRING, LLVM_STRING] * labels.size))
+        @llvm_type = LLVM::Struct(*([LLVM_POSITION] * labels.size))
         
-        @ffi = Class.new FFI::Struct
-        @ffi.layout(*labels.map{ |name| ["#{name}_begin".to_sym, :pointer, "#{name}_end".to_sym, :pointer] }.flatten)
+        @ffi_type = Class.new FFI::Struct
+        @ffi_type.layout(*labels.map{ |name| [name, FFI_POSITION] }.flatten)
       end
       
       def empty?
@@ -138,7 +197,7 @@ module JetPEG
       
       def rule_function
         if @rule_function.nil?
-          @mod.functions.add(@name, [LLVM_STRING, LLVM::Pointer(data_structure.llvm)], LLVM_STRING) do |function, input, data_ptr|
+          @mod.functions.add(@name, [LLVM_STRING, LLVM::Pointer(data_structure.llvm_type)], LLVM_STRING) do |function, input, data_ptr|
             @rule_function = function
             entry = function.basic_blocks.append "entry"
             builder = LLVM::Builder.create
@@ -148,25 +207,14 @@ module JetPEG
             end_state = build builder, input, failed_block
             
             unless data_structure.empty?
-              fill_data_structure_block = builder.create_block "fill_data_structure"
-              return_block = builder.create_block "return"
-              data_ptr_given = builder.icmp :ne, data_ptr, LLVM::Pointer(data_structure.llvm).null_pointer
-              builder.cond data_ptr_given, fill_data_structure_block, return_block
-              
-              builder.position_at_end fill_data_structure_block
-              data = builder.load data_ptr
-              end_state.labels.each_with_index do |(name, (begin_input, end_input)), index|
-                data = builder.insert_value data, begin_input, index * 2
-                data = builder.insert_value data, end_input, index * 2 + 1
+              data = data_structure.llvm_type.null
+              end_state.labels.each_with_index do |(name, pos), index|
+                data = builder.insert_value data, pos, index
               end
               data = builder.store data, data_ptr
-              builder.ret end_state.input
-  
-              builder.position_at_end return_block
-              builder.ret end_state.input
-            else
-              builder.ret end_state.input
             end
+            
+            builder.ret end_state.input
     
             builder.position_at_end failed_block
             builder.ret LLVM_STRING.null_pointer
@@ -202,13 +250,14 @@ module JetPEG
       
       def match(input)
         input_ptr = FFI::MemoryPointer.from_string input
-        data = !data_structure.empty? && data_structure.ffi.new
+        data = !data_structure.empty? && data_structure.ffi_type.new
         input_end_ptr = execution_engine.run_function(rule_function, input_ptr, data && data.pointer).to_value_ptr
         
         if input_ptr.address + input.size == input_end_ptr.address
           values = {}
           data_structure.labels.each do |name|
-            values[name] = input[(data["#{name}_begin".to_sym].address - input_ptr.address)...(data["#{name}_end".to_sym].address - input_ptr.address)]
+            pos = data[name]
+            values[name] = input[(pos[:begin].address - input_ptr.address)...(pos[:end].address - input_ptr.address)]
           end
           values
         else
@@ -236,39 +285,36 @@ module JetPEG
       
       def build(builder, start_input, failed_block)
         successful_block = builder.create_block "choice_successful"
-        phi_values = {}
+        child_blocks = children.map { builder.create_block "choice_child" }
+        state = BranchingState.new builder
+        builder.br child_blocks.first
         
-        children.each do |child|
-          next_child_block = builder.create_block "choice_next_child"
-          state = child.build builder, start_input, next_child_block
-          phi_values[builder.insert_block] = state.input
+        children.each_with_index do |child, index|
+          builder.position_at_end child_blocks[index]
+          state << child.build(builder, start_input, child_blocks[index + 1] || failed_block)
           builder.br successful_block
-          
-          builder.position_at_end next_child_block
         end
-        builder.br failed_block
         
         builder.position_at_end successful_block
-        end_input = builder.phi LLVM_STRING, phi_values, "choice_end_input"
-        State.new end_input
+        state.generate
       end
     end
     
     class Optional < ParsingExpression
       def build(builder, start_input, failed_block)
         exit_block = builder.create_block "optional_exit"
+        state = BranchingState.new builder
         
         optional_failed_block = builder.create_block "optional_failed"
-        state = expression.build builder, start_input, optional_failed_block
-        optional_successful_block = builder.insert_block
+        state << expression.build(builder, start_input, optional_failed_block)
         builder.br exit_block
         
         builder.position_at_end optional_failed_block
+        state << State.new(start_input)
         builder.br exit_block
         
         builder.position_at_end exit_block
-        end_input = builder.phi LLVM_STRING, { optional_failed_block => start_input, optional_successful_block => state.input }, "optional_end_input"
-        State.new end_input
+        state.generate
       end
     end
     
@@ -400,7 +446,7 @@ module JetPEG
     class RuleName < ParsingExpression
       def build(builder, start_input, failed_block)
         referenced = grammar[name.text_value]
-        rule_end_input = builder.call referenced, start_input, LLVM::Pointer(referenced.data_structure.llvm).null_pointer
+        rule_end_input = builder.call referenced, start_input, LLVM::Pointer(referenced.data_structure.llvm_type).null_pointer
         rule_successful = builder.icmp :ne, rule_end_input, LLVM_STRING.null_pointer, "rule_successful"
         successful_block = builder.create_block "rule_call_successful"
         builder.cond rule_successful, successful_block, failed_block
@@ -418,7 +464,10 @@ module JetPEG
     class Label < ParsingExpression
       def build(builder, start_input, failed_block)
         state = expression.build builder, start_input, failed_block
-        state.labels[name.text_value.to_sym] = [start_input, state.input]
+        pos = LLVM_POSITION.null
+        pos = builder.insert_value pos, start_input, 0
+        pos = builder.insert_value pos, state.input, 1
+        state.labels[name.text_value.to_sym] = pos
         state
       end
     end

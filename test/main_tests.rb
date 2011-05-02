@@ -148,7 +148,7 @@ class MainTests < Test::Unit::TestCase
   end
   
   def test_label
-    rule = JetPEG::Compiler.compile_rule "'a' char:. 'c'"
+    rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' / 'def'"
     result = rule.match "abc"
     assert result[:char] == "b"
     
@@ -156,12 +156,12 @@ class MainTests < Test::Unit::TestCase
     result = rule.match "abc"
     assert result[:word] == "abc"
     
-    rule = JetPEG::Compiler.compile_rule "word:[abc]*"
+    rule = JetPEG::Compiler.compile_rule "(word:[abc]+)?"
     result = rule.match "abc"
     assert result[:word] == "abc"
   end
   
-  def disabled_test_sub_rule
+  def disabled_test_sub_label
     rule = JetPEG::Compiler.compile_rule "word:('a' char:. 'c')"
     result = rule.match "abc"
     assert result[:word][:char] == "b"
