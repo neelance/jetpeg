@@ -134,7 +134,7 @@ class MainTests < Test::Unit::TestCase
     assert !grammar["test"].match("a")
   end
   
-  def test_recursive_rule_reference
+  def test_recursive_rule
     grammar = JetPEG::Compiler.compile_grammar "
       rule test
         '(' test ')' / ''
@@ -150,6 +150,7 @@ class MainTests < Test::Unit::TestCase
   def test_label
     rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' / 'def'"
     result = rule.match "abc"
+    assert result == { char: "b" }
     assert result[:char] == "b"
     assert result[:char] === "b"
     assert "b" == result[:char]
@@ -157,32 +158,59 @@ class MainTests < Test::Unit::TestCase
     
     rule = JetPEG::Compiler.compile_rule "word:('a' 'b' 'c')"
     result = rule.match "abc"
-    assert result[:word] == "abc"
+    assert result == { word: "abc" }
     
     rule = JetPEG::Compiler.compile_rule "(word:[abc]+)?"
     result = rule.match "abc"
-    assert result[:word] == "abc"
-  end
-  
-  def test_label_merge
-    rule = JetPEG::Compiler.compile_rule "char:'a' / char:'b' / 'c'"
-    result = rule.match "a"
-    assert result[:char] == "a"
-    result = rule.match "b"
-    assert result[:char] == "b"
-    result = rule.match "c"
-    assert result[:char] == nil
-  end
-  
-  def test_invalid_label_merge
-    assert_raise SyntaxError do
-      JetPEG::Compiler.compile_rule "word:'a' / word:(char:'b' / 'c')"
-    end
+    assert result == { word: "abc" }
   end
   
   def test_nested_label
     rule = JetPEG::Compiler.compile_rule "word:('a' char:. 'c')"
     result = rule.match "abc"
-    assert result[:word][:char] == "b"
+    assert result == { word: { char: "b" } }
+  end
+  
+  def test_label_merge
+    rule = JetPEG::Compiler.compile_rule "char:'a' / char:'b' / 'c'"
+    result = rule.match "a"
+    assert result == { char: "a" }
+    result = rule.match "b"
+    assert result == { char: "b" }
+    result = rule.match "c"
+    assert result == { char: nil }
+  end
+  
+  def test_invalid_labels
+    assert_raise SyntaxError do
+      JetPEG::Compiler.compile_rule "char:'a' 'b' char:'c'"
+    end
+    
+    assert_raise SyntaxError do
+      JetPEG::Compiler.compile_rule "word:'a' / word:(char:'b' / 'c')"
+    end
+  end
+  
+  def test_rule_with_label
+    grammar = JetPEG::Compiler.compile_grammar "
+      rule test
+        a word:('b' a)
+      end
+      rule a
+        char:.
+      end
+    "
+    result = grammar["test"].match("abc")
+    assert result == { char: "a", word: { char: "c" } }
+  end
+  
+  def test_recursive_rule_with_label
+    grammar = JetPEG::Compiler.compile_grammar "
+      rule test
+        '(' inner:(test (other:'b')?) ')' / char:'a'
+      end
+    "
+    result = grammar["test"].match("((a)b)")
+    assert result == { inner: { inner: { inner: nil, char: "a", other: nil }, char: nil, other: "b"}, char: nil }
   end
 end

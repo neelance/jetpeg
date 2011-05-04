@@ -1,6 +1,4 @@
 require "treetop"
-require "jetpeg/compiler/metagrammar"
-
 require 'llvm/core'
 require 'llvm/execution_engine'
 require 'llvm/transforms/scalar'
@@ -18,11 +16,14 @@ module LLVM
 end
 
 LLVM.init_x86
+LLVM_STRING = LLVM::Pointer(LLVM::Int8)
+
+require "jetpeg/compiler/metagrammar"
+require "jetpeg/runtime"
+require "jetpeg/label_value"
 
 module JetPEG
   module Compiler
-    LLVM_STRING = LLVM::Pointer(LLVM::Int8)
-    
     def self.parse(code, root)
       metagrammar_parser = MetagrammarParser.new
       result = metagrammar_parser.parse code, :root => root
@@ -33,7 +34,7 @@ module JetPEG
     def self.compile_rule(code)
       expression = parse code, :choice
       expression.mod = LLVM::Module.create "Parser"
-      expression.label_type # check label types
+      expression.rule_label_type # check label types
       expression
     end
     
@@ -44,66 +45,22 @@ module JetPEG
     end
     
     class PhiGenerator
-      attr_accessor :explicit_blocks
-      
-      def initialize(builder)
+      def initialize(builder, type, name = "")
         @builder = builder
+        @type = type
+        @name = name
         @values = {}
-        @explicit_blocks = nil
       end
       
       def <<(value)
-        @values[@builder.insert_block] = value
-      end
-      
-      def generate(type, name = "")
-        @explicit_blocks.each { |block| @values[block] ||= type.null } if @explicit_blocks
-        @builder.phi type, @values, name
-      end
-    end
-    
-    class PhiGeneratorHash
-      def initialize(builder, generator_class)
-        @builder = builder
-        @phis = Hash.new { |h, k| h[k] = generator_class.new(builder) }
-        @blocks = []
-      end
-      
-      def merge!(hash)
-        @blocks << @builder.insert_block
-        hash.each { |name, value| @phis[name] << value }
+        @values[@builder.insert_block] = value || @type.null
       end
       
       def generate
-        @phis.each_with_object({}) { |(name, phi), h|
-          phi.explicit_blocks = @blocks
-          h[name] = phi.generate(name.to_s)
-        }
+        @builder.phi @type, @values, @name
       end
     end
-    
-    class Terminal
-      attr_reader :position
-      
-      def initialize(input, position)
-        @input = input
-        @position = position
-      end
-      
-      def to_s
-        @text ||= @input[@position]
-      end
-      alias_method :to_str, :to_s
-      
-      def ==(other)
-        to_s == other.to_s
-      end
-      
-      def [](*args)
-        to_s[*args]
-      end
-    end
-    
+        
     class Result
       attr_accessor :input, :labels
       
@@ -120,36 +77,29 @@ module JetPEG
     end
     
     class BranchingResult < Result
-      class LabelValueGenerator < PhiGenerator
-        def generate(name = "")
-          types = @values.values.map(&:type).uniq
-          raise SyntaxError, "Incompatible label types." if types.size != 1
-          LabelValue.create types.first, super(types.first.llvm_type, name)
-        end
-      end
-      
-      def initialize(builder)
-        @input_phi = PhiGenerator.new builder
-        @label_phis = PhiGeneratorHash.new builder, LabelValueGenerator
+      def initialize(builder, label_types)
+        @input_phi = PhiGenerator.new builder, LLVM_STRING, "input"
+        @label_phis = label_types.each_with_object({}) { |(name, type), h| h[name] = PhiGenerator.new builder, type.llvm_type, name.to_s }
       end
       
       def <<(result)
         @input_phi << result.input
-        @label_phis.merge! result.labels
+        @label_phis.each { |name, phi| phi << result.labels[name] }
       end
       
       def generate
-        @input = @input_phi.generate LLVM_STRING, "input"
-        @labels = @label_phis.generate
+        @input = @input_phi.generate
+        @labels = @label_phis.each_with_object({}) { |(name, phi), h| h[name] = phi.generate }
         self
       end
     end
     
     class Grammar
-      attr_reader :mod
+      attr_reader :mod, :malloc
       
       def initialize(mod, rules)
         @mod = mod
+        @malloc = @mod.functions.add "malloc", [LLVM::Int], LLVM::Pointer(LLVM::Int8)
         @rules = {}
         rules.elements.each do |element|
           expression = element.expression
@@ -173,88 +123,6 @@ module JetPEG
       end
     end
     
-    class Dummy
-      def method_missing(name, *args)
-        Dummy.new
-      end
-      
-      def null?
-        false
-      end
-    end
-    
-    class LabelValue < LLVM::Value
-      attr_accessor :type
-      
-      def self.create(type, value)
-        inst = from_ptr value.to_ptr
-        inst.type = type
-        inst
-      end
-    end
-    
-    class LabelType
-      private_class_method :new
-      attr_reader :llvm_type, :ffi_type
-      
-      def initialize(llvm_type, ffi_type)
-        @llvm_type = llvm_type
-        @ffi_type = ffi_type
-      end
-    end
-    
-    class TerminalLabelValue < LabelType
-      TYPE = new LLVM::Struct(LLVM_STRING, LLVM_STRING), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }
-
-      def self.create(builder, begin_pos, end_pos)
-        pos = TYPE.llvm_type.null
-        pos = builder.insert_value pos, begin_pos, 0
-        pos = builder.insert_value pos, end_pos, 1
-        LabelValue.create TYPE, pos
-      end
-      
-      def read(data, input, input_address)
-        if data[:begin].null?
-          nil
-        else
-          Terminal.new input, (data[:begin].address - input_address)...(data[:end].address - input_address)
-        end
-      end
-    end
-    
-    class HashLabelValue < LabelType
-      def self.create(builder, labels)
-        type = new(labels.each_with_object({}) { |(name, value), h| h[name] = value.type })
-        data = type.llvm_type.null
-        labels.each_with_index do |(name, value), index|
-          data = builder.insert_value data, value, index
-        end
-        LabelValue.create type, data
-      end
-      
-      def initialize(types)
-        @types = types
-        llvm_type = LLVM::Struct(*types.values.map(&:llvm_type))
-        ffi_type = Class.new FFI::Struct
-        ffi_type.layout(*types.map{ |name, type| [name, type.ffi_type] }.flatten)
-        super llvm_type, ffi_type
-      end
-      
-      def read(data, input, input_address)
-        values = {}
-        @types.each do |name, type|
-          values[name] = type.read data[name], input, input_address
-        end
-        values
-      end
-      
-      def empty?
-        @types.empty?
-      end
-
-      EMPTY_TYPE = new({})
-    end
-    
     class ParsingExpression < Treetop::Runtime::SyntaxNode
       attr_accessor :name, :mod
       
@@ -271,39 +139,39 @@ module JetPEG
         element
       end
       
-      def label_type
-        @label_type ||= begin
-          builder = Dummy.new
-          @label_type = HashLabelValue::EMPTY_TYPE # avoid recursion
-          dummy_result = build builder, nil, nil
-          HashLabelValue.create(builder, dummy_result.labels).type
+      def label_types
+        {}
+      end
+      
+      def rule_label_type
+        if @rule_label_type.nil?
+          @rule_label_type = HashLabelValueType.new label_types
         end
+        @rule_label_type
       end
       
       def rule_function
-        if @rule_function.nil?
-          @mod.functions.add(@name, [LLVM_STRING, LLVM::Pointer(label_type.llvm_type)], LLVM_STRING) do |function, input, data_ptr|
-            @rule_function = function
-            entry = function.basic_blocks.append "entry"
-            builder = LLVM::Builder.create
-            builder.position_at_end entry
-    
-            failed_block = builder.create_block "failed"
-            end_result = build builder, input, failed_block
-            
-            unless label_type.empty?
-              data = HashLabelValue.create builder, end_result.labels
-              builder.store data, data_ptr
-            end
-            
-            builder.ret end_result.input
-    
-            builder.position_at_end failed_block
-            builder.ret LLVM_STRING.null_pointer
+        @rule_function ||= @mod.functions.add(@name, [LLVM_STRING, LLVM::Pointer(rule_label_type.llvm_type)], LLVM_STRING) do |function, input, data_ptr|
+          @rule_function = function
+          entry = function.basic_blocks.append "entry"
+          builder = LLVM::Builder.create
+          builder.position_at_end entry
+  
+          failed_block = builder.create_block "failed"
+          end_result = build builder, input, failed_block
+          
+          unless rule_label_type.empty?
+            data = rule_label_type.create_value builder, end_result.labels
+            builder.store data, data_ptr
           end
-          @rule_function.linkage = :private
+          
+          builder.ret end_result.input
+  
+          builder.position_at_end failed_block
+          builder.ret LLVM_STRING.null_pointer
+          
+          function.linkage = :private
         end
-        @rule_function
       end
       
       def to_ptr
@@ -332,11 +200,11 @@ module JetPEG
       
       def match(input)
         input_ptr = FFI::MemoryPointer.from_string input
-        data = !label_type.empty? && label_type.ffi_type.new
+        data = !rule_label_type.empty? && rule_label_type.ffi_type.new
         input_end_ptr = execution_engine.run_function(rule_function, input_ptr, data && data.pointer).to_value_ptr
         
         if input_ptr.address + input.size == input_end_ptr.address
-          label_type.read data, input, input_ptr.address
+          rule_label_type.read data, input, input_ptr.address
         else
           nil
         end
@@ -346,6 +214,14 @@ module JetPEG
     class Sequence < ParsingExpression
       def children
         @children ||= [head] + tail.elements
+      end
+      
+      def label_types
+        @label_types ||= children.map(&:label_types).each_with_object({}) { |types, total|
+          total.merge!(types) { |key, oldval, newval|
+            raise SyntaxError, "Duplicate label."
+          }
+        }
       end
       
       def build(builder, start_input, failed_block)
@@ -360,10 +236,19 @@ module JetPEG
         @children ||= [head] + tail.elements.map(&:alternative)
       end
       
+      def label_types
+        @label_types ||= children.map(&:label_types).each_with_object({}) { |types, total|
+          total.merge!(types) { |key, oldval, newval|
+            raise SyntaxError, "Incompatible label types." if oldval != newval
+            oldval
+          }
+        }
+      end
+      
       def build(builder, start_input, failed_block)
         successful_block = builder.create_block "choice_successful"
         child_blocks = children.map { builder.create_block "choice_child" }
-        result = BranchingResult.new builder
+        result = BranchingResult.new builder, label_types
         builder.br child_blocks.first
         
         children.each_with_index do |child, index|
@@ -378,9 +263,13 @@ module JetPEG
     end
     
     class Optional < ParsingExpression
+      def label_types
+        expression.label_types
+      end
+      
       def build(builder, start_input, failed_block)
         exit_block = builder.create_block "optional_exit"
-        result = BranchingResult.new builder
+        result = BranchingResult.new builder, label_types
         
         optional_failed_block = builder.create_block "optional_failed"
         result << expression.build(builder, start_input, optional_failed_block)
@@ -521,31 +410,85 @@ module JetPEG
     end
     
     class RuleName < ParsingExpression
+      def referenced
+        @referenced ||= grammar[name.text_value]
+      end
+      
+      def referenced_label_type
+        if @referenced_label_type.nil?
+          @recursion ||= false
+          if @recursion
+            @referenced_label_type = HashLabelValueType.new({})
+          else
+            @recursion = true
+            if @label_type.nil? # no recursion
+              @referenced_label_type = referenced.rule_label_type
+            end
+          end
+        end
+        @referenced_label_type
+      end
+      
+      def label_types
+        referenced_label_type.types
+      end
+      
       def build(builder, start_input, failed_block)
-        referenced = grammar[name.text_value]
-        rule_end_input = builder.call referenced, start_input, LLVM::Pointer(referenced.label_type.llvm_type).null_pointer
+        label_data_ptr = builder.alloca referenced_label_type.llvm_type, "label_data_ptr"
+        rule_end_input = builder.call referenced, start_input, label_data_ptr, "rule_end_input"
+        
         rule_successful = builder.icmp :ne, rule_end_input, LLVM_STRING.null_pointer, "rule_successful"
         successful_block = builder.create_block "rule_call_successful"
         builder.cond rule_successful, successful_block, failed_block
+        
         builder.position_at_end successful_block
-        Result.new rule_end_input
+        label_data = builder.load label_data_ptr, "label_data"
+        result = Result.new rule_end_input
+        label_types.each_with_index do |(name, type), index|
+          result.labels[name] = builder.extract_value label_data, index, name.to_s
+        end
+        result
       end
     end
     
     class ParenthesizedExpression < ParsingExpression
+      def label_types
+        expression.label_types
+      end
+      
       def build(builder, start_input, failed_block)
         expression.build builder, start_input, failed_block
       end
     end
     
     class Label < ParsingExpression
+      def label_type
+        if @label_type.nil?
+          @recursion ||= false
+          if @recursion
+            @label_type = PointerLabelValueType.new grammar.malloc, expression
+          else
+            @recursion = true
+            inner_label_types = expression.label_types
+            if @label_type.nil? # no recursion
+              @label_type = if inner_label_types.empty?
+                TerminalLabelValueType::INSTANCE
+              else
+                HashLabelValueType.new inner_label_types
+              end
+            end
+          end
+        end
+        @label_type
+      end
+      
+      def label_types
+        { name.text_value.to_sym => label_type }
+      end
+      
       def build(builder, start_input, failed_block)
         result = expression.build builder, start_input, failed_block
-        value = if result.labels.empty?
-          TerminalLabelValue.create builder, start_input, result.input
-        else
-          HashLabelValue.create builder, result.labels
-        end
+        value = label_type.create_value builder, result.labels, start_input, result.input
         result.labels = { name.text_value.to_sym => value }
         result
       end
