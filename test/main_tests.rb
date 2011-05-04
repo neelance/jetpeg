@@ -157,38 +157,30 @@ class MainTests < Test::Unit::TestCase
     assert "b" === result[:char]
     
     rule = JetPEG::Compiler.compile_rule "word:('a' 'b' 'c')"
-    result = rule.match "abc"
-    assert result == { word: "abc" }
+    assert rule.match("abc") == { word: "abc" }
     
     rule = JetPEG::Compiler.compile_rule "(word:[abc]+)?"
-    result = rule.match "abc"
-    assert result == { word: "abc" }
+    assert rule.match("abc") == { word: "abc" }
   end
   
   def test_nested_label
     rule = JetPEG::Compiler.compile_rule "word:('a' char:. 'c')"
-    result = rule.match "abc"
-    assert result == { word: { char: "b" } }
+    assert rule.match("abc") == { word: { char: "b" } }
+  end
+  
+  def test_at_label
+    rule = JetPEG::Compiler.compile_rule "'a' @:. 'c'"
+    assert rule.match("abc") == "b"
+    
+    rule = JetPEG::Compiler.compile_rule "char:('a' @:. 'c')"
+    assert rule.match("abc") == { char: "b" }
   end
   
   def test_label_merge
     rule = JetPEG::Compiler.compile_rule "char:'a' / char:'b' / 'c'"
-    result = rule.match "a"
-    assert result == { char: "a" }
-    result = rule.match "b"
-    assert result == { char: "b" }
-    result = rule.match "c"
-    assert result == { char: nil }
-  end
-  
-  def test_invalid_labels
-    assert_raise SyntaxError do
-      JetPEG::Compiler.compile_rule "char:'a' 'b' char:'c'"
-    end
-    
-    assert_raise SyntaxError do
-      JetPEG::Compiler.compile_rule "word:'a' / word:(char:'b' / 'c')"
-    end
+    assert rule.match("a") == { char: "a" }
+    assert rule.match("b") == { char: "b" }
+    assert rule.match("c") == { char: nil }
   end
   
   def test_rule_with_label
@@ -200,8 +192,7 @@ class MainTests < Test::Unit::TestCase
         char:.
       end
     "
-    result = grammar["test"].match("abc")
-    assert result == { char: "a", word: { char: "c" } }
+    assert grammar["test"].match("abc") == { char: "a", word: { char: "c" } }
   end
   
   def test_recursive_rule_with_label
@@ -210,7 +201,28 @@ class MainTests < Test::Unit::TestCase
         '(' inner:(test (other:'b')?) ')' / char:'a'
       end
     "
-    result = grammar["test"].match("((a)b)")
-    assert result == { inner: { inner: { inner: nil, char: "a", other: nil }, char: nil, other: "b"}, char: nil }
+    assert grammar["test"].match("((a)b)") == { inner: { inner: { inner: nil, char: "a", other: nil }, char: nil, other: "b"}, char: nil }
+  end
+  
+  def test_repetition_with_label
+    rule = JetPEG::Compiler.compile_rule "list:(char:('a' / 'b' / 'c'))*"
+    assert rule.match("abc") == { list: [{ char: "a" }, { char: "b" }, { char: "c" }] }
+    
+    rule = JetPEG::Compiler.compile_rule "list:(char:'a' / char:'b' / 'c')+"
+    assert rule.match("abc") == { list: [{ char: "a" }, { char: "b" }, { char: nil }] }
+  end
+    
+  def test_invalid_labels
+    assert_raise SyntaxError do
+      JetPEG::Compiler.compile_rule "char:'a' 'b' char:'c'"
+    end
+    
+    assert_raise SyntaxError do
+      JetPEG::Compiler.compile_rule "@:'a' 'b' char:'c'"
+    end
+    
+    assert_raise SyntaxError do
+      JetPEG::Compiler.compile_rule "word:'a' / word:(char:'b' / 'c')"
+    end
   end
 end

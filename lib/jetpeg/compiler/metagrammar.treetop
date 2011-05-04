@@ -15,7 +15,7 @@ module JetPEG
       end
       
       rule sequence
-        head:labeled tail:labeled* ('<' class_name:(!'>' .)+ '>' ws)? ('{' module_content '}' ws)? <Sequence>
+        children:labeled+ ('<' class_name:(!'>' .)+ '>' ws)? ('{' module_content '}' ws)? <Sequence>
       end
 
       rule module_content
@@ -85,7 +85,7 @@ module JetPEG
       end
 
       rule alpha_char
-        [A-Za-z_]
+        [A-Za-z_@]
       end
 
       rule alphanumeric_char
