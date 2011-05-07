@@ -18,6 +18,12 @@ end
 LLVM.init_x86
 LLVM_STRING = LLVM::Pointer(LLVM::Int8)
 
+class FFI::Struct
+  def inspect
+    "{ #{members.map{ |name| "#{name}=#{self[name].inspect}" }.join ", "} }"
+  end
+end
+
 require "jetpeg/runtime"
 require "jetpeg/label_value"
 require "jetpeg/compiler/metagrammar"
@@ -56,6 +62,7 @@ module JetPEG
         @rule_function = nil
         @parse_function = nil
         @execution_engine = nil
+        @parser = nil
       end
       
       def parser
@@ -124,10 +131,33 @@ module JetPEG
         input_end_ptr = execution_engine.run_function(rule_function, input_ptr, data && data.pointer).to_value_ptr
         
         if input_ptr.address + input.size == input_end_ptr.address
-          rule_label_type.read data, input, input_ptr.address
+          rule_label_type.read data, input, input_ptr.address, parser.class_scope
         else
           nil
         end
+      end
+    end
+    
+    class Label < ParsingExpression
+      def label_type
+        (@label_type ||= RecursionGuard.new(PointerLabelValueType.new(parser.malloc, expression)) {
+          LabelValueType.for_types(expression.label_types)
+        }).value
+      end
+      
+      def label_name
+        name.text_value.to_sym
+      end
+      
+      def label_types
+        label_name ? { label_name => label_type } : {}
+      end
+      
+      def build(builder, start_input, failed_block)
+        result = expression.build builder, start_input, failed_block
+        value = label_type.create_value builder, result.labels, start_input, result.input
+        result.labels = { label_name => value }
+        result
       end
     end
     
@@ -153,12 +183,22 @@ module JetPEG
       end
       
       def label_types
-        @label_types ||= children.map(&:label_types).each_with_object({}) { |types, total|
-          total.merge!(types) { |key, oldval, newval|
-            raise SyntaxError, "Incompatible label types." if oldval != newval
-            oldval
-          }
-        }
+        @label_types ||= begin
+          child_types = children.map(&:label_types)
+          all_keys = child_types.map(&:keys).flatten.uniq
+          types = {}
+          all_keys.each do |key|
+            types_for_label = child_types.map { |t| t[key] }
+            reduced_types_for_label = types_for_label.compact.uniq
+            
+            types[key] = if reduced_types_for_label.size == 1
+              reduced_types_for_label.first
+            else
+              ChoiceLabelValueType.new types_for_label
+            end
+          end
+          types
+        end
       end
       
       def build(builder, start_input, failed_block)
@@ -200,40 +240,18 @@ module JetPEG
       end
     end
     
-    class Label < ParsingExpression
-      def label_type
-        (@label_type ||= RecursionGuard.new(PointerLabelValueType.new(parser.malloc, expression)) {
-          LabelValueType.for_types(expression.label_types)
-        }).value
-      end
-      
-      def label_types
-        { name.text_value.to_sym => label_type }
-      end
-      
-      def build(builder, start_input, failed_block)
-        result = expression.build builder, start_input, failed_block
-        value = label_type.create_value builder, result.labels, start_input, result.input
-        result.labels = { name.text_value.to_sym => value }
-        result
-      end
-    end
-    
     class ZeroOrMore < Label
       def label_type
-        if @array_label_type.nil?
+        @array_label_type ||= begin
           types = expression.label_types
-          @array_label_type = !types.empty? && ArrayLabelValueType.new(parser.malloc, super)
-        end
-        @array_label_type
-      end
-     
-      def label_types
-        @repetition_label_type ||= begin
-          label_type ? { DelegateLabelValueType::SYMBOL => label_type } : {}
+          !types.empty? && ArrayLabelValueType.new(parser.malloc, super)
         end
       end
-     
+      
+      def label_name
+        label_type && DelegateLabelValueType::SYMBOL
+      end
+      
       def build(builder, start_input, failed_block, start_label_value = nil)
         start_block = builder.insert_block
         loop_block = builder.create_block "repetition_loop"
@@ -365,6 +383,12 @@ module JetPEG
       end
     end
     
+    class RuleNameLabel < Label
+      def label_name
+        expression.name.text_value.to_sym
+      end
+    end
+    
     class RuleName < ParsingExpression
       def referenced
         @referenced ||= parser[name.text_value]
@@ -405,6 +429,16 @@ module JetPEG
       
       def build(builder, start_input, failed_block)
         expression.build builder, start_input, failed_block
+      end
+    end
+    
+    class ObjectCreator < Label
+      def label_type
+        @object_creator_label_type ||= ObjectCreatorLabelType.new class_name.text_value.split("::").map(&:to_sym), super
+      end
+      
+      def label_name
+        DelegateLabelValueType::SYMBOL
       end
     end
   end

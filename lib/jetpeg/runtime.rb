@@ -1,6 +1,7 @@
 module JetPEG
   class Parser
     attr_reader :mod, :malloc
+    attr_accessor :class_scope
     
     def initialize(rules)
       @mod = LLVM::Module.create "Parser"

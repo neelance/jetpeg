@@ -7,20 +7,22 @@ module JetPEG
       @ffi_type = ffi_type
     end
     
+    def phi_value(builder, index, value)
+      value
+    end
+    
     def self.for_types(types)
       case
-      when types.empty? then InputRangeLabelValueType
-      when delegate = types[DelegateLabelValueType::SYMBOL] then DelegateLabelValueType 
-      else HashLabelValueType
-      end.new types
+      when types.empty? then InputRangeLabelValueType::INSTANCE
+      when delegate = types[DelegateLabelValueType::SYMBOL] then DelegateLabelValueType.new types
+      else HashLabelValueType.new types
+      end
     end
   end
   
   class InputRangeLabelValueType < LabelValueType
-    def initialize(types)
-      super LLVM::Struct(LLVM_STRING, LLVM_STRING), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }
-    end
-
+    INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }
+    
     def create_value(builder, labels, begin_pos, end_pos)
       pos = llvm_type.null
       pos = builder.insert_value pos, begin_pos, 0, "pos"
@@ -28,11 +30,7 @@ module JetPEG
       pos
     end
     
-    def ==(other)
-      other.is_a? InputRangeLabelValueType
-    end
-    
-    def read(data, input, input_address)
+    def read(data, input, input_address, class_scope)
       return nil if data[:begin].null?
       InputRange.new input, (data[:begin].address - input_address)...(data[:end].address - input_address)
     end
@@ -62,10 +60,10 @@ module JetPEG
       data
     end
     
-    def read(data, input, input_address)
+    def read(data, input, input_address, class_scope)
       values = {}
       @types.each do |name, type|
-        values[name] = type.read data[name], input, input_address
+        values[name] = type.read data[name], input, input_address, class_scope
       end
       values
     end
@@ -75,6 +73,40 @@ module JetPEG
     end
 
     EMPTY_TYPE = new({})
+  end
+  
+  class NilLabelValueType < LabelValueType
+    INSTANCE = new LLVM::Int8, :char
+    
+    def read(data, input, input_address, class_scope)
+      nil
+    end
+  end
+  
+  class ChoiceLabelValueType < LabelValueType
+    def initialize(choices)
+      @choices = choices.map { |choice| choice || NilLabelValueType::INSTANCE }
+      ffi_layout = []
+      @choices.each_with_index do |choice, index|
+        ffi_layout.push index.to_s.to_sym, choice.ffi_type
+      end
+      llvm_type = LLVM::Struct(LLVM::Int, *@choices.map(&:llvm_type))
+      ffi_type = Class.new FFI::Struct
+      ffi_type.layout(:selection, :long, *ffi_layout)
+      super llvm_type, ffi_type
+    end
+    
+    def phi_value(builder, index, value)
+      if value
+        builder.insert_value(llvm_type.null, value, index + 1, "data_with_value")
+      else
+        llvm_type.null
+      end
+    end
+    
+    def read(data, input, input_address, class_scope)
+      @choices[data[:selection]].read data[data[:selection].to_s.to_sym], input, input_address, class_scope
+    end
   end
   
   class PointerLabelValueType < LabelValueType
@@ -90,16 +122,16 @@ module JetPEG
     
     def create_value(builder, labels, begin_pos = nil, end_pos = nil)
       value = hash_type.create_value builder, labels
-      ptr = builder.call @malloc, hash_type.llvm_type.size
+      ptr = builder.call @malloc, hash_type.llvm_type.size # TODO free
       casted_ptr = builder.bit_cast ptr, LLVM::Pointer(hash_type.llvm_type)
       builder.store value, casted_ptr
       ptr
     end
     
-    def read(data, input, input_address)
+    def read(data, input, input_address, class_scope)
       return nil if data.null?
       hash_data = hash_type.ffi_type.new data
-      hash_type.read hash_data, input, input_address
+      hash_type.read hash_data, input, input_address, class_scope
     end
   end
   
@@ -117,9 +149,9 @@ module JetPEG
       @pointer_type.create_value builder, { :value => @entry_type.create_value(builder, labels), :previous => previous_entry }
     end
     
-    def read(data, input, input_address)
+    def read(data, input, input_address, class_scope)
       array = []
-      data = @pointer_type.read data, input, input_address
+      data = @pointer_type.read data, input, input_address, class_scope
       until data.nil?
         array.unshift data[:value]
         data = data[:previous]
@@ -141,8 +173,32 @@ module JetPEG
       labels[SYMBOL]
     end
     
-    def read(data, input, input_address)
-      @type.read data, input, input_address
+    def read(data, input, input_address, class_scope)
+      @type.read data, input, input_address, class_scope
+    end
+  end
+  
+  class ObjectCreatorLabelType < LabelValueType
+    attr_reader :data_type, :class_name
+    
+    def initialize(class_name, data_type)
+      @data_type = data_type
+      @class_name = class_name
+      super @data_type.llvm_type, @data_type.ffi_type
+    end
+    
+    def create_value(builder, labels, begin_pos = nil, end_pos = nil)
+      @data_type.create_value builder, labels, begin_pos, end_pos
+    end
+    
+    def read(data, input, input_address, class_scope)
+      value = @data_type.read data, input, input_address, class_scope
+      object_class = @class_name.inject(class_scope){ |scope, name| scope.const_get(name) }
+      object_class.new value
+    end
+    
+    def ==(other)
+      @data_type == other.data_type && @class_name == other.class_name
     end
   end
 end

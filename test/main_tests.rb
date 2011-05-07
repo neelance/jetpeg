@@ -186,13 +186,13 @@ class MainTests < Test::Unit::TestCase
   def test_rule_with_label
     grammar = JetPEG::Compiler.compile_grammar "
       rule test
-        a word:('b' a)
+        a word:('b' a) :a
       end
       rule a
-        char:.
+        d:'d' / char:.
       end
     "
-    assert grammar["test"].match("abc") == { char: "a", word: { char: "c" } }
+    assert grammar["test"].match("abcd") == { d: nil, char: "a", word: { d: nil, char: "c" }, a: { d: "d" , char: nil} }
   end
   
   def test_recursive_rule_with_label
@@ -211,7 +211,7 @@ class MainTests < Test::Unit::TestCase
     rule = JetPEG::Compiler.compile_rule "list:(char:'a' / char:'b' / 'c')+"
     assert rule.match("abc") == { list: [{ char: "a" }, { char: "b" }, { char: nil }] }
   end
-    
+  
   def test_invalid_labels
     assert_raise SyntaxError do
       JetPEG::Compiler.compile_rule "char:'a' 'b' char:'c'"
@@ -220,9 +220,30 @@ class MainTests < Test::Unit::TestCase
     assert_raise SyntaxError do
       JetPEG::Compiler.compile_rule "@:'a' 'b' char:'c'"
     end
+  end
+  
+  class TestClass
+    attr_reader :data
     
-    assert_raise SyntaxError do
-      JetPEG::Compiler.compile_rule "word:'a' / word:(char:'b' / 'c')"
+    def initialize(data)
+      @data = data
     end
+    
+    def ==(other)
+      (other.class == self.class) && (other.data == @data)
+    end
+  end
+  
+  class TestClassA < TestClass
+  end
+  
+  class TestClassB < TestClass
+  end
+  
+  def test_object_creator
+    rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' <TestClassA> / 'd' char:. 'f' <TestClassB>"
+    rule.parser.class_scope = self.class
+    assert rule.match("abc") == TestClassA.new({ char: "b" })
+    assert rule.match("def") == TestClassB.new({ char: "e" })
   end
 end

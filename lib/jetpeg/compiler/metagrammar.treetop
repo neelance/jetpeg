@@ -10,12 +10,17 @@ module JetPEG
       end
 
       rule choice
-        head:sequence tail:('/' ws alternative:sequence)+ <Choice> /
+        head:object_creator tail:('/' ws alternative:object_creator)+ <Choice> /
+        sequence
+      end
+      
+      rule object_creator
+        expression:sequence '<' class_name:(!'>' .)+ '>' ws <ObjectCreator> /
         sequence
       end
       
       rule sequence
-        children:labeled+ ('<' class_name:(!'>' .)+ '>' ws)? ('{' module_content '}' ws)? <Sequence>
+        children:labeled+ (&. / !.) <Sequence>
       end
 
       rule module_content
@@ -42,12 +47,17 @@ module JetPEG
       
       rule primary
         terminal /
-        rule_name /
+        rule_name_label /
         parenthesized_expression
       end
 
       rule parenthesized_expression
         '(' ws expression:choice ')' ws <ParenthesizedExpression>
+      end
+      
+      rule rule_name_label
+        ":" expression:rule_name <RuleNameLabel> /
+        rule_name
       end
 
       rule rule_name
