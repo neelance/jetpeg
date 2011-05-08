@@ -4,110 +4,110 @@ require "jetpeg"
 class MainTests < Test::Unit::TestCase
   def test_string_terminal
     rule = JetPEG::Compiler.compile_rule "'abc'"
-    assert rule.match("abc")
-    assert !rule.match("ab")
-    assert !rule.match("Xbc")
-    assert !rule.match("abX")
-    assert !rule.match("abcX")
+    assert rule.match("abc", false)
+    assert !rule.match("ab", false)
+    assert !rule.match("Xbc", false)
+    assert !rule.match("abX", false)
+    assert !rule.match("abcX", false)
   end
   
   def test_any_character_terminal
     rule = JetPEG::Compiler.compile_rule "."
-    assert rule.match("a")
-    assert rule.match("B")
-    assert rule.match("5")
-    assert !rule.match("")
-    assert !rule.match("99")
+    assert rule.match("a", false)
+    assert rule.match("B", false)
+    assert rule.match("5", false)
+    assert !rule.match("", false)
+    assert !rule.match("99", false)
   end
   
   def test_character_class_terminal
     rule = JetPEG::Compiler.compile_rule "[b-df\\-h]"
-    assert rule.match("b")
-    assert rule.match("c")
-    assert rule.match("d")
-    assert rule.match("f")
-    assert rule.match("-")
-    assert rule.match("h")
-    assert !rule.match("a")
-    assert !rule.match("e")
-    assert !rule.match("g")
+    assert rule.match("b", false)
+    assert rule.match("c", false)
+    assert rule.match("d", false)
+    assert rule.match("f", false)
+    assert rule.match("-", false)
+    assert rule.match("h", false)
+    assert !rule.match("a", false)
+    assert !rule.match("e", false)
+    assert !rule.match("g", false)
     
     rule = JetPEG::Compiler.compile_rule "[^a]"
-    assert rule.match("b")
-    assert !rule.match("a")
+    assert rule.match("b", false)
+    assert !rule.match("a", false)
     
     rule = JetPEG::Compiler.compile_rule "[\\n]"
-    assert rule.match("\n")
-    assert !rule.match("n")
+    assert rule.match("\n", false)
+    assert !rule.match("n", false)
   end
   
   def test_sequence
     rule = JetPEG::Compiler.compile_rule "'abc' 'def'"
-    assert rule.match("abcdef")
-    assert !rule.match("abcde")
-    assert !rule.match("aXcdef")
-    assert !rule.match("abcdXf")
-    assert !rule.match("abcdefX")
+    assert rule.match("abcdef", false)
+    assert !rule.match("abcde", false)
+    assert !rule.match("aXcdef", false)
+    assert !rule.match("abcdXf", false)
+    assert !rule.match("abcdefX", false)
   end
   
   def test_choice
     rule = JetPEG::Compiler.compile_rule "'abc' / 'def'"
-    assert rule.match("abc")
-    assert rule.match("def")
-    assert !rule.match("ab")
-    assert !rule.match("aXc")
-    assert !rule.match("defX")
+    assert rule.match("abc", false)
+    assert rule.match("def", false)
+    assert !rule.match("ab", false)
+    assert !rule.match("aXc", false)
+    assert !rule.match("defX", false)
   end
   
   def test_optional
     rule = JetPEG::Compiler.compile_rule "'abc'? 'def'"
-    assert rule.match("abcdef")
-    assert rule.match("def")
-    assert !rule.match("abc")
-    assert !rule.match("aXcdef")
-    assert !rule.match("abdef")
+    assert rule.match("abcdef", false)
+    assert rule.match("def", false)
+    assert !rule.match("abc", false)
+    assert !rule.match("aXcdef", false)
+    assert !rule.match("abdef", false)
   end
   
   def test_zero_or_more
     rule = JetPEG::Compiler.compile_rule "'a'*"
-    assert rule.match("")
-    assert rule.match("a")
-    assert rule.match("aaaaa")
-    assert !rule.match("X")
-    assert !rule.match("aaaX")
+    assert rule.match("", false)
+    assert rule.match("a", false)
+    assert rule.match("aaaaa", false)
+    assert !rule.match("X", false)
+    assert !rule.match("aaaX", false)
   end
   
   def test_one_or_more
     rule = JetPEG::Compiler.compile_rule "'a'+"
-    assert rule.match("a")
-    assert rule.match("aaaaa")
-    assert !rule.match("")
-    assert !rule.match("X")
-    assert !rule.match("aaaX")
+    assert rule.match("a", false)
+    assert rule.match("aaaaa", false)
+    assert !rule.match("", false)
+    assert !rule.match("X", false)
+    assert !rule.match("aaaX", false)
   end
   
   def test_parenthesized_expression
     rule = JetPEG::Compiler.compile_rule "('a' 'b')? 'c'"
-    assert rule.match("abc")
-    assert rule.match("c")
-    assert !rule.match("ac")
-    assert !rule.match("bc")
+    assert rule.match("abc", false)
+    assert rule.match("c", false)
+    assert !rule.match("ac", false)
+    assert !rule.match("bc", false)
   end
   
   def test_positive_lookahead
     rule = JetPEG::Compiler.compile_rule "(&'a') ."
-    assert rule.match("a")
-    assert !rule.match("")
-    assert !rule.match("X")
-    assert !rule.match("aX")
+    assert rule.match("a", false)
+    assert !rule.match("", false)
+    assert !rule.match("X", false)
+    assert !rule.match("aX", false)
   end
   
   def test_negative_lookahead
     rule = JetPEG::Compiler.compile_rule "(!'a') ."
-    assert rule.match("X")
-    assert !rule.match("")
-    assert !rule.match("a")
-    assert !rule.match("XX")
+    assert rule.match("X", false)
+    assert !rule.match("", false)
+    assert !rule.match("a", false)
+    assert !rule.match("XX", false)
   end
   
   def test_rule_definition
@@ -116,8 +116,8 @@ class MainTests < Test::Unit::TestCase
         'a'
       end
     "
-    assert grammar["test"].match("a")
-    assert !grammar["test"].match("X")
+    assert grammar["test"].match("a", false)
+    assert !grammar["test"].match("X", false)
   end
   
   def test_rule_reference
@@ -129,9 +129,9 @@ class MainTests < Test::Unit::TestCase
         'b'
       end
     "
-    assert grammar["test"].match("b")
-    assert !grammar["test"].match("X")
-    assert !grammar["test"].match("a")
+    assert grammar["test"].match("b", false)
+    assert !grammar["test"].match("X", false)
+    assert !grammar["test"].match("a", false)
   end
   
   def test_recursive_rule
@@ -140,11 +140,11 @@ class MainTests < Test::Unit::TestCase
         '(' test ')' / ''
       end
     "
-    assert grammar["test"].match("")
-    assert grammar["test"].match("()")
-    assert grammar["test"].match("((()))")
-    assert !grammar["test"].match("()))")
-    assert !grammar["test"].match("((()")
+    assert grammar["test"].match("", false)
+    assert grammar["test"].match("()", false)
+    assert grammar["test"].match("((()))", false)
+    assert !grammar["test"].match("()))", false)
+    assert !grammar["test"].match("((()", false)
   end
   
   def test_label
@@ -157,30 +157,37 @@ class MainTests < Test::Unit::TestCase
     assert "b" === result[:char]
     
     rule = JetPEG::Compiler.compile_rule "word:('a' 'b' 'c')"
-    assert rule.match("abc") == { word: "abc" }
+    assert rule.match("abc", false) == { word: "abc" }
     
     rule = JetPEG::Compiler.compile_rule "(word:[abc]+)?"
-    assert rule.match("abc") == { word: "abc" }
+    assert rule.match("abc", false) == { word: "abc" }
   end
   
   def test_nested_label
     rule = JetPEG::Compiler.compile_rule "word:('a' char:. 'c')"
-    assert rule.match("abc") == { word: { char: "b" } }
+    assert rule.match("abc", false) == { word: { char: "b" } }
   end
   
   def test_at_label
     rule = JetPEG::Compiler.compile_rule "'a' @:. 'c'"
-    assert rule.match("abc") == "b"
+    assert rule.match("abc", false) == "b"
     
-    rule = JetPEG::Compiler.compile_rule "char:('a' @:. 'c')"
-    assert rule.match("abc") == { char: "b" }
+    grammar = JetPEG::Compiler.compile_grammar "
+      rule test
+        char:a
+      end
+      rule a
+        'a' @:. 'c'
+      end
+    "
+    assert grammar["test"].match("abc", false) == { char: "b" }
   end
   
   def test_label_merge
     rule = JetPEG::Compiler.compile_rule "char:'a' / char:'b' / 'c'"
-    assert rule.match("a") == { char: "a" }
-    assert rule.match("b") == { char: "b" }
-    assert rule.match("c") == { char: nil }
+    assert rule.match("a", false) == { char: "a" }
+    assert rule.match("b", false) == { char: "b" }
+    assert rule.match("c", false) == { char: nil }
   end
   
   def test_rule_with_label
@@ -192,7 +199,7 @@ class MainTests < Test::Unit::TestCase
         d:'d' / char:.
       end
     "
-    assert grammar["test"].match("abcd") == { d: nil, char: "a", word: { d: nil, char: "c" }, a: { d: "d" , char: nil} }
+    assert grammar["test"].match("abcd", false) == { d: nil, char: "a", word: { d: nil, char: "c" }, a: { d: "d" , char: nil} }
   end
   
   def test_recursive_rule_with_label
@@ -201,23 +208,26 @@ class MainTests < Test::Unit::TestCase
         '(' inner:(test (other:'b')?) ')' / char:'a'
       end
     "
-    assert grammar["test"].match("((a)b)") == { inner: { inner: { inner: nil, char: "a", other: nil }, char: nil, other: "b"}, char: nil }
+    assert grammar["test"].match("((a)b)", false) == { inner: { inner: { inner: nil, char: "a", other: nil }, char: nil, other: "b"}, char: nil }
   end
   
   def test_repetition_with_label
     rule = JetPEG::Compiler.compile_rule "list:(char:('a' / 'b' / 'c'))*"
-    assert rule.match("abc") == { list: [{ char: "a" }, { char: "b" }, { char: "c" }] }
+    assert rule.match("abc", false) == { list: [{ char: "a" }, { char: "b" }, { char: "c" }] }
     
     rule = JetPEG::Compiler.compile_rule "list:(char:'a' / char:'b' / 'c')+"
-    assert rule.match("abc") == { list: [{ char: "a" }, { char: "b" }, { char: nil }] }
+    assert rule.match("abc", false) == { list: [{ char: "a" }, { char: "b" }, { char: nil }] }
+    
+    rule = JetPEG::Compiler.compile_rule "('a' / 'b' / 'c')+"
+    assert rule.match("abc", false) == {}
   end
   
   def test_invalid_labels
-    assert_raise SyntaxError do
+    assert_raise JetPEG::CompilationError do
       JetPEG::Compiler.compile_rule "char:'a' 'b' char:'c'"
     end
     
-    assert_raise SyntaxError do
+    assert_raise JetPEG::CompilationError do
       JetPEG::Compiler.compile_rule "@:'a' 'b' char:'c'"
     end
   end
@@ -243,7 +253,21 @@ class MainTests < Test::Unit::TestCase
   def test_object_creator
     rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' <TestClassA> / 'd' char:. 'f' <TestClassB>"
     rule.parser.class_scope = self.class
-    assert rule.match("abc") == TestClassA.new({ char: "b" })
-    assert rule.match("def") == TestClassB.new({ char: "e" })
+    assert rule.match("abc", false) == TestClassA.new({ char: "b" })
+    assert rule.match("def", false) == TestClassB.new({ char: "e" })
+  end
+  
+  def test_failure_tracing
+    rule = JetPEG::Compiler.compile_rule "'a' 'b' 'c'"
+    assert !rule.match("aXc", false)
+    assert rule.parser.failure_reason.is_a? JetPEG::ParsingError
+    assert rule.parser.failure_reason.position == 1
+    assert rule.parser.failure_reason.expectations == ["b"]
+    
+    rule = JetPEG::Compiler.compile_rule "'a' [b2-5] 'c'"
+    assert !rule.match("aXc", false)
+    assert rule.parser.failure_reason.is_a? JetPEG::ParsingError
+    assert rule.parser.failure_reason.position == 1
+    assert rule.parser.failure_reason.expectations == ["2-5", "b"]
   end
 end

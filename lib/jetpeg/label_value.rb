@@ -60,6 +60,14 @@ module JetPEG
       data
     end
     
+    def read_value(builder, data)
+      labels = {}
+      @types.each_with_index do |(name, type), index|
+         labels[name] = builder.extract_value data, index, name.to_s
+      end
+      labels
+    end
+    
     def read(data, input, input_address, class_scope)
       values = {}
       @types.each do |name, type|
@@ -90,7 +98,7 @@ module JetPEG
       @choices.each_with_index do |choice, index|
         ffi_layout.push index.to_s.to_sym, choice.ffi_type
       end
-      llvm_type = LLVM::Struct(LLVM::Int, *@choices.map(&:llvm_type))
+      llvm_type = LLVM::Struct(LLVM::Int, *@choices.map(&:llvm_type)) # TODO memory optimization with "union" structure and bitcasts
       ffi_type = Class.new FFI::Struct
       ffi_type.layout(:selection, :long, *ffi_layout)
       super llvm_type, ffi_type
@@ -164,13 +172,21 @@ module JetPEG
     SYMBOL = "@".to_sym
     
     def initialize(types)
-      raise SyntaxError, "Label @ mixed with other labels." if types.size > 1
+      raise CompilationError.new("Label @ mixed with other labels (#{types.keys.join(', ')}).") if types.size > 1
       @type = types[SYMBOL]
       super @type.llvm_type, @type.ffi_type
     end
     
+    def types
+      { SYMBOL => @type }
+    end
+    
     def create_value(builder, labels, begin_pos = nil, end_pos = nil)
       labels[SYMBOL]
+    end
+    
+    def read_value(builder, data)
+      { SYMBOL => data }
     end
     
     def read(data, input, input_address, class_scope)

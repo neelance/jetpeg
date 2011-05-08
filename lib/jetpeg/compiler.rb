@@ -4,17 +4,6 @@ require 'llvm/execution_engine'
 require 'llvm/transforms/scalar'
 require 'llvm/transforms/ipo'
 
-module LLVM
-  TRUE = LLVM::Int1.from_i(-1)
-  FALSE = LLVM::Int1.from_i(0)
-  
-  class Builder
-    def create_block(name)
-      LLVM::BasicBlock.create self.insert_block.parent, name
-    end
-  end
-end
-
 LLVM.init_x86
 LLVM_STRING = LLVM::Pointer(LLVM::Int8)
 
@@ -30,7 +19,39 @@ require "jetpeg/compiler/metagrammar"
 require "jetpeg/compiler/tools"
 
 module JetPEG
+  class CompilationError < RuntimeError
+    attr_accessor :rule
+    
+    def initialize(msg)
+      @msg = msg
+      @rule = nil
+    end
+    
+    def to_s
+      "In rule \"#{@rule ? @rule.name : '<unknown>'}\": #{@msg}"
+    end
+  end
+  
   module Compiler
+    class Builder < LLVM::Builder
+      attr_accessor :parser, :traced
+      
+      def create_block(name)
+        LLVM::BasicBlock.create self.insert_block.parent, name
+      end
+      
+      def call_rule(rule, *args)
+        self.call rule.rule_function(@traced), *args
+      end
+      
+      def add_failure_reason(failed, position, reason)
+        return if not @traced
+        @parser.possible_failure_reasons << reason
+        callback = self.load @parser.llvm_add_failure_reason_callback, "callback"
+        self.call callback, failed, position, LLVM::Int(reason.__id__)
+      end
+    end
+
     def self.parse(code, root)
       metagrammar_parser = MetagrammarParser.new
       result = metagrammar_parser.parse code, :root => root
@@ -40,6 +61,7 @@ module JetPEG
     
     def self.compile_rule(code)
       expression = parse code, :choice
+      expression.name = "rule"
       Parser.new({ "rule" => expression })
       expression
     end
@@ -59,7 +81,8 @@ module JetPEG
       
       def initialize(*args)
         super
-        @rule_function = nil
+        @bare_rule_function = nil
+        @traced_rule_function = nil
         @parse_function = nil
         @execution_engine = nil
         @parser = nil
@@ -77,13 +100,27 @@ module JetPEG
       
       def rule_label_type
         @rule_label_type ||= label_types.empty? ? HashLabelValueType.new({}) : LabelValueType.for_types(label_types)
+      rescue CompilationError => e
+        e.rule ||= self
+        raise e
       end
       
-      def rule_function
-        @rule_function ||= @mod.functions.add(@name, [LLVM_STRING, LLVM::Pointer(rule_label_type.llvm_type)], LLVM_STRING) do |function, input, data_ptr|
-          @rule_function = function
+      def rule_function(traced)
+        return @bare_rule_function if not traced and @bare_rule_function
+        return @traced_rule_function if traced and @traced_rule_function
+        
+        @mod.functions.add @name, [LLVM_STRING, LLVM::Pointer(rule_label_type.llvm_type)], LLVM_STRING do |function, input, data_ptr|
+          function.linkage = :private
+          if traced
+            @traced_rule_function = function
+          else
+            @bare_rule_function = function
+          end
+          
           entry = function.basic_blocks.append "entry"
-          builder = LLVM::Builder.create
+          builder = Builder.create
+          builder.parser = parser
+          builder.traced = traced
           builder.position_at_end entry
   
           failed_block = builder.create_block "failed"
@@ -96,45 +133,14 @@ module JetPEG
   
           builder.position_at_end failed_block
           builder.ret LLVM_STRING.null_pointer
-          
-          function.linkage = :private
         end
+      rescue CompilationError => e
+        e.rule ||= self
+        raise e
       end
       
-      def to_ptr
-        rule_function.to_ptr
-      end
-      
-      def execution_engine
-        if @execution_engine.nil?
-          rule_function.linkage = :external
-          @mod.verify!
-          @execution_engine = LLVM::ExecutionEngine.create_jit_compiler @mod
-        end
-        @execution_engine
-      end
-      
-      def optimize!
-        @execution_engine = nil
-        pass_manager = LLVM::PassManager.new execution_engine
-        pass_manager.inline!
-        pass_manager.instcombine!
-        pass_manager.reassociate!
-        pass_manager.gvn!
-        pass_manager.simplifycfg!
-        pass_manager.run @mod
-      end
-      
-      def match(input)
-        input_ptr = FFI::MemoryPointer.from_string input
-        data = rule_label_type.ffi_type.new
-        input_end_ptr = execution_engine.run_function(rule_function, input_ptr, data && data.pointer).to_value_ptr
-        
-        if input_ptr.address + input.size == input_end_ptr.address
-          rule_label_type.read data, input, input_ptr.address, parser.class_scope
-        else
-          nil
-        end
+      def match(input, raise_on_failure = true)
+        parser.match_rule self, input, raise_on_failure
       end
     end
     
@@ -165,7 +171,7 @@ module JetPEG
       def label_types
         @label_types ||= children.elements.map(&:label_types).each_with_object({}) { |types, total|
           total.merge!(types) { |key, oldval, newval|
-            raise SyntaxError, "Duplicate label."
+            raise CompilationError.new("Duplicate label.")
           }
         }
       end
@@ -317,9 +323,10 @@ module JetPEG
       def build(builder, start_input, failed_block)
         end_input = string.chars.inject(start_input) do |input, char|
           input_char = builder.load input, "char"
-          matching = builder.icmp :eq, input_char, LLVM::Int8.from_i(char.ord), "matching"
+          failed = builder.icmp :ne, input_char, LLVM::Int8.from_i(char.ord), "matching"
+          builder.add_failure_reason failed, start_input, ParsingError.new([string])
           next_char_block = builder.create_block "string_terminal_next_char"
-          builder.cond matching, next_char_block, failed_block
+          builder.cond failed, failed_block, next_char_block
           
           builder.position_at_end next_char_block
           builder.gep input, LLVM::Int(1), "new_input"
@@ -336,7 +343,7 @@ module JetPEG
         
         selections.elements.each do |selection|
           next_selection_block = builder.create_block "character_class_next_selection"
-          selection.build builder, input_char, (is_inverted ? failed_block : successful_block), next_selection_block
+          selection.build builder, start_input, input_char, (is_inverted ? failed_block : successful_block), next_selection_block
           builder.position_at_end next_selection_block
         end
         
@@ -355,9 +362,10 @@ module JetPEG
         char_element.text_value
       end
       
-      def build(builder, input_char, successful_block, failed_block)
-        matching = builder.icmp :eq, input_char, LLVM::Int8.from_i(character.ord), "matching"
-        builder.cond matching, successful_block, failed_block
+      def build(builder, start_input, input_char, successful_block, failed_block)
+        failed = builder.icmp :ne, input_char, LLVM::Int8.from_i(character.ord), "matching"
+        builder.add_failure_reason failed, start_input, ParsingError.new([character])
+        builder.cond failed, failed_block, successful_block
       end
     end
     
@@ -373,13 +381,16 @@ module JetPEG
     end
     
     class CharacterClassRange < Treetop::Runtime::SyntaxNode
-      def build(builder, input_char, successful_block, failed_block)
+      def build(builder, start_input, input_char, successful_block, failed_block)
+        error = ParsingError.new(["#{begin_char.character}-#{end_char.character}"])
         begin_char_successful = builder.create_block "character_class_range_begin_char_successful"
-        matching = builder.icmp :uge, input_char, LLVM::Int8.from_i(begin_char.character.ord), "begin_matching"
-        builder.cond matching, begin_char_successful, failed_block
+        failed = builder.icmp :ult, input_char, LLVM::Int8.from_i(begin_char.character.ord), "begin_matching"
+        builder.add_failure_reason failed, start_input, error
+        builder.cond failed, failed_block, begin_char_successful
         builder.position_at_end begin_char_successful
-        matching = builder.icmp :ule, input_char, LLVM::Int8.from_i(end_char.character.ord), "end_matching"
-        builder.cond matching, successful_block, failed_block
+        failed = builder.icmp :ugt, input_char, LLVM::Int8.from_i(end_char.character.ord), "end_matching"
+        builder.add_failure_reason failed, start_input, error
+        builder.cond failed, failed_block, successful_block
       end
     end
     
@@ -406,7 +417,7 @@ module JetPEG
       
       def build(builder, start_input, failed_block)
         label_data_ptr = builder.alloca referenced_label_type.llvm_type, "label_data_ptr"
-        rule_end_input = builder.call referenced, start_input, label_data_ptr, "rule_end_input"
+        rule_end_input = builder.call_rule referenced, start_input, label_data_ptr, "rule_end_input"
         
         rule_successful = builder.icmp :ne, rule_end_input, LLVM_STRING.null_pointer, "rule_successful"
         successful_block = builder.create_block "rule_call_successful"
@@ -415,9 +426,7 @@ module JetPEG
         builder.position_at_end successful_block
         label_data = builder.load label_data_ptr, "label_data"
         result = Result.new rule_end_input
-        label_types.each_with_index do |(name, type), index|
-          result.labels[name] = builder.extract_value label_data, index, name.to_s
-        end
+        result.labels = referenced_label_type.read_value builder, label_data
         result
       end
     end

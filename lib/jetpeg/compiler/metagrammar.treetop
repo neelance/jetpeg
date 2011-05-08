@@ -11,7 +11,7 @@ module JetPEG
 
       rule choice
         head:object_creator tail:('/' ws alternative:object_creator)+ <Choice> /
-        sequence
+        object_creator
       end
       
       rule object_creator
