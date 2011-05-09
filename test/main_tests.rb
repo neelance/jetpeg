@@ -116,8 +116,8 @@ class MainTests < Test::Unit::TestCase
         'a'
       end
     "
-    assert grammar["test"].match("a", false)
-    assert !grammar["test"].match("X", false)
+    assert grammar[:test].match("a", false)
+    assert !grammar[:test].match("X", false)
   end
   
   def test_rule_reference
@@ -129,9 +129,9 @@ class MainTests < Test::Unit::TestCase
         'b'
       end
     "
-    assert grammar["test"].match("b", false)
-    assert !grammar["test"].match("X", false)
-    assert !grammar["test"].match("a", false)
+    assert grammar[:test].match("b", false)
+    assert !grammar[:test].match("X", false)
+    assert !grammar[:test].match("a", false)
   end
   
   def test_recursive_rule
@@ -140,11 +140,11 @@ class MainTests < Test::Unit::TestCase
         '(' test ')' / ''
       end
     "
-    assert grammar["test"].match("", false)
-    assert grammar["test"].match("()", false)
-    assert grammar["test"].match("((()))", false)
-    assert !grammar["test"].match("()))", false)
-    assert !grammar["test"].match("((()", false)
+    assert grammar[:test].match("", false)
+    assert grammar[:test].match("()", false)
+    assert grammar[:test].match("((()))", false)
+    assert !grammar[:test].match("()))", false)
+    assert !grammar[:test].match("((()", false)
   end
   
   def test_label
@@ -180,7 +180,7 @@ class MainTests < Test::Unit::TestCase
         'a' @:. 'c'
       end
     "
-    assert grammar["test"].match("abc", false) == { char: "b" }
+    assert grammar[:test].match("abc", false) == { char: "b" }
   end
   
   def test_label_merge
@@ -199,7 +199,7 @@ class MainTests < Test::Unit::TestCase
         d:'d' / char:.
       end
     "
-    assert grammar["test"].match("abcd", false) == { d: nil, char: "a", word: { d: nil, char: "c" }, a: { d: "d" , char: nil} }
+    assert grammar[:test].match("abcd", false) == { d: nil, char: "a", word: { d: nil, char: "c" }, a: { d: "d" , char: nil} }
   end
   
   def test_recursive_rule_with_label
@@ -208,7 +208,7 @@ class MainTests < Test::Unit::TestCase
         '(' inner:(test (other:'b')?) ')' / char:'a'
       end
     "
-    assert grammar["test"].match("((a)b)", false) == { inner: { inner: { inner: nil, char: "a", other: nil }, char: nil, other: "b"}, char: nil }
+    assert grammar[:test].match("((a)b)", false) == { inner: { inner: { inner: nil, char: "a", other: nil }, char: nil, other: "b"}, char: nil }
   end
   
   def test_repetition_with_label
@@ -252,9 +252,8 @@ class MainTests < Test::Unit::TestCase
   
   def test_object_creator
     rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' <TestClassA> / 'd' char:. 'f' <TestClassB>"
-    rule.parser.class_scope = self.class
-    assert rule.match("abc", false) == TestClassA.new({ char: "b" })
-    assert rule.match("def", false) == TestClassB.new({ char: "e" })
+    assert JetPEG.realize_data_objects(rule.match("abc", false), self.class) == TestClassA.new({ char: "b" })
+    assert JetPEG.realize_data_objects(rule.match("def", false), self.class) == TestClassB.new({ char: "e" })
   end
   
   def test_failure_tracing
@@ -269,5 +268,18 @@ class MainTests < Test::Unit::TestCase
     assert rule.parser.failure_reason.is_a? JetPEG::ParsingError
     assert rule.parser.failure_reason.position == 1
     assert rule.parser.failure_reason.expectations == ["2-5", "b"]
+  end
+  
+  def test_root_switching
+    grammar = JetPEG::Compiler.compile_grammar "
+      rule test1
+        'abc' / test2
+      end
+      rule test2
+        'def'
+      end
+    "
+    assert grammar[:test1].match("abc", false)
+    assert grammar[:test2].match("def", false)
   end
 end

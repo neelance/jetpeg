@@ -1,3 +1,4 @@
+require "treetop"
 require 'llvm/core'
 require 'llvm/execution_engine'
 require 'llvm/transforms/scalar'
@@ -15,6 +16,7 @@ end
 require "jetpeg/runtime"
 require "jetpeg/parser"
 require "jetpeg/label_value"
+require "jetpeg/compiler/metagrammar"
 require "jetpeg/compiler/tools"
 
 module JetPEG
@@ -50,22 +52,12 @@ module JetPEG
         self.call callback, failed, position, LLVM::Int(reason.__id__)
       end
     end
-    
-    @@metagrammar_parser = nil
-    
-    def self.metagrammar_parser
-      if @@metagrammar_parser.nil?
-        File.open(File.join(File.dirname(__FILE__), "compiler/metagrammar.data"), "rb") do |io|
-          metagrammar_data = JetPEG.realize_data_objects(Marshal.load(io.read), self)
-          @@metagrammar_parser = load_parser metagrammar_data
-          @@metagrammar_parser.root_rules = [:choice, :grammar]
-        end
-      end
-      @@metagrammar_parser
-    end
 
     def self.parse(code, root)
-      JetPEG.realize_data_objects metagrammar_parser[root].match(code), self
+      metagrammar_parser = MetagrammarParser.new
+      result = metagrammar_parser.parse code, :root => root
+      raise metagrammar_parser.failure_reason if result.nil?
+      result
     end
     
     def self.compile_rule(code)
@@ -76,32 +68,20 @@ module JetPEG
     end
     
     def self.compile_grammar(code)
-      data = parse(code, :grammar)
-      load_parser data
-    end
-    
-    def self.load_parser(data)
-      rules = data[:rules].each_with_object({}) do |element, h|
-        expression = element[:expression]
-        expression.name = element[:rule_name].name
+      rule_elements = parse(code, :grammar).rules
+      rules = rule_elements.elements.each_with_object({}) do |element, h|
+        expression = element.expression
+        expression.name = element.rule_name.name.text_value.to_sym
         h[expression.name] = expression
       end
       Parser.new rules
     end
     
-    def self.translate_escaped_character(char)
-      case char
-      when "r" then "\r"
-      when "n" then "\n"
-      when "t" then "\t"
-      else char
-      end
-    end
-    
-    class ParsingExpression
-      attr_accessor :parent, :name
+    class ParsingExpression < Treetop::Runtime::SyntaxNode
+      attr_accessor :name
       
-      def initialize
+      def initialize(*args)
+        super
         @bare_rule_function = nil
         @traced_rule_function = nil
         @parse_function = nil
@@ -137,6 +117,7 @@ module JetPEG
         return @traced_rule_function if traced and @traced_rule_function
         
         @mod.functions.add @name, [LLVM_STRING, LLVM::Pointer(rule_label_type.llvm_type)], LLVM_STRING do |function, input, data_ptr|
+          function.linkage = :private
           if traced
             @traced_rule_function = function
           else
@@ -171,19 +152,14 @@ module JetPEG
     end
     
     class Label < ParsingExpression
-      attr_reader :label_name
-      
-      def initialize(data)
-        super()
-        @label_name = data[:name] && data[:name].to_sym
-        @expression = data[:expression]
-        @expression.parent = self
+      def label_type
+        (@label_type ||= RecursionGuard.new(PointerLabelValueType.new(expression)) {
+          LabelValueType.for_types(expression.label_types)
+        }).value
       end
       
-      def label_type
-        (@label_type ||= RecursionGuard.new(PointerLabelValueType.new(@expression)) {
-          LabelValueType.for_types(@expression.label_types)
-        }).value
+      def label_name
+        name.text_value.to_sym
       end
       
       def label_types
@@ -191,7 +167,7 @@ module JetPEG
       end
       
       def build(builder, start_input, failed_block)
-        result = @expression.build builder, start_input, failed_block
+        result = expression.build builder, start_input, failed_block
         value = label_type.create_value builder, result.labels, start_input, result.input
         result.labels = { label_name => value }
         result
@@ -199,14 +175,8 @@ module JetPEG
     end
     
     class Sequence < ParsingExpression
-      def initialize(data)
-        super()
-        @children = data[:children]
-        @children.each { |child| child.parent = self }
-      end
-
       def label_types
-        @label_types ||= @children.map(&:label_types).each_with_object({}) { |types, total|
+        @label_types ||= children.elements.map(&:label_types).each_with_object({}) { |types, total|
           total.merge!(types) { |key, oldval, newval|
             raise CompilationError.new("Duplicate label.")
           }
@@ -214,22 +184,20 @@ module JetPEG
       end
       
       def build(builder, start_input, failed_block)
-        @children.inject(Result.new(start_input)) do |result, child|
+        children.elements.inject(Result.new(start_input)) do |result, child|
           result.merge! child.build(builder, result.input, failed_block)
         end
       end
     end
     
     class Choice < ParsingExpression
-      def initialize(data)
-        super()
-        @children = [data[:head]] + data[:tail].map { |e| e[:alternative] } # TODO
-        @children.each { |child| child.parent = self }
+      def children
+        @children ||= [head] + tail.elements.map(&:alternative)
       end
       
       def label_types
         @label_types ||= begin
-          child_types = @children.map(&:label_types)
+          child_types = children.map(&:label_types)
           all_keys = child_types.map(&:keys).flatten.uniq
           types = {}
           all_keys.each do |key|
@@ -248,11 +216,11 @@ module JetPEG
       
       def build(builder, start_input, failed_block)
         successful_block = builder.create_block "choice_successful"
-        child_blocks = @children.map { builder.create_block "choice_child" }
+        child_blocks = children.map { builder.create_block "choice_child" }
         result = BranchingResult.new builder, label_types
         builder.br child_blocks.first
         
-        @children.each_with_index do |child, index|
+        children.each_with_index do |child, index|
           builder.position_at_end child_blocks[index]
           result << child.build(builder, start_input, child_blocks[index + 1] || failed_block)
           builder.br successful_block
@@ -264,14 +232,8 @@ module JetPEG
     end
     
     class Optional < ParsingExpression
-      def initialize(data)
-        super()
-        @expression = data[:expression]
-        @expression.parent = self
-      end
-
       def label_types
-        @expression.label_types
+        expression.label_types
       end
       
       def build(builder, start_input, failed_block)
@@ -279,7 +241,7 @@ module JetPEG
         result = BranchingResult.new builder, label_types
         
         optional_failed_block = builder.create_block "optional_failed"
-        result << @expression.build(builder, start_input, optional_failed_block)
+        result << expression.build(builder, start_input, optional_failed_block)
         builder.br exit_block
         
         builder.position_at_end optional_failed_block
@@ -294,7 +256,7 @@ module JetPEG
     class ZeroOrMore < Label
       def label_type
         @array_label_type ||= begin
-          types = @expression.label_types
+          types = expression.label_types
           !types.empty? && ArrayLabelValueType.new(super)
         end
       end
@@ -313,7 +275,7 @@ module JetPEG
         input = builder.phi LLVM_STRING, { start_block => start_input }, "loop_input"
         label_value = builder.phi label_type.llvm_type, { start_block => start_label_value || label_type.llvm_type.null }, "loop_label_value" if label_type
         
-        next_result = @expression.build builder, input, exit_block
+        next_result = expression.build builder, input, exit_block
         input.add_incoming builder.insert_block => next_result.input
         label_value.add_incoming builder.insert_block => label_type.create_entry(builder, next_result.labels, label_value) if label_type
         
@@ -328,36 +290,24 @@ module JetPEG
     
     class OneOrMore < ZeroOrMore
       def build(builder, start_input, failed_block)
-        result = @expression.build builder, start_input, failed_block
+        result = expression.build builder, start_input, failed_block
         label_value = label_type.create_entry(builder, result.labels, label_type.llvm_type.null) if label_type
         super builder, result.input, failed_block, label_value
       end
     end
     
     class PositiveLookahead < ParsingExpression
-      def initialize(data)
-        super()
-        @expression = data[:expression]
-        @expression.parent = self
-      end
-
       def build(builder, start_input, failed_block)
-        @expression.build builder, start_input, failed_block
+        expression.build builder, start_input, failed_block
         Result.new start_input
       end
     end
     
     class NegativeLookahead < ParsingExpression
-      def initialize(data)
-        super()
-        @expression = data[:expression]
-        @expression.parent = self
-      end
-
       def build(builder, start_input, failed_block)
         lookahead_failed_block = builder.create_block "lookahead_failed"
 
-        @expression.build builder, start_input, lookahead_failed_block
+        expression.build builder, start_input, lookahead_failed_block
         builder.br failed_block
         
         builder.position_at_end lookahead_failed_block
@@ -366,9 +316,6 @@ module JetPEG
     end
             
     class AnyCharacterTerminal < ParsingExpression
-      def initialize(data)
-      end
-
       def build(builder, start_input, failed_block)
         end_input = builder.gep start_input, LLVM::Int(1), "new_input"
         Result.new end_input
@@ -376,16 +323,15 @@ module JetPEG
     end
     
     class StringTerminal < ParsingExpression
-      def initialize(data)
-        super()
-        @string = data[:string].gsub(/\\./) { |str| Compiler.translate_escaped_character str[1] }
+      def string
+        @string ||= eval text_value # TODO avoid eval here
       end
       
       def build(builder, start_input, failed_block)
-        end_input = @string.chars.inject(start_input) do |input, char|
+        end_input = string.chars.inject(start_input) do |input, char|
           input_char = builder.load input, "char"
           failed = builder.icmp :ne, input_char, LLVM::Int8.from_i(char.ord), "matching"
-          builder.add_failure_reason failed, start_input, ParsingError.new([@string])
+          builder.add_failure_reason failed, start_input, ParsingError.new([string])
           next_char_block = builder.create_block "string_terminal_next_char"
           builder.cond failed, failed_block, next_char_block
           
@@ -397,23 +343,18 @@ module JetPEG
     end
     
     class CharacterClassTerminal < ParsingExpression
-      def initialize(data)
-        super()
-        @selections = data[:selections]
-        @inverted = !data[:inverted].empty?
-      end
-
       def build(builder, start_input, failed_block)
+        is_inverted = !inverted.text_value.empty?
         input_char = builder.load start_input, "char"
-        successful_block = builder.create_block "character_class_successful" unless @inverted
+        successful_block = builder.create_block "character_class_successful" unless is_inverted
         
-        @selections.each do |selection|
+        selections.elements.each do |selection|
           next_selection_block = builder.create_block "character_class_next_selection"
-          selection.build builder, start_input, input_char, (@inverted ? failed_block : successful_block), next_selection_block
+          selection.build builder, start_input, input_char, (is_inverted ? failed_block : successful_block), next_selection_block
           builder.position_at_end next_selection_block
         end
         
-        unless @inverted
+        unless is_inverted
           builder.br failed_block
           builder.position_at_end successful_block
         end
@@ -423,11 +364,9 @@ module JetPEG
       end
     end
     
-    class CharacterClassSingleCharacter
-      attr_reader :character
-      
-      def initialize(data)
-        @character = data[:char_element].to_s
+    class CharacterClassSingleCharacter < Treetop::Runtime::SyntaxNode
+      def character
+        char_element.text_value
       end
       
       def build(builder, start_input, input_char, successful_block, failed_block)
@@ -438,26 +377,25 @@ module JetPEG
     end
     
     class CharacterClassEscapedCharacter < CharacterClassSingleCharacter
-      def initialize(data)
-        super
-        @character = Compiler.translate_escaped_character data[:char_element].to_s
+      def character
+        case char_element.text_value
+        when "r" then "\r"
+        when "n" then "\n"
+        when "t" then "\t"
+        else char_element.text_value
+        end
       end
     end
     
-    class CharacterClassRange
-      def initialize(data)
-        @begin_char = data[:begin_char].character
-        @end_char = data[:end_char].character
-      end
-
+    class CharacterClassRange < Treetop::Runtime::SyntaxNode
       def build(builder, start_input, input_char, successful_block, failed_block)
-        error = ParsingError.new(["#{@begin_char}-#{@end_char}"])
+        error = ParsingError.new(["#{begin_char.character}-#{end_char.character}"])
         begin_char_successful = builder.create_block "character_class_range_begin_char_successful"
-        failed = builder.icmp :ult, input_char, LLVM::Int8.from_i(@begin_char.ord), "begin_matching"
+        failed = builder.icmp :ult, input_char, LLVM::Int8.from_i(begin_char.character.ord), "begin_matching"
         builder.add_failure_reason failed, start_input, error
         builder.cond failed, failed_block, begin_char_successful
         builder.position_at_end begin_char_successful
-        failed = builder.icmp :ugt, input_char, LLVM::Int8.from_i(@end_char.ord), "end_matching"
+        failed = builder.icmp :ugt, input_char, LLVM::Int8.from_i(end_char.character.ord), "end_matching"
         builder.add_failure_reason failed, start_input, error
         builder.cond failed, failed_block, successful_block
       end
@@ -465,18 +403,13 @@ module JetPEG
     
     class RuleNameLabel < Label
       def label_name
-        @expression.name
+        expression.name.text_value.to_sym
       end
     end
     
     class RuleName < ParsingExpression
-      def initialize(data)
-        super()
-        @name = data[:name].to_sym
-      end
-
       def referenced
-        @referenced ||= parser[@name]
+        @referenced ||= parser[name.text_value.to_sym]
       end
       
       def referenced_label_type
@@ -506,29 +439,18 @@ module JetPEG
     end
     
     class ParenthesizedExpression < ParsingExpression
-      def initialize(data)
-        super()
-        @expression = data[:expression]
-        @expression.parent = self
-      end
-
       def label_types
-        @expression.label_types
+        expression.label_types
       end
       
       def build(builder, start_input, failed_block)
-        @expression.build builder, start_input, failed_block
+        expression.build builder, start_input, failed_block
       end
     end
     
     class ObjectCreator < Label
-      def initialize(data)
-        super
-        @class_name = data[:class_name].split("::").map(&:to_sym)
-      end
-
       def label_type
-        @object_creator_label_type ||= ObjectCreatorLabelType.new @class_name, super
+        @object_creator_label_type ||= ObjectCreatorLabelType.new class_name.text_value.split("::").map(&:to_sym), super
       end
       
       def label_name

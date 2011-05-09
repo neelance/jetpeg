@@ -30,9 +30,9 @@ module JetPEG
       pos
     end
     
-    def read(data, input, input_address, class_scope)
+    def read(data, input, input_address)
       return nil if data[:begin].null?
-      InputRange.new input, (data[:begin].address - input_address)...(data[:end].address - input_address)
+      DataInputRange.new input, (data[:begin].address - input_address)...(data[:end].address - input_address)
     end
   end
   
@@ -68,10 +68,10 @@ module JetPEG
       labels
     end
     
-    def read(data, input, input_address, class_scope)
+    def read(data, input, input_address)
       values = {}
       @types.each do |name, type|
-        values[name] = type.read data[name], input, input_address, class_scope
+        values[name] = type.read data[name], input, input_address
       end
       values
     end
@@ -86,7 +86,7 @@ module JetPEG
   class NilLabelValueType < LabelValueType
     INSTANCE = new LLVM::Int8, :char
     
-    def read(data, input, input_address, class_scope)
+    def read(data, input, input_address)
       nil
     end
   end
@@ -112,15 +112,14 @@ module JetPEG
       end
     end
     
-    def read(data, input, input_address, class_scope)
-      @choices[data[:selection]].read data[data[:selection].to_s.to_sym], input, input_address, class_scope
+    def read(data, input, input_address)
+      @choices[data[:selection]].read data[data[:selection].to_s.to_sym], input, input_address
     end
   end
   
   class PointerLabelValueType < LabelValueType
-    def initialize(malloc, target)
+    def initialize(target)
       super LLVM::Pointer(LLVM::Int8), :pointer
-      @malloc = malloc
       @target = target
     end
     
@@ -130,25 +129,25 @@ module JetPEG
     
     def create_value(builder, labels, begin_pos = nil, end_pos = nil)
       value = hash_type.create_value builder, labels
-      ptr = builder.call @malloc, hash_type.llvm_type.size # TODO free
+      ptr = builder.call builder.parser.malloc, hash_type.llvm_type.size # TODO free
       casted_ptr = builder.bit_cast ptr, LLVM::Pointer(hash_type.llvm_type)
       builder.store value, casted_ptr
       ptr
     end
     
-    def read(data, input, input_address, class_scope)
+    def read(data, input, input_address)
       return nil if data.null?
       hash_data = hash_type.ffi_type.new data
-      hash_type.read hash_data, input, input_address, class_scope
+      hash_type.read hash_data, input, input_address
     end
   end
   
   class ArrayLabelValueType < LabelValueType
     attr_reader :label_types
     
-    def initialize(malloc, entry_type)
+    def initialize(entry_type)
       @entry_type = entry_type
-      @pointer_type = PointerLabelValueType.new(malloc, self)
+      @pointer_type = PointerLabelValueType.new(self)
       @label_types = { :value => entry_type, :previous => @pointer_type }
       super @pointer_type.llvm_type, @pointer_type.ffi_type
     end
@@ -157,9 +156,9 @@ module JetPEG
       @pointer_type.create_value builder, { :value => @entry_type.create_value(builder, labels), :previous => previous_entry }
     end
     
-    def read(data, input, input_address, class_scope)
+    def read(data, input, input_address)
       array = []
-      data = @pointer_type.read data, input, input_address, class_scope
+      data = @pointer_type.read data, input, input_address
       until data.nil?
         array.unshift data[:value]
         data = data[:previous]
@@ -189,8 +188,8 @@ module JetPEG
       { SYMBOL => data }
     end
     
-    def read(data, input, input_address, class_scope)
-      @type.read data, input, input_address, class_scope
+    def read(data, input, input_address)
+      @type.read data, input, input_address
     end
   end
   
@@ -207,10 +206,9 @@ module JetPEG
       @data_type.create_value builder, labels, begin_pos, end_pos
     end
     
-    def read(data, input, input_address, class_scope)
-      value = @data_type.read data, input, input_address, class_scope
-      object_class = @class_name.inject(class_scope){ |scope, name| scope.const_get(name) }
-      object_class.new value
+    def read(data, input, input_address)
+      object_data = @data_type.read data, input, input_address
+      DataObject.new class_name, object_data
     end
     
     def ==(other)

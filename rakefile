@@ -1,0 +1,12 @@
+task :generate_metagrammar_data do
+  $: << File.join(File.dirname(__FILE__), "lib")
+  require "jetpeg"
+  parser = JetPEG.load File.join(File.dirname(__FILE__), "lib/jetpeg/compiler/metagrammar.jetpeg")
+  
+  input = IO.read File.join(File.dirname(__FILE__), "lib/jetpeg/compiler/metagrammar.jetpeg")
+  data = parser.parse input
+  
+  File.open(File.join(File.dirname(__FILE__), "lib/jetpeg/compiler/metagrammar.data"), "wb") do |io|
+    io.write Marshal.dump(data)
+  end
+end
