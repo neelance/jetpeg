@@ -7,7 +7,7 @@ rule parsing_rule
 end
 
 rule choice
-  head:object_creator tail:('/' ws alternative:object_creator)+ <Choice> /
+  head:object_creator tail:('/' ws @:object_creator)+ <Choice> /
   object_creator
 end
 
@@ -20,7 +20,7 @@ rule sequence
   children:labeled+ <Sequence>
 end
 
-rule module_content
+rule module_content # not used atm
   (![{}] . / '{' module_content '}')*
 end
       
@@ -66,8 +66,10 @@ rule terminal
 end
 
 rule quoted_string
-  '"' string:(!'"' ("\\\\" / '\"' / .))* '"' ws <StringTerminal> /
-  "'" string:(!"'" ("\\\\" / "\\'" / .))* "'" ws <StringTerminal>
+  (
+    '"' string:(!'"' ("\\\\" / '\"' / .))* '"' ws /
+    "'" string:(!"'" ("\\\\" / "\\'" / .))* "'" ws
+  ) <StringTerminal>
 end
 
 rule character_class

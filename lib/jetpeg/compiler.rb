@@ -223,7 +223,7 @@ module JetPEG
     class Choice < ParsingExpression
       def initialize(data)
         super()
-        @children = [data[:head]] + data[:tail].map { |e| e[:alternative] } # TODO
+        @children = [data[:head]] + data[:tail]
         @children.each { |child| child.parent = self }
       end
       
