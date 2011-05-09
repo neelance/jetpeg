@@ -65,29 +65,5 @@ module JetPEG
         self
       end
     end
-    
-    class RecursionGuard
-      def initialize(recursion_value, &value_block)
-        @recursion_value = recursion_value
-        @value_block = value_block
-        @value = nil
-        @recursion = false
-      end
-      
-      def value
-        if @value.nil?
-          if @recursion
-            @value = @recursion_value
-          else
-            @recursion = true
-            value = @value_block.call
-            if @value.nil? # no recursion
-              @value = value
-            end
-          end
-        end
-        @value
-      end
-    end
   end
 end

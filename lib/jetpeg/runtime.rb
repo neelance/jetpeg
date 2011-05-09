@@ -1,5 +1,5 @@
 module JetPEG
-  def self.realize_data(data, class_scope)
+  def self.realize_data(data, class_scope = Object)
     case data
     when Array
       data.map { |value| realize_data value, class_scope }
@@ -13,9 +13,9 @@ module JetPEG
       nil
     else
       raise ArgumentError, data.class
-    end      
+    end
   end
-    
+  
   class DataInputRange
     attr_reader :input, :position
     

@@ -177,7 +177,7 @@ class MainTests < Test::Unit::TestCase
         char:a
       end
       rule a
-        'a' @:. 'c'
+        'a' @:a 'c' / @:'b'
       end
     "
     assert grammar[:test].match("abc", false) == { char: "b" }
@@ -209,6 +209,16 @@ class MainTests < Test::Unit::TestCase
       end
     "
     assert grammar[:test].match("((a)b)", false) == { inner: { inner: { inner: nil, char: "a", other: nil }, char: nil, other: "b"}, char: nil }
+    
+    grammar = JetPEG::Compiler.compile_grammar "
+      rule test
+        '(' test2 ')' / char:'a'
+      end
+      rule test2
+        a:test b:test
+      end
+    "
+    assert grammar[:test].match("((aa)(aa))", false)
   end
   
   def test_repetition_with_label
@@ -229,6 +239,15 @@ class MainTests < Test::Unit::TestCase
     
     assert_raise JetPEG::CompilationError do
       JetPEG::Compiler.compile_rule "@:'a' 'b' char:'c'"
+    end
+    
+    assert_raise JetPEG::CompilationError do
+      grammar = JetPEG::Compiler.compile_grammar "
+        rule test
+          '(' test ')' / char:'a'
+        end
+      "
+      assert grammar[:test].match("((a))", false)
     end
   end
   

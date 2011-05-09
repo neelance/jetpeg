@@ -21,9 +21,9 @@ module JetPEG
   class CompilationError < RuntimeError
     attr_accessor :rule
     
-    def initialize(msg)
+    def initialize(msg, rule = nil)
       @msg = msg
-      @rule = nil
+      @rule = rule
     end
     
     def to_s
@@ -51,6 +51,9 @@ module JetPEG
       end
     end
     
+    class Recursion < RuntimeError
+    end
+    
     @@metagrammar_parser = nil
     
     def self.metagrammar_parser
@@ -58,6 +61,7 @@ module JetPEG
         File.open(File.join(File.dirname(__FILE__), "compiler/metagrammar.data"), "rb") do |io|
           metagrammar_data = JetPEG.realize_data(Marshal.load(io.read), self)
           @@metagrammar_parser = load_parser metagrammar_data
+          @@metagrammar_parser.verify!
           @@metagrammar_parser.root_rules = [:choice, :grammar]
         end
       end
@@ -71,19 +75,22 @@ module JetPEG
     def self.compile_rule(code)
       expression = JetPEG.realize_data parse(code, :choice), self
       expression.name = :rule
-      Parser.new({ "rule" => expression })
+      parser = Parser.new({ "rule" => expression })
+      parser.verify!
       expression
     end
     
     def self.compile_grammar(code)
       data = JetPEG.realize_data parse(code, :grammar), self
-      load_parser data
+      parser = load_parser data
+      parser.verify!
+      parser
     end
     
     def self.load_parser(data)
       rules = data[:rules].each_with_object({}) do |element, h|
         expression = element[:expression]
-        expression.name = element[:rule_name].name
+        expression.name = element[:rule_name].referenced_name
         h[expression.name] = expression
       end
       Parser.new rules
@@ -100,17 +107,29 @@ module JetPEG
     
     class ParsingExpression
       attr_accessor :parent, :name
+      attr_reader :references
       
-      def initialize
+      def initialize(data)
+        @references = []
         @bare_rule_function = nil
         @traced_rule_function = nil
         @parse_function = nil
         @execution_engine = nil
-        @parser = nil
+        
+        @children = data.values.flatten.select { |value| value.is_a? ParsingExpression }
+        @children.each { |child| child.parent = self }
       end
       
       def parser
         @parent.parser
+      end
+      
+      def metagrammar?
+        parser == JetPEG::Compiler.metagrammar_parser
+      end
+      
+      def rule
+        @name ? self : parent.rule
       end
       
       def label_types
@@ -118,10 +137,24 @@ module JetPEG
       end
       
       def rule_label_type
-        @rule_label_type ||= label_types.empty? ? HashLabelValueType.new({}) : LabelValueType.for_types(label_types)
+        raise Recursion if @rule_label_type == :recursion
+        if @rule_label_type.nil?
+          begin
+            @rule_label_type = :recursion
+            @rule_label_type = label_types.empty? ? HashLabelValueType.new({}) : LabelValueType.for_types(label_types)
+          rescue Recursion
+            @rule_label_type = HashLabelValueType.new({})
+            raise CompilationError.new("Unlabeled recursion mixed with other labels.") if not label_types.empty?
+          end
+        end
+        @rule_label_type
       rescue CompilationError => e
         e.rule ||= self
         raise e
+      end
+      
+      def check_label_types
+        rule_label_type # includes several checks
       end
       
       def mod=(mod)
@@ -172,16 +205,17 @@ module JetPEG
       attr_reader :label_name
       
       def initialize(data)
-        super()
+        super
         @label_name = data[:name] && data[:name].to_sym
         @expression = data[:expression]
-        @expression.parent = self
       end
       
       def label_type
-        (@label_type ||= RecursionGuard.new(PointerLabelValueType.new(@expression)) {
-          LabelValueType.for_types(@expression.label_types)
-        }).value
+        @label_type ||= begin
+          LabelValueType.for_types @expression.label_types
+        rescue Recursion
+          PointerLabelValueType.new @expression
+        end
       end
       
       def label_types
@@ -198,15 +232,14 @@ module JetPEG
     
     class Sequence < ParsingExpression
       def initialize(data)
-        super()
+        super
         @children = data[:children]
-        @children.each { |child| child.parent = self }
       end
 
       def label_types
         @label_types ||= @children.map(&:label_types).each_with_object({}) { |types, total|
           total.merge!(types) { |key, oldval, newval|
-            raise CompilationError.new("Duplicate label.")
+            raise CompilationError.new("Duplicate label (#{key}).")
           }
         }
       end
@@ -220,9 +253,8 @@ module JetPEG
     
     class Choice < ParsingExpression
       def initialize(data)
-        super()
+        super
         @children = [data[:head]] + data[:tail]
-        @children.each { |child| child.parent = self }
       end
       
       def label_types
@@ -263,9 +295,8 @@ module JetPEG
     
     class Optional < ParsingExpression
       def initialize(data)
-        super()
+        super
         @expression = data[:expression]
-        @expression.parent = self
       end
 
       def label_types
@@ -334,9 +365,8 @@ module JetPEG
     
     class PositiveLookahead < ParsingExpression
       def initialize(data)
-        super()
+        super
         @expression = data[:expression]
-        @expression.parent = self
       end
 
       def build(builder, start_input, failed_block)
@@ -347,9 +377,8 @@ module JetPEG
     
     class NegativeLookahead < ParsingExpression
       def initialize(data)
-        super()
+        super
         @expression = data[:expression]
-        @expression.parent = self
       end
 
       def build(builder, start_input, failed_block)
@@ -375,7 +404,7 @@ module JetPEG
     
     class StringTerminal < ParsingExpression
       def initialize(data)
-        super()
+        super
         @string = data[:string].gsub(/\\./) { |str| Compiler.translate_escaped_character str[1] }
       end
       
@@ -396,7 +425,7 @@ module JetPEG
     
     class CharacterClassTerminal < ParsingExpression
       def initialize(data)
-        super()
+        super
         @selections = data[:selections]
         @inverted = !data[:inverted].empty?
       end
@@ -463,24 +492,28 @@ module JetPEG
     
     class RuleNameLabel < Label
       def label_name
-        @expression.name
+        @expression.referenced_name
       end
     end
     
     class RuleName < ParsingExpression
+      attr_reader :referenced_name
+      
       def initialize(data)
-        super()
-        @name = data[:name].to_sym
+        super
+        @referenced_name = data[:name].to_sym
       end
 
       def referenced
-        @referenced ||= parser[@name]
+        @referenced ||= begin
+          rule = parser[@referenced_name]
+          rule.references << self
+          rule
+        end
       end
       
       def referenced_label_type
-        (@referenced_label_type ||= RecursionGuard.new(HashLabelValueType.new({})) {
-          referenced.rule_label_type
-        }).value
+        @referenced_label_type ||= referenced.rule_label_type
       end
       
       def label_types
@@ -505,9 +538,8 @@ module JetPEG
     
     class ParenthesizedExpression < ParsingExpression
       def initialize(data)
-        super()
+        super
         @expression = data[:expression]
-        @expression.parent = self
       end
 
       def label_types

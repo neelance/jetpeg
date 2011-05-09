@@ -25,10 +25,13 @@ module JetPEG
     
     def initialize(rules)
       @rules = rules
-      rules.values.each { |rule| rule.parent = self }
-      rules.values.each(&:rule_label_type) # trigger label type check
+      @rules.values.each { |rule| rule.parent = self }
       @mod = nil
       @root_rules = []
+    end
+    
+    def verify!
+      @rules.values.each(&:check_label_types)
     end
     
     def parser

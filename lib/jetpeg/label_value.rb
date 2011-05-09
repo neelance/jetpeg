@@ -40,6 +40,7 @@ module JetPEG
     attr_reader :types
     
     def initialize(types)
+      #raise ArgumentError if types.has_key?(DelegateLabelValueType::SYMBOL)
       @types = types
       llvm_type = LLVM::Struct(*types.values.map(&:llvm_type))
       ffi_type = Class.new FFI::Struct
@@ -73,14 +74,13 @@ module JetPEG
       @types.each do |name, type|
         values[name] = type.read data[name], input, input_address
       end
+      return values[DelegateLabelValueType::SYMBOL] if values.keys == [DelegateLabelValueType::SYMBOL] # TODO should not be here
       values
     end
     
     def ==(other)
-      @types == other.types
+      other.class == self.class && other.types == @types
     end
-
-    EMPTY_TYPE = new({})
   end
   
   class NilLabelValueType < LabelValueType
@@ -92,6 +92,8 @@ module JetPEG
   end
   
   class ChoiceLabelValueType < LabelValueType
+    attr_reader :choices
+    
     def initialize(choices)
       @choices = choices.map { |choice| choice || NilLabelValueType::INSTANCE }
       ffi_layout = []
@@ -115,15 +117,22 @@ module JetPEG
     def read(data, input, input_address)
       @choices[data[:selection]].read data[data[:selection].to_s.to_sym], input, input_address
     end
+    
+    def ==(other)
+      other.class == self.class && other.choices == @choices
+    end
   end
   
   class PointerLabelValueType < LabelValueType
+    attr_reader :target
+    
     def initialize(target)
       super LLVM::Pointer(LLVM::Int8), :pointer
       @target = target
     end
     
     def hash_type
+      raise ArgumentError if @target.label_types.empty?
       @hash_type ||= HashLabelValueType.new @target.label_types
     end
     
@@ -140,10 +149,14 @@ module JetPEG
       hash_data = hash_type.ffi_type.new data
       hash_type.read hash_data, input, input_address
     end
+    
+    def ==(other)
+      other.class == self.class && other.target == @target
+    end
   end
   
   class ArrayLabelValueType < LabelValueType
-    attr_reader :label_types
+    attr_reader :entry_type, :label_types
     
     def initialize(entry_type)
       @entry_type = entry_type
@@ -165,10 +178,15 @@ module JetPEG
       end
       array
     end
+    
+    def ==(other)
+      other.class == self.class && other.entry_type == @entry_type
+    end
   end
   
   class DelegateLabelValueType < LabelValueType
     SYMBOL = "@".to_sym
+    attr_reader :type
     
     def initialize(types)
       raise CompilationError.new("Label @ mixed with other labels (#{types.keys.join(', ')}).") if types.size > 1
@@ -191,6 +209,10 @@ module JetPEG
     def read(data, input, input_address)
       @type.read data, input, input_address
     end
+    
+    def ==(other)
+      other.class == self.class && other.type == @type
+    end
   end
   
   class ObjectCreatorLabelType < LabelValueType
@@ -211,7 +233,7 @@ module JetPEG
     end
     
     def ==(other)
-      @class_name == other.class_name && @data_type == other.data_type
+      other.class == self.class && other.class_name == @class_name && other.data_type == @data_type
     end
   end
   
@@ -233,7 +255,7 @@ module JetPEG
     end
     
     def ==(other)
-      @code == other.code && @data_type == other.data_type
+      other.class == self.class && other.code == @code && other.data_type == @data_type
     end
   end
 end
