@@ -31,6 +31,10 @@ module JetPEG
       @root_rules = []
     end
     
+    def parser
+      self
+    end
+    
     def [](name)
       @rules[name]
     end

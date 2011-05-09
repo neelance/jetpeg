@@ -1,14 +1,14 @@
 module JetPEG
-  def self.realize_data_objects(data, class_scope)
+  def self.realize_data(data, class_scope)
     case data
     when Array
-      data.map { |value| realize_data_objects value, class_scope }
+      data.map { |value| realize_data value, class_scope }
     when Hash
-      data.each_with_object({}) { |(key, value), h| h[key] = realize_data_objects value, class_scope }
+      data.each_with_object({}) { |(key, value), h| h[key] = realize_data value, class_scope }
     when DataInputRange
       data
-    when DataObject
-      data.create_object class_scope
+    when DataObject, DataValue
+      data.realize class_scope
     when nil
       nil
     else
@@ -48,9 +48,32 @@ module JetPEG
       @data = data
     end
     
-    def create_object(class_scope)
+    def realize(class_scope)
       object_class = @class_name.inject(class_scope){ |scope, name| scope.const_get(name) }
-      object_class.new JetPEG.realize_data_objects(@data, class_scope)
+      object_class.new JetPEG.realize_data(@data, class_scope)
+    end
+  end
+  
+  class DataValue
+    class EvaluationScope
+      def initialize(data)
+        @data = data
+      end
+      
+      def method_missing(name, *args)
+        return @data[name] if @data.has_key? name
+        super 
+      end
+    end
+    
+    def initialize(code, data)
+      @code = code
+      @data = data
+    end
+    
+    def realize(class_scope)
+      scope = EvaluationScope.new JetPEG.realize_data(@data, class_scope)
+      scope.instance_eval @code
     end
   end
 end

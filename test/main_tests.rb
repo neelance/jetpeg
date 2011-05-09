@@ -252,8 +252,14 @@ class MainTests < Test::Unit::TestCase
   
   def test_object_creator
     rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' <TestClassA> / 'd' char:. 'f' <TestClassB>"
-    assert JetPEG.realize_data_objects(rule.match("abc", false), self.class) == TestClassA.new({ char: "b" })
-    assert JetPEG.realize_data_objects(rule.match("def", false), self.class) == TestClassB.new({ char: "e" })
+    assert JetPEG.realize_data(rule.match("abc", false), self.class) == TestClassA.new({ char: "b" })
+    assert JetPEG.realize_data(rule.match("def", false), self.class) == TestClassB.new({ char: "e" })
+  end
+  
+  def test_value_creator
+    rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' { char.upcase } / word:'def' { word.chars.map { |c| c.ord } }"
+    assert JetPEG.realize_data(rule.match("abc", false), self.class) == "B"
+    assert JetPEG.realize_data(rule.match("def", false), self.class) == ["d".ord, "e".ord, "f".ord]
   end
   
   def test_failure_tracing

@@ -194,11 +194,11 @@ module JetPEG
   end
   
   class ObjectCreatorLabelType < LabelValueType
-    attr_reader :data_type, :class_name
+    attr_reader :class_name, :data_type
     
     def initialize(class_name, data_type)
-      @data_type = data_type
       @class_name = class_name
+      @data_type = data_type
       super @data_type.llvm_type, @data_type.ffi_type
     end
     
@@ -207,12 +207,33 @@ module JetPEG
     end
     
     def read(data, input, input_address)
-      object_data = @data_type.read data, input, input_address
-      DataObject.new class_name, object_data
+      DataObject.new @class_name, @data_type.read(data, input, input_address)
     end
     
     def ==(other)
-      @data_type == other.data_type && @class_name == other.class_name
+      @class_name == other.class_name && @data_type == other.data_type
+    end
+  end
+  
+  class ValueCreatorLabelType < LabelValueType
+    attr_reader :code, :data_type
+    
+    def initialize(code, data_type)
+      @code = code
+      @data_type = data_type
+      super @data_type.llvm_type, @data_type.ffi_type
+    end
+    
+    def create_value(builder, labels, begin_pos = nil, end_pos = nil)
+      @data_type.create_value builder, labels, begin_pos, end_pos
+    end
+    
+    def read(data, input, input_address)
+      DataValue.new @code, @data_type.read(data, input, input_address)
+    end
+    
+    def ==(other)
+      @code == other.code && @data_type == other.data_type
     end
   end
 end

@@ -56,7 +56,7 @@ module JetPEG
     def self.metagrammar_parser
       if @@metagrammar_parser.nil?
         File.open(File.join(File.dirname(__FILE__), "compiler/metagrammar.data"), "rb") do |io|
-          metagrammar_data = JetPEG.realize_data_objects(Marshal.load(io.read), self)
+          metagrammar_data = JetPEG.realize_data(Marshal.load(io.read), self)
           @@metagrammar_parser = load_parser metagrammar_data
           @@metagrammar_parser.root_rules = [:choice, :grammar]
         end
@@ -65,18 +65,18 @@ module JetPEG
     end
 
     def self.parse(code, root)
-      JetPEG.realize_data_objects metagrammar_parser[root].match(code), self
+      metagrammar_parser[root].match(code)
     end
     
     def self.compile_rule(code)
-      expression = parse code, :choice
+      expression = JetPEG.realize_data parse(code, :choice), self
       expression.name = :rule
       Parser.new({ "rule" => expression })
       expression
     end
     
     def self.compile_grammar(code)
-      data = parse(code, :grammar)
+      data = JetPEG.realize_data parse(code, :grammar), self
       load_parser data
     end
     
@@ -110,9 +110,7 @@ module JetPEG
       end
       
       def parser
-        element = parent
-        element = element.parent while not element.is_a?(Parser)
-        element
+        @parent.parser
       end
       
       def label_types
@@ -529,6 +527,21 @@ module JetPEG
 
       def label_type
         @object_creator_label_type ||= ObjectCreatorLabelType.new @class_name, super
+      end
+      
+      def label_name
+        DelegateLabelValueType::SYMBOL
+      end
+    end
+    
+    class ValueCreator < Label
+      def initialize(data)
+        super
+        @code = data[:code].to_s
+      end
+
+      def label_type
+        @value_creator_label_type ||= ValueCreatorLabelType.new @code, super
       end
       
       def label_name

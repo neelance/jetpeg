@@ -7,21 +7,22 @@ rule parsing_rule
 end
 
 rule choice
-  head:object_creator tail:('/' ws @:object_creator)+ <Choice> /
-  object_creator
+  head:creator tail:('/' ws @:creator)+ <Choice> /
+  creator
 end
 
-rule object_creator
+rule creator
   expression:sequence '<' class_name:(!'>' .)+ '>' ws <ObjectCreator> /
+  expression:sequence '{' :code '}' ws <ValueCreator> /
   sequence
+end
+
+rule code
+  (![{}] . / '{' code '}')*
 end
 
 rule sequence
   children:labeled+ <Sequence>
-end
-
-rule module_content # not used atm
-  (![{}] . / '{' module_content '}')*
 end
       
 rule labeled
