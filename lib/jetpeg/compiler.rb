@@ -110,7 +110,6 @@ module JetPEG
       attr_reader :references
       
       def initialize(data)
-        @references = []
         @bare_rule_function = nil
         @traced_rule_function = nil
         @parse_function = nil
@@ -403,13 +402,6 @@ module JetPEG
       end
     end
             
-    class AnyCharacterTerminal < ParsingExpression
-      def build(builder, start_input, failed_block)
-        end_input = builder.gep start_input, LLVM::Int(1), "new_input"
-        Result.new end_input
-      end
-    end
-    
     class StringTerminal < ParsingExpression
       def initialize(data)
         super
@@ -435,7 +427,7 @@ module JetPEG
       def initialize(data)
         super
         @selections = data[:selections]
-        @inverted = !data[:inverted].empty?
+        @inverted = data[:inverted] && !data[:inverted].empty?
       end
 
       def build(builder, start_input, failed_block)
@@ -498,6 +490,16 @@ module JetPEG
       end
     end
     
+    class AnyCharacterTerminal < CharacterClassTerminal
+      SELECTIONS = [CharacterClassSingleCharacter.new({ :char_element => "\0" })]
+      
+      def initialize(data)
+        super({})
+        @selections = SELECTIONS
+        @inverted = true
+      end
+    end
+    
     class RuleNameLabel < Label
       def label_name
         @expression.referenced_name
@@ -513,11 +515,7 @@ module JetPEG
       end
 
       def referenced
-        @referenced ||= begin
-          rule = parser[@referenced_name]
-          rule.references << self
-          rule
-        end
+        @referenced ||= parser[@referenced_name]
       end
       
       def referenced_label_type

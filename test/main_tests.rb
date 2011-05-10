@@ -11,15 +11,6 @@ class MainTests < Test::Unit::TestCase
     assert !rule.match("abcX", false)
   end
   
-  def test_any_character_terminal
-    rule = JetPEG::Compiler.compile_rule "."
-    assert rule.match("a", false)
-    assert rule.match("B", false)
-    assert rule.match("5", false)
-    assert !rule.match("", false)
-    assert !rule.match("99", false)
-  end
-  
   def test_character_class_terminal
     rule = JetPEG::Compiler.compile_rule "[b-df\\-h]"
     assert rule.match("b", false)
@@ -39,6 +30,18 @@ class MainTests < Test::Unit::TestCase
     rule = JetPEG::Compiler.compile_rule "[\\n]"
     assert rule.match("\n", false)
     assert !rule.match("n", false)
+  end
+    
+  def test_any_character_terminal
+    rule = JetPEG::Compiler.compile_rule "."
+    assert rule.match("a", false)
+    assert rule.match("B", false)
+    assert rule.match("5", false)
+    assert !rule.match("", false)
+    assert !rule.match("99", false)
+    
+    rule = JetPEG::Compiler.compile_rule ".*"
+    assert rule.match("aaa", false)
   end
   
   def test_sequence
@@ -95,7 +98,7 @@ class MainTests < Test::Unit::TestCase
   end
   
   def test_positive_lookahead
-    rule = JetPEG::Compiler.compile_rule "(&'a') ."
+    rule = JetPEG::Compiler.compile_rule "&'a' ."
     assert rule.match("a", false)
     assert !rule.match("", false)
     assert !rule.match("X", false)
@@ -103,7 +106,7 @@ class MainTests < Test::Unit::TestCase
   end
   
   def test_negative_lookahead
-    rule = JetPEG::Compiler.compile_rule "(!'a') ."
+    rule = JetPEG::Compiler.compile_rule "!'a' ."
     assert rule.match("X", false)
     assert !rule.match("", false)
     assert !rule.match("a", false)
@@ -232,7 +235,11 @@ class MainTests < Test::Unit::TestCase
     assert rule.match("abc", false) == {}
   end
   
-  def test_invalid_labels
+  def test_compilation_errors
+    assert_raise JetPEG::CompilationError do
+      JetPEG::Compiler.compile_rule "missing_rule"
+    end
+
     assert_raise JetPEG::CompilationError do
       JetPEG::Compiler.compile_rule "char:'a' 'b' char:'c'"
     end

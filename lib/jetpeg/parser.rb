@@ -21,13 +21,14 @@ module JetPEG
   
   class Parser
     attr_reader :mod, :malloc, :llvm_add_failure_reason_callback, :possible_failure_reasons
-    attr_accessor :root_rules, :failure_reason
+    attr_accessor :root_rules, :optimize, :failure_reason
     
     def initialize(rules)
       @rules = rules
       @rules.values.each { |rule| rule.parent = self }
       @mod = nil
       @root_rules = []
+      @optimize = false
     end
     
     def verify!
@@ -40,7 +41,9 @@ module JetPEG
     end
     
     def [](name)
-      @rules[name]
+      rule = @rules[name]
+      raise CompilationError.new("Undefined rule \"#{name}\".") if rule.nil?
+      rule
     end
     
     def match_rule(root_rule, input, raise_on_failure = true)
@@ -74,37 +77,45 @@ module JetPEG
         end
         
         @mod.verify!
-        
         @execution_engine = LLVM::ExecutionEngine.create_jit_compiler @mod
-        pass_manager = LLVM::PassManager.new @execution_engine # TODO tweak passes
-        pass_manager.inline!
-        pass_manager.instcombine!
-        pass_manager.reassociate!
-        pass_manager.gvn!
-        pass_manager.simplifycfg!
-        pass_manager.run @mod
+        
+        if @optimize
+          pass_manager = LLVM::PassManager.new @execution_engine # TODO tweak passes
+          pass_manager.inline!
+          pass_manager.instcombine!
+          pass_manager.reassociate!
+          pass_manager.gvn!
+          pass_manager.simplifycfg!
+          pass_manager.run @mod
+        end
       end
       
       input_ptr = FFI::MemoryPointer.from_string input
-      data = root_rule.rule_label_type.ffi_type.new
-      input_end_ptr = @execution_engine.run_function(root_rule.rule_function(false), input_ptr, data && data.pointer).to_value_ptr
+      data_pointer = FFI::MemoryPointer.new root_rule.rule_label_type.ffi_type
+      input_end_ptr = @execution_engine.run_function(root_rule.rule_function(false), input_ptr, data_pointer).to_value_ptr
       
       if input_end_ptr.null? or input_ptr.address + input.size != input_end_ptr.address
         @failure_reason = ParsingError.new([])
         @failure_reason_position = input_ptr
         @execution_engine.pointer_to_global(@llvm_add_failure_reason_callback).put_pointer 0, @ffi_add_failure_reason_callback
-        @execution_engine.run_function(root_rule.rule_function(true), input_ptr, data && data.pointer)
+        @execution_engine.run_function(root_rule.rule_function(true), input_ptr, data_pointer)
         @failure_reason.input = input
         @failure_reason.position = @failure_reason_position.address - input_ptr.address
         raise @failure_reason if raise_on_failure
         return nil
       end
       
-      root_rule.rule_label_type.read data, input, input_ptr.address
+      root_rule.rule_label_type.load data_pointer, input, input_ptr.address
     end
     
     def parse(input)
       match_rule @rules.values.first, input
+    end
+    
+    def stats
+      block_counts = @mod.functions.map { |f| f.basic_blocks.size }
+      instruction_counts = @mod.functions.map { |f| f.basic_blocks.map { |b| b.instructions.to_a.size } }
+      "#{@mod.functions.to_a.size} functions / #{block_counts.reduce(:+)} blocks / #{instruction_counts.flatten.reduce(:+)} instructions"
     end
   end
 end

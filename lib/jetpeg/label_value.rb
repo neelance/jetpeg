@@ -7,6 +7,16 @@ module JetPEG
       @ffi_type = ffi_type
     end
     
+    def load(pointer, input, input_address)
+      return nil if pointer.null?
+      data = if ffi_type == :pointer
+        pointer.get_pointer 0
+      else
+        ffi_type.new pointer
+      end
+      read data, input, input_address
+    end
+    
     def self.for_types(types)
       case
       when types.empty? then InputRangeLabelValueType::INSTANCE
@@ -132,13 +142,7 @@ module JetPEG
     end
     
     def read(data, input, input_address)
-      return nil if data.null?
-      target_data = if target_type.ffi_type == :pointer
-        data.get_pointer 0
-      else
-        target_type.ffi_type.new data
-      end
-      target_type.read target_data, input, input_address
+      target_type.load data, input, input_address
     end
     
     def ==(other)
