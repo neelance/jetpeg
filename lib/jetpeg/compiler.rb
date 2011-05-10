@@ -116,8 +116,12 @@ module JetPEG
         @parse_function = nil
         @execution_engine = nil
         
-        @children = data.values.flatten.select { |value| value.is_a? ParsingExpression }
-        @children.each { |child| child.parent = self }
+        if data.is_a?(Hash)
+          @children = data.values.flatten.select { |value| value.is_a? ParsingExpression }
+          @children.each { |child| child.parent = self }
+        else
+          @children = []
+        end
       end
       
       def parser
@@ -153,8 +157,9 @@ module JetPEG
         raise e
       end
       
-      def check_label_types
-        rule_label_type # includes several checks
+      def realize_label_types
+        label_types
+        @children.each(&:realize_label_types)
       end
       
       def mod=(mod)
@@ -208,12 +213,14 @@ module JetPEG
         super
         @label_name = data[:name] && data[:name].to_sym
         @expression = data[:expression]
+        @recursive = false
       end
       
       def label_type
         @label_type ||= begin
           LabelValueType.for_types @expression.label_types
         rescue Recursion
+          @recursive = true
           PointerLabelValueType.new @expression
         end
       end
@@ -257,29 +264,33 @@ module JetPEG
         @children = [data[:head]] + data[:tail]
       end
       
-      def label_types
-        @label_types ||= begin
-          child_types = @children.map(&:label_types)
-          all_keys = child_types.map(&:keys).flatten.uniq
-          types = {}
-          all_keys.each do |key|
-            types_for_label = child_types.map { |t| t[key] }
-            reduced_types_for_label = types_for_label.compact.uniq
-            
-            types[key] = if reduced_types_for_label.size == 1
-              reduced_types_for_label.first
-            else
-              ChoiceLabelValueType.new types_for_label
-            end
-          end
-          types
+      def init_types
+        child_types = @children.map(&:label_types)
+        @label_types = {}
+        @is_choice = {}
+        
+        child_types.map(&:keys).flatten.uniq.each do |key|
+          types_for_label = child_types.map { |t| t[key] }
+          reduced_types_for_label = types_for_label.compact.uniq
+          @is_choice[key] = reduced_types_for_label.size > 1
+          @label_types[key] = @is_choice[key] ? ChoiceLabelValueType.new(types_for_label) : reduced_types_for_label.first
         end
+      end
+      
+      def label_types
+        init_types if @label_types.nil?
+        @label_types
+      end
+      
+      def is_choice
+        init_types if @is_choice.nil?
+        @is_choice
       end
       
       def build(builder, start_input, failed_block)
         successful_block = builder.create_block "choice_successful"
         child_blocks = @children.map { builder.create_block "choice_child" }
-        result = BranchingResult.new builder, label_types
+        result = BranchingResult.new builder, label_types, is_choice
         builder.br child_blocks.first
         
         @children.each_with_index do |child, index|
@@ -393,9 +404,6 @@ module JetPEG
     end
             
     class AnyCharacterTerminal < ParsingExpression
-      def initialize(data)
-      end
-
       def build(builder, start_input, failed_block)
         end_input = builder.gep start_input, LLVM::Int(1), "new_input"
         Result.new end_input

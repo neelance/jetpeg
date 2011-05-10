@@ -7,10 +7,6 @@ module JetPEG
       @ffi_type = ffi_type
     end
     
-    def phi_value(builder, index, value)
-      value
-    end
-    
     def self.for_types(types)
       case
       when types.empty? then InputRangeLabelValueType::INSTANCE
@@ -40,7 +36,7 @@ module JetPEG
     attr_reader :types
     
     def initialize(types)
-      #raise ArgumentError if types.has_key?(DelegateLabelValueType::SYMBOL)
+      raise ArgumentError if types.has_key?(DelegateLabelValueType::SYMBOL)
       @types = types
       llvm_type = LLVM::Struct(*types.values.map(&:llvm_type))
       ffi_type = Class.new FFI::Struct
@@ -56,7 +52,7 @@ module JetPEG
       data = llvm_type.null
       labels.each_with_index do |(name, value), index|
         raise if data.type == value.type
-        data = builder.insert_value data, value, index, "data_with_#{name}"
+        data = builder.insert_value data, value, index, "hash_data_with_#{name}"
       end
       data
     end
@@ -74,7 +70,6 @@ module JetPEG
       @types.each do |name, type|
         values[name] = type.read data[name], input, input_address
       end
-      return values[DelegateLabelValueType::SYMBOL] if values.keys == [DelegateLabelValueType::SYMBOL] # TODO should not be here
       values
     end
     
@@ -106,14 +101,6 @@ module JetPEG
       super llvm_type, ffi_type
     end
     
-    def phi_value(builder, index, value)
-      if value
-        builder.insert_value(llvm_type.null, value, index + 1, "data_with_value")
-      else
-        llvm_type.null
-      end
-    end
-    
     def read(data, input, input_address)
       @choices[data[:selection]].read data[data[:selection].to_s.to_sym], input, input_address
     end
@@ -131,23 +118,27 @@ module JetPEG
       @target = target
     end
     
-    def hash_type
+    def target_type
       raise ArgumentError if @target.label_types.empty?
-      @hash_type ||= HashLabelValueType.new @target.label_types
+      @target_type ||= LabelValueType.for_types @target.label_types
     end
     
     def create_value(builder, labels, begin_pos = nil, end_pos = nil)
-      value = hash_type.create_value builder, labels
-      ptr = builder.call builder.parser.malloc, hash_type.llvm_type.size # TODO free
-      casted_ptr = builder.bit_cast ptr, LLVM::Pointer(hash_type.llvm_type)
+      value = target_type.create_value builder, labels
+      ptr = builder.call builder.parser.malloc, target_type.llvm_type.size # TODO free
+      casted_ptr = builder.bit_cast ptr, LLVM::Pointer(target_type.llvm_type)
       builder.store value, casted_ptr
       ptr
     end
     
     def read(data, input, input_address)
       return nil if data.null?
-      hash_data = hash_type.ffi_type.new data
-      hash_type.read hash_data, input, input_address
+      target_data = if target_type.ffi_type == :pointer
+        data.get_pointer 0
+      else
+        target_type.ffi_type.new data
+      end
+      target_type.read target_data, input, input_address
     end
     
     def ==(other)

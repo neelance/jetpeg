@@ -16,7 +16,7 @@ module JetPEG
       line = before.count("\n") + 1
       column = before.size - before.rindex("\n")
       "At line #{line}, column #{column} (byte #{position}, after #{before[(before.size > 20 ? -20 : 0)..-1].inspect}): Expected one of #{expectations.map{ |e| e.inspect[1..-2] }.join(", ")}."
-    end 
+    end
   end
   
   class Parser
@@ -31,7 +31,8 @@ module JetPEG
     end
     
     def verify!
-      @rules.values.each(&:check_label_types)
+      @rules.values.each(&:rule_label_type)
+      @rules.values.each(&:realize_label_types)
     end
     
     def parser

@@ -184,10 +184,10 @@ class MainTests < Test::Unit::TestCase
   end
   
   def test_label_merge
-    rule = JetPEG::Compiler.compile_rule "char:'a' / char:'b' / 'c'"
-    assert rule.match("a", false) == { char: "a" }
-    assert rule.match("b", false) == { char: "b" }
-    assert rule.match("c", false) == { char: nil }
+    rule = JetPEG::Compiler.compile_rule "(char:'a' x:'x' / 'b' x:'x' / char:(inner:'c') x:'x') / 'y'"
+    assert rule.match("ax", false) == { char: "a", x: "x" }
+    assert rule.match("bx", false) == { char: nil, x: "x" }
+    assert rule.match("cx", false) == { char: { inner: "c" }, x: "x" }
   end
   
   def test_rule_with_label
@@ -247,7 +247,6 @@ class MainTests < Test::Unit::TestCase
           '(' test ')' / char:'a'
         end
       "
-      assert grammar[:test].match("((a))", false)
     end
   end
   
