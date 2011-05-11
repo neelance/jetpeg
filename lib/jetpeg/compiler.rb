@@ -1,9 +1,5 @@
 require 'llvm/core'
-require 'llvm/execution_engine'
-require 'llvm/transforms/scalar'
-require 'llvm/transforms/ipo'
 
-LLVM.init_x86
 LLVM_STRING = LLVM::Pointer(LLVM::Int8)
 
 class FFI::Struct
@@ -11,6 +7,8 @@ class FFI::Struct
     "{ #{members.map{ |name| "#{name}=#{self[name].inspect}" }.join ", "} }"
   end
 end
+
+$VERBOSE = true
 
 require "jetpeg/runtime"
 require "jetpeg/parser"
@@ -110,10 +108,10 @@ module JetPEG
       attr_reader :references
       
       def initialize(data)
+        @label_types = nil
+        @rule_label_type = nil
         @bare_rule_function = nil
         @traced_rule_function = nil
-        @parse_function = nil
-        @execution_engine = nil
         
         if data.is_a?(Hash)
           @children = data.values.flatten.select { |value| value.is_a? ParsingExpression }
@@ -161,6 +159,10 @@ module JetPEG
         @children.each(&:realize_label_types)
       end
       
+      def build_allocas(builder)
+        @children.each { |child| child.build_allocas builder }
+      end
+      
       def mod=(mod)
         @mod = mod
         @bare_rule_function = nil
@@ -178,11 +180,13 @@ module JetPEG
             @bare_rule_function = function
           end
           
-          entry = function.basic_blocks.append "entry"
           builder = Builder.create
           builder.parser = parser
           builder.traced = traced
+          
+          entry = function.basic_blocks.append "entry"
           builder.position_at_end entry
+          build_allocas builder
   
           failed_block = builder.create_block "failed"
           end_result = build builder, input, failed_block
@@ -526,18 +530,27 @@ module JetPEG
         referenced_label_type.types
       end
       
+      def build_allocas(builder)
+        @label_data_ptr = if not referenced_label_type.empty?
+          builder.alloca referenced_label_type.llvm_type, "#{@referenced_name}_data_ptr"
+        else
+          LLVM::Pointer(referenced_label_type.llvm_type).null
+        end
+      end
+      
       def build(builder, start_input, failed_block)
-        label_data_ptr = builder.alloca referenced_label_type.llvm_type, "label_data_ptr"
-        rule_end_input = builder.call_rule referenced, start_input, label_data_ptr, "rule_end_input"
+        rule_end_input = builder.call_rule referenced, start_input, @label_data_ptr, "rule_end_input"
         
         rule_successful = builder.icmp :ne, rule_end_input, LLVM_STRING.null_pointer, "rule_successful"
         successful_block = builder.create_block "rule_call_successful"
         builder.cond rule_successful, successful_block, failed_block
         
         builder.position_at_end successful_block
-        label_data = builder.load label_data_ptr, "label_data"
         result = Result.new rule_end_input
-        result.labels = referenced_label_type.read_value builder, label_data
+        unless @label_data_ptr.null?
+          label_data = builder.load @label_data_ptr, "#{@referenced_name}_data"
+          result.labels = referenced_label_type.read_value builder, label_data
+        end
         result
       end
     end

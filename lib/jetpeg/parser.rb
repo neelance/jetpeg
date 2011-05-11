@@ -1,3 +1,10 @@
+require 'llvm/core'
+require 'llvm/execution_engine'
+require 'llvm/transforms/scalar'
+require 'llvm/transforms/ipo'
+
+LLVM.init_x86
+
 module JetPEG
   class ParsingError < RuntimeError
     attr_reader :expectations
@@ -47,6 +54,11 @@ module JetPEG
     end
     
     def match_rule(root_rule, input, raise_on_failure = true)
+      data_pointer, input_address = match_rule_raw root_rule, input, raise_on_failure
+      data_pointer && root_rule.rule_label_type.load(data_pointer, input, input_address)
+    end
+    
+    def match_rule_raw(root_rule, input, raise_on_failure = true)
       if @mod.nil? or not @root_rules.include?(root_rule.name)
         @root_rules << root_rule.name
         
@@ -82,6 +94,7 @@ module JetPEG
         if @optimize
           pass_manager = LLVM::PassManager.new @execution_engine # TODO tweak passes
           pass_manager.inline!
+          pass_manager.mem2reg! # alternative: pass_manager.scalarrepl!
           pass_manager.instcombine!
           pass_manager.reassociate!
           pass_manager.gvn!
@@ -105,7 +118,7 @@ module JetPEG
         return nil
       end
       
-      root_rule.rule_label_type.load data_pointer, input, input_ptr.address
+      [data_pointer, input_ptr.address]
     end
     
     def parse(input)

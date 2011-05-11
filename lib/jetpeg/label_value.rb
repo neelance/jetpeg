@@ -24,6 +24,10 @@ module JetPEG
       else HashLabelValueType.new types
       end
     end
+    
+    def empty?
+      false
+    end
   end
   
   class InputRangeLabelValueType < LabelValueType
@@ -85,6 +89,10 @@ module JetPEG
     
     def ==(other)
       other.class == self.class && other.types == @types
+    end
+    
+    def empty?
+      @types.empty?
     end
   end
   
