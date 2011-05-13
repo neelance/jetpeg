@@ -1,4 +1,7 @@
+verbose = $VERBOSE
+$VERBOSE = false
 require 'llvm/core'
+$VERBOSE = verbose
 
 LLVM_STRING = LLVM::Pointer(LLVM::Int8)
 
@@ -7,8 +10,6 @@ class FFI::Struct
     "{ #{members.map{ |name| "#{name}=#{self[name].inspect}" }.join ", "} }"
   end
 end
-
-$VERBOSE = true
 
 require "jetpeg/runtime"
 require "jetpeg/parser"

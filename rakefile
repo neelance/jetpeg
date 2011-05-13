@@ -1,3 +1,10 @@
+require 'rake/testtask'
+
+Rake::TestTask.new "test" do |t|
+  t.pattern = 'test/*.rb'
+  t.warning = true
+end
+
 task :generate_metagrammar_data do
   $: << File.join(File.dirname(__FILE__), "lib")
   require "jetpeg"

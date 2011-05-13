@@ -1,7 +1,10 @@
+verbose = $VERBOSE
+$VERBOSE = false
 require 'llvm/core'
 require 'llvm/execution_engine'
 require 'llvm/transforms/scalar'
 require 'llvm/transforms/ipo'
+$VERBOSE = verbose
 
 LLVM.init_x86
 
