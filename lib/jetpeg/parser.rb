@@ -30,6 +30,12 @@ module JetPEG
   end
   
   class Parser
+    @@default_options = { :raise_on_failure => true, :output => :realized, :class_scope => ::Object }
+    
+    def self.default_options
+      @@default_options
+    end
+    
     attr_reader :mod, :malloc, :llvm_add_failure_reason_callback, :possible_failure_reasons
     attr_accessor :root_rules, :optimize, :failure_reason
     
@@ -97,13 +103,12 @@ module JetPEG
         pass_manager.run @mod
       end
     end
-    
-    def match_rule(root_rule, input, raise_on_failure = true)
-      data_pointer, input_address = match_rule_raw root_rule, input, raise_on_failure
-      data_pointer && root_rule.rule_label_type.load(data_pointer, input, input_address)
-    end
-    
-    def match_rule_raw(root_rule, input, raise_on_failure = true)
+        
+    def match_rule(root_rule, input, options = {})
+      @@default_options.each do |key, value|
+        options[key] = value if not options.has_key? key
+      end
+      
       if @mod.nil? or not @root_rules.include?(root_rule.name)
         @root_rules << root_rule.name
         build
@@ -120,11 +125,19 @@ module JetPEG
         @execution_engine.run_function(root_rule.rule_function(true), input_ptr, data_pointer)
         @failure_reason.input = input
         @failure_reason.position = @failure_reason_position.address - input_ptr.address
-        raise @failure_reason if raise_on_failure
+        raise @failure_reason if options[:raise_on_failure]
         return nil
       end
       
-      [data_pointer, input_ptr.address]
+      return [data_pointer, input_ptr.address] if options[:output] == :pointer
+
+      intermediate = root_rule.rule_label_type.load data_pointer, input, input_ptr.address
+      return intermediate if options[:output] == :intermediate
+
+      realized = JetPEG.realize_data intermediate, options[:class_scope]
+      return realized if options[:output] == :realized
+      
+      raise ArgumentError, "Invalid output option: #{options[:output]}"
     end
     
     def parse(input)

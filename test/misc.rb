@@ -1,5 +1,6 @@
 require 'test/unit'
 require "jetpeg"
+JetPEG::Parser.default_options[:raise_on_failure] = false
 
 class MiscTests < Test::Unit::TestCase
   def test_root_switching
@@ -11,19 +12,19 @@ class MiscTests < Test::Unit::TestCase
         'def'
       end
     "
-    assert grammar[:test1].match("abc", false)
-    assert grammar[:test2].match("def", false)
+    assert grammar[:test1].match("abc")
+    assert grammar[:test2].match("def")
   end
   
   def test_failure_tracing
     rule = JetPEG::Compiler.compile_rule "'a' 'b' 'c'"
-    assert !rule.match("aXc", false)
+    assert !rule.match("aXc")
     assert rule.parser.failure_reason.is_a? JetPEG::ParsingError
     assert rule.parser.failure_reason.position == 1
     assert rule.parser.failure_reason.expectations == ["b"]
     
     rule = JetPEG::Compiler.compile_rule "'a' [b2-5] 'c'"
-    assert !rule.match("aXc", false)
+    assert !rule.match("aXc")
     assert rule.parser.failure_reason.is_a? JetPEG::ParsingError
     assert rule.parser.failure_reason.position == 1
     assert rule.parser.failure_reason.expectations == ["2-5", "b"]

@@ -1,116 +1,117 @@
 require 'test/unit'
 require "jetpeg"
+JetPEG::Parser.default_options[:raise_on_failure] = false
 
 class ExpressionsTests < Test::Unit::TestCase
   def test_string_terminal
     rule = JetPEG::Compiler.compile_rule "'abc'"
-    assert rule.match("abc", false)
-    assert !rule.match("ab", false)
-    assert !rule.match("Xbc", false)
-    assert !rule.match("abX", false)
-    assert !rule.match("abcX", false)
+    assert rule.match("abc")
+    assert !rule.match("ab")
+    assert !rule.match("Xbc")
+    assert !rule.match("abX")
+    assert !rule.match("abcX")
   end
   
   def test_character_class_terminal
     rule = JetPEG::Compiler.compile_rule "[b-df\\-h]"
-    assert rule.match("b", false)
-    assert rule.match("c", false)
-    assert rule.match("d", false)
-    assert rule.match("f", false)
-    assert rule.match("-", false)
-    assert rule.match("h", false)
-    assert !rule.match("a", false)
-    assert !rule.match("e", false)
-    assert !rule.match("g", false)
+    assert rule.match("b")
+    assert rule.match("c")
+    assert rule.match("d")
+    assert rule.match("f")
+    assert rule.match("-")
+    assert rule.match("h")
+    assert !rule.match("a")
+    assert !rule.match("e")
+    assert !rule.match("g")
     
     rule = JetPEG::Compiler.compile_rule "[^a]"
-    assert rule.match("b", false)
-    assert !rule.match("a", false)
+    assert rule.match("b")
+    assert !rule.match("a")
     
     rule = JetPEG::Compiler.compile_rule "[\\n]"
-    assert rule.match("\n", false)
-    assert !rule.match("n", false)
+    assert rule.match("\n")
+    assert !rule.match("n")
   end
     
   def test_any_character_terminal
     rule = JetPEG::Compiler.compile_rule "."
-    assert rule.match("a", false)
-    assert rule.match("B", false)
-    assert rule.match("5", false)
-    assert !rule.match("", false)
-    assert !rule.match("99", false)
+    assert rule.match("a")
+    assert rule.match("B")
+    assert rule.match("5")
+    assert !rule.match("")
+    assert !rule.match("99")
     
     rule = JetPEG::Compiler.compile_rule ".*"
-    assert rule.match("aaa", false)
+    assert rule.match("aaa")
   end
   
   def test_sequence
     rule = JetPEG::Compiler.compile_rule "'abc' 'def'"
-    assert rule.match("abcdef", false)
-    assert !rule.match("abcde", false)
-    assert !rule.match("aXcdef", false)
-    assert !rule.match("abcdXf", false)
-    assert !rule.match("abcdefX", false)
+    assert rule.match("abcdef")
+    assert !rule.match("abcde")
+    assert !rule.match("aXcdef")
+    assert !rule.match("abcdXf")
+    assert !rule.match("abcdefX")
   end
   
   def test_choice
     rule = JetPEG::Compiler.compile_rule "'abc' / 'def'"
-    assert rule.match("abc", false)
-    assert rule.match("def", false)
-    assert !rule.match("ab", false)
-    assert !rule.match("aXc", false)
-    assert !rule.match("defX", false)
+    assert rule.match("abc")
+    assert rule.match("def")
+    assert !rule.match("ab")
+    assert !rule.match("aXc")
+    assert !rule.match("defX")
   end
   
   def test_optional
     rule = JetPEG::Compiler.compile_rule "'abc'? 'def'"
-    assert rule.match("abcdef", false)
-    assert rule.match("def", false)
-    assert !rule.match("abc", false)
-    assert !rule.match("aXcdef", false)
-    assert !rule.match("abdef", false)
+    assert rule.match("abcdef")
+    assert rule.match("def")
+    assert !rule.match("abc")
+    assert !rule.match("aXcdef")
+    assert !rule.match("abdef")
   end
   
   def test_zero_or_more
     rule = JetPEG::Compiler.compile_rule "'a'*"
-    assert rule.match("", false)
-    assert rule.match("a", false)
-    assert rule.match("aaaaa", false)
-    assert !rule.match("X", false)
-    assert !rule.match("aaaX", false)
+    assert rule.match("")
+    assert rule.match("a")
+    assert rule.match("aaaaa")
+    assert !rule.match("X")
+    assert !rule.match("aaaX")
   end
   
   def test_one_or_more
     rule = JetPEG::Compiler.compile_rule "'a'+"
-    assert rule.match("a", false)
-    assert rule.match("aaaaa", false)
-    assert !rule.match("", false)
-    assert !rule.match("X", false)
-    assert !rule.match("aaaX", false)
+    assert rule.match("a")
+    assert rule.match("aaaaa")
+    assert !rule.match("")
+    assert !rule.match("X")
+    assert !rule.match("aaaX")
   end
   
   def test_parenthesized_expression
     rule = JetPEG::Compiler.compile_rule "('a' 'b')? 'c'"
-    assert rule.match("abc", false)
-    assert rule.match("c", false)
-    assert !rule.match("ac", false)
-    assert !rule.match("bc", false)
+    assert rule.match("abc")
+    assert rule.match("c")
+    assert !rule.match("ac")
+    assert !rule.match("bc")
   end
   
   def test_positive_lookahead
     rule = JetPEG::Compiler.compile_rule "&'a' ."
-    assert rule.match("a", false)
-    assert !rule.match("", false)
-    assert !rule.match("X", false)
-    assert !rule.match("aX", false)
+    assert rule.match("a")
+    assert !rule.match("")
+    assert !rule.match("X")
+    assert !rule.match("aX")
   end
   
   def test_negative_lookahead
     rule = JetPEG::Compiler.compile_rule "!'a' ."
-    assert rule.match("X", false)
-    assert !rule.match("", false)
-    assert !rule.match("a", false)
-    assert !rule.match("XX", false)
+    assert rule.match("X")
+    assert !rule.match("")
+    assert !rule.match("a")
+    assert !rule.match("XX")
   end
   
   def test_rule_definition
@@ -119,8 +120,8 @@ class ExpressionsTests < Test::Unit::TestCase
         'a'
       end
     "
-    assert grammar[:test].match("a", false)
-    assert !grammar[:test].match("X", false)
+    assert grammar[:test].match("a")
+    assert !grammar[:test].match("X")
   end
   
   def test_rule_reference
@@ -132,9 +133,9 @@ class ExpressionsTests < Test::Unit::TestCase
         'b'
       end
     "
-    assert grammar[:test].match("b", false)
-    assert !grammar[:test].match("X", false)
-    assert !grammar[:test].match("a", false)
+    assert grammar[:test].match("b")
+    assert !grammar[:test].match("X")
+    assert !grammar[:test].match("a")
   end
   
   def test_recursive_rule
@@ -143,10 +144,10 @@ class ExpressionsTests < Test::Unit::TestCase
         '(' test ')' / ''
       end
     "
-    assert grammar[:test].match("", false)
-    assert grammar[:test].match("()", false)
-    assert grammar[:test].match("((()))", false)
-    assert !grammar[:test].match("()))", false)
-    assert !grammar[:test].match("((()", false)
+    assert grammar[:test].match("")
+    assert grammar[:test].match("()")
+    assert grammar[:test].match("((()))")
+    assert !grammar[:test].match("()))")
+    assert !grammar[:test].match("((()")
   end
 end

@@ -32,10 +32,14 @@ module JetPEG
   
   module Compiler
     class Builder < LLVM::Builder
-      attr_accessor :parser, :traced
+      attr_writer :parser, :traced
       
       def create_block(name)
         LLVM::BasicBlock.create self.insert_block.parent, name
+      end
+      
+      def malloc(size)
+        self.call @parser.malloc, size
       end
       
       def call_rule(rule, *args)
@@ -73,12 +77,8 @@ module JetPEG
       @@metagrammar_parser
     end
 
-    def self.parse(code, root)
-      metagrammar_parser[root].match(code)
-    end
-    
     def self.compile_rule(code)
-      expression = JetPEG.realize_data parse(code, :choice), self
+      expression = metagrammar_parser[:choice].match code, :output => :realized, :class_scope => self
       expression.name = :rule
       parser = Parser.new({ "rule" => expression })
       parser.verify!
@@ -86,7 +86,7 @@ module JetPEG
     end
     
     def self.compile_grammar(code)
-      data = JetPEG.realize_data parse(code, :grammar), self
+      data = metagrammar_parser[:grammar].match code, :output => :realized, :class_scope => self
       parser = load_parser data
       parser.verify!
       parser
@@ -199,7 +199,7 @@ module JetPEG
           end_result = build builder, input, failed_block
           
           data = rule_label_type.create_value builder, end_result.labels
-          builder.store data, data_ptr unless data.null?
+          builder.store data, data_ptr unless data.value.null?
           
           builder.ret end_result.input
   
@@ -211,8 +211,8 @@ module JetPEG
         raise e
       end
       
-      def match(input, raise_on_failure = true)
-        parser.match_rule self, input, raise_on_failure
+      def match(input, options = {})
+        parser.match_rule self, input, options
       end
     end
     
@@ -460,7 +460,7 @@ module JetPEG
       attr_reader :character
       
       def initialize(data)
-        @character = data[:char_element].to_s
+        @character = data[:char_element]
       end
       
       def build(builder, start_input, input_char, successful_block, failed_block)
@@ -473,7 +473,7 @@ module JetPEG
     class CharacterClassEscapedCharacter < CharacterClassSingleCharacter
       def initialize(data)
         super
-        @character = Compiler.translate_escaped_character data[:char_element].to_s
+        @character = Compiler.translate_escaped_character data[:char_element]
       end
     end
     
@@ -579,7 +579,7 @@ module JetPEG
       end
 
       def label_type
-        @object_creator_label_type ||= ObjectCreatorLabelType.new @class_name, super
+        @object_creator_label_type ||= CreatorLabelType.new super, :$type => :object, :class_name => @class_name
       end
       
       def label_name
@@ -590,11 +590,11 @@ module JetPEG
     class ValueCreator < Label
       def initialize(data)
         super
-        @code = data[:code].to_s
+        @code = data[:code]
       end
 
       def label_type
-        @value_creator_label_type ||= ValueCreatorLabelType.new @code, super
+        @value_creator_label_type ||= CreatorLabelType.new super, :$type => :value, :code => @code
       end
       
       def label_name

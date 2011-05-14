@@ -10,7 +10,7 @@ task :generate_metagrammar_data do
   require "jetpeg"
   
   input = IO.read File.join(File.dirname(__FILE__), "lib/jetpeg/compiler/metagrammar.jetpeg")
-  data = JetPEG::Compiler.parse input, :grammar
+  data = JetPEG::Compiler.metagrammar_parser[:grammar].match input, :output => :intermediate
   
   File.open(File.join(File.dirname(__FILE__), "lib/jetpeg/compiler/metagrammar.data"), "wb") do |io|
     io.write Marshal.dump(data)

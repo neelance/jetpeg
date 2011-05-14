@@ -12,10 +12,6 @@ module JetPEG
     def to_ptr
       @value.to_ptr
     end
-    
-    def null?
-      @value.null?
-    end
   end
   
   class LabelValueType
@@ -57,7 +53,7 @@ module JetPEG
     
     def read(data, input, input_address)
       return nil if data[:begin].null?
-      DataInputRange.new input, (data[:begin].address - input_address)...(data[:end].address - input_address)
+      { :$type => :input_range, :input => input, :position => (data[:begin].address - input_address)...(data[:end].address - input_address) }
     end
   end
   
@@ -111,19 +107,11 @@ module JetPEG
     end
   end
   
-  class NilLabelValueType < LabelValueType
-    INSTANCE = new LLVM::Int8, :char
-    
-    def read(data, input, input_address)
-      nil
-    end
-  end
-  
   class ChoiceLabelValueType < LabelValueType
     attr_reader :choices
     
     def initialize(choices)
-      @choices = choices.map { |choice| choice || NilLabelValueType::INSTANCE }
+      @choices = choices
       ffi_layout = []
       @choices.each_with_index do |choice, index|
         ffi_layout.push index.to_s.to_sym, choice.ffi_type
@@ -152,13 +140,12 @@ module JetPEG
     end
     
     def target_type
-      raise ArgumentError if @target.label_types.empty?
       @target_type ||= HashLabelValueType.new @target.label_types
     end
     
     def create_llvm_value(builder, labels, begin_pos = nil, end_pos = nil)
       value = target_type.create_llvm_value builder, labels
-      ptr = builder.call builder.parser.malloc, target_type.llvm_type.size # TODO free
+      ptr = builder.malloc target_type.llvm_type.size # TODO free
       casted_ptr = builder.bit_cast ptr, LLVM::Pointer(target_type.llvm_type)
       builder.store value, casted_ptr
       ptr
@@ -202,12 +189,12 @@ module JetPEG
     end
   end
     
-  class ObjectCreatorLabelType < LabelValueType
-    attr_reader :class_name, :data_type
+  class CreatorLabelType < LabelValueType
+    attr_reader :creator_data, :data_type
     
-    def initialize(class_name, data_type)
-      @class_name = class_name
+    def initialize(data_type, creator_data = {})
       @data_type = data_type
+      @creator_data = creator_data
       super @data_type.llvm_type, @data_type.ffi_type
     end
     
@@ -216,33 +203,13 @@ module JetPEG
     end
     
     def read(data, input, input_address)
-      { :$type => :object, :class_name => @class_name, :data => @data_type.read(data, input, input_address) }
+      result = @creator_data.clone
+      result[:data] = @data_type.read(data, input, input_address)
+      result
     end
     
     def ==(other)
-      other.class == self.class && other.class_name == @class_name && other.data_type == @data_type
-    end
-  end
-  
-  class ValueCreatorLabelType < LabelValueType
-    attr_reader :code, :data_type
-    
-    def initialize(code, data_type)
-      @code = code
-      @data_type = data_type
-      super @data_type.llvm_type, @data_type.ffi_type
-    end
-    
-    def create_llvm_value(builder, labels, begin_pos = nil, end_pos = nil)
-      @data_type.create_llvm_value builder, labels, begin_pos, end_pos
-    end
-    
-    def read(data, input, input_address)
-      { :$type => :value, :code => @code, :data => @data_type.read(data, input, input_address) }
-    end
-    
-    def ==(other)
-      other.class == self.class && other.code == @code && other.data_type == @data_type
+      other.class == self.class && other.creator_data == @creator_data && other.data_type == @data_type
     end
   end
 end

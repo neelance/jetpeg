@@ -14,6 +14,8 @@ module JetPEG
     case data
     when Hash
       case data[:$type]
+      when :input_range
+        data[:input][data[:position]]
       when :object
         object_class = data[:class_name].inject(class_scope) { |scope, name| scope.const_get(name) }
         object_class.new realize_data(data[:data], class_scope)
@@ -27,32 +29,6 @@ module JetPEG
       data.map { |value| realize_data value, class_scope }
     else
       data
-    end
-  end
-  
-  class DataInputRange
-    attr_reader :input, :position
-    
-    def initialize(input, position)
-      @input = input
-      @position = position
-    end
-    
-    def to_s
-      @text ||= @input[@position]
-    end
-    alias_method :to_str, :to_s
-    
-    def inspect
-      to_s.inspect
-    end
-    
-    def ==(other)
-      to_s == other.to_s
-    end
-    
-    def method_missing(name, *args, &block)
-      to_s.__send__(name, *args, &block)
     end
   end
 end
