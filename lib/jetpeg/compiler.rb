@@ -57,11 +57,17 @@ module JetPEG
     
     def self.metagrammar_parser
       if @@metagrammar_parser.nil?
-        File.open(File.join(File.dirname(__FILE__), "compiler/metagrammar.data"), "rb") do |io|
-          metagrammar_data = JetPEG.realize_data(Marshal.load(io.read), self)
-          @@metagrammar_parser = load_parser metagrammar_data
-          @@metagrammar_parser.verify!
-          @@metagrammar_parser.root_rules = [:choice, :grammar]
+        begin
+          File.open(File.join(File.dirname(__FILE__), "compiler/metagrammar.data"), "rb") do |io|
+            metagrammar_data = JetPEG.realize_data(Marshal.load(io.read), self)
+            @@metagrammar_parser = load_parser metagrammar_data
+            @@metagrammar_parser.verify!
+            @@metagrammar_parser.root_rules = [:choice, :grammar]
+            @@metagrammar_parser.build
+          end
+        rescue Exception => e
+          $stderr.puts "Could not load metagrammar:", e, e.backtrace
+          exit
         end
       end
       @@metagrammar_parser
@@ -143,7 +149,7 @@ module JetPEG
         if @rule_label_type.nil?
           begin
             @rule_label_type = :recursion
-            @rule_label_type = label_types.empty? ? HashLabelValueType.new({}) : LabelValueType.for_types(label_types)
+            @rule_label_type = HashLabelValueType.new label_types
           rescue Recursion
             @rule_label_type = HashLabelValueType.new({})
             raise CompilationError.new("Unlabeled recursion mixed with other labels.") if not label_types.empty?
@@ -217,14 +223,16 @@ module JetPEG
         super
         @label_name = data[:name] && data[:name].to_sym
         @expression = data[:expression]
-        @recursive = false
       end
       
       def label_type
         @label_type ||= begin
-          LabelValueType.for_types @expression.label_types
+          if @expression.label_types.empty?
+            InputRangeLabelValueType::INSTANCE
+          else
+            HashLabelValueType.new @expression.label_types
+          end
         rescue Recursion
-          @recursive = true
           PointerLabelValueType.new @expression
         end
       end
@@ -268,33 +276,26 @@ module JetPEG
         @children = [data[:head]] + data[:tail]
       end
       
-      def init_types
-        child_types = @children.map(&:label_types)
-        @label_types = {}
-        @is_choice = {}
-        
-        child_types.map(&:keys).flatten.uniq.each do |key|
-          types_for_label = child_types.map { |t| t[key] }
-          reduced_types_for_label = types_for_label.compact.uniq
-          @is_choice[key] = reduced_types_for_label.size > 1
-          @label_types[key] = @is_choice[key] ? ChoiceLabelValueType.new(types_for_label) : reduced_types_for_label.first
+      def slots
+        @slots ||= begin
+          hash = {}
+          child_types = @children.map(&:label_types)
+          child_types.map(&:keys).flatten.uniq.each do |key|
+            types_for_label = child_types.map { |t| t[key] }
+            hash[key] = LabelSlot.new key, types_for_label
+          end
+          hash
         end
       end
       
       def label_types
-        init_types if @label_types.nil?
-        @label_types
-      end
-      
-      def is_choice
-        init_types if @is_choice.nil?
-        @is_choice
+        slots.each_with_object({}) { |(key, slot), h| h[key] = slot.slot_type }
       end
       
       def build(builder, start_input, failed_block)
         successful_block = builder.create_block "choice_successful"
         child_blocks = @children.map { builder.create_block "choice_child" }
-        result = BranchingResult.new builder, label_types, is_choice
+        result = BranchingResult.new builder, slots
         builder.br child_blocks.first
         
         @children.each_with_index do |child, index|
@@ -320,7 +321,7 @@ module JetPEG
       
       def build(builder, start_input, failed_block)
         exit_block = builder.create_block "optional_exit"
-        result = BranchingResult.new builder, label_types
+        result = BranchingResult.new builder, label_types.each_with_object({}) { |(key, type), h| h[key] = LabelSlot.new key, [type] }
         
         optional_failed_block = builder.create_block "optional_failed"
         result << @expression.build(builder, start_input, optional_failed_block)
@@ -344,7 +345,7 @@ module JetPEG
       end
       
       def label_name
-        label_type && DelegateLabelValueType::SYMBOL
+        label_type && AT_SYMBOL
       end
       
       def build(builder, start_input, failed_block, start_label_value = nil)
@@ -365,7 +366,7 @@ module JetPEG
         
         builder.position_at_end exit_block
         result = Result.new input
-        result.labels = { DelegateLabelValueType::SYMBOL => label_value } if label_type
+        result.labels = { AT_SYMBOL => LabelValue.new(label_value, label_type) } if label_type
         result
       end
     end
@@ -582,7 +583,7 @@ module JetPEG
       end
       
       def label_name
-        DelegateLabelValueType::SYMBOL
+        AT_SYMBOL
       end
     end
     
@@ -597,7 +598,7 @@ module JetPEG
       end
       
       def label_name
-        DelegateLabelValueType::SYMBOL
+        AT_SYMBOL
       end
     end
   end

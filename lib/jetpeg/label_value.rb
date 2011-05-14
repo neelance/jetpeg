@@ -1,10 +1,33 @@
 module JetPEG
+  AT_SYMBOL = "@".to_sym
+  
+  class LabelValue
+    attr_reader :value, :type
+    
+    def initialize(value, type)
+      @value = value
+      @type = type
+    end
+    
+    def to_ptr
+      @value.to_ptr
+    end
+    
+    def null?
+      @value.null?
+    end
+  end
+  
   class LabelValueType
     attr_reader :llvm_type, :ffi_type
     
     def initialize(llvm_type, ffi_type)
       @llvm_type = llvm_type
       @ffi_type = ffi_type
+    end
+    
+    def create_value(builder, labels, begin_pos = nil, end_pos = nil)
+      LabelValue.new create_llvm_value(builder, labels, begin_pos, end_pos), self
     end
     
     def load(pointer, input, input_address)
@@ -17,14 +40,6 @@ module JetPEG
       read data, input, input_address
     end
     
-    def self.for_types(types)
-      case
-      when types.empty? then InputRangeLabelValueType::INSTANCE
-      when delegate = types[DelegateLabelValueType::SYMBOL] then DelegateLabelValueType.new types
-      else HashLabelValueType.new types
-      end
-    end
-    
     def empty?
       false
     end
@@ -33,7 +48,7 @@ module JetPEG
   class InputRangeLabelValueType < LabelValueType
     INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }
     
-    def create_value(builder, labels, begin_pos, end_pos)
+    def create_llvm_value(builder, labels, begin_pos, end_pos)
       pos = llvm_type.null
       pos = builder.insert_value pos, begin_pos, 0, "pos"
       pos = builder.insert_value pos, end_pos, 1, "pos"
@@ -50,8 +65,9 @@ module JetPEG
     attr_reader :types
     
     def initialize(types)
-      raise ArgumentError if types.has_key?(DelegateLabelValueType::SYMBOL)
+      raise CompilationError.new("Label @ mixed with other labels (#{types.keys.join(', ')}).") if types.has_key?(AT_SYMBOL) and types.size > 1
       @types = types
+      
       llvm_type = LLVM::Struct(*types.values.map(&:llvm_type))
       ffi_type = Class.new FFI::Struct
       if types.empty?
@@ -62,10 +78,9 @@ module JetPEG
       super llvm_type, ffi_type
     end
 
-    def create_value(builder, labels, begin_pos = nil, end_pos = nil)
+    def create_llvm_value(builder, labels, begin_pos = nil, end_pos = nil)
       data = llvm_type.null
       labels.each_with_index do |(name, value), index|
-        raise if data.type == value.type
         data = builder.insert_value data, value, index, "hash_data_with_#{name}"
       end
       data
@@ -74,7 +89,7 @@ module JetPEG
     def read_value(builder, data)
       labels = {}
       @types.each_with_index do |(name, type), index|
-         labels[name] = builder.extract_value data, index, name.to_s
+         labels[name] = LabelValue.new builder.extract_value(data, index, name.to_s), type
       end
       labels
     end
@@ -84,7 +99,7 @@ module JetPEG
       @types.each do |name, type|
         values[name] = type.read data[name], input, input_address
       end
-      values
+      values[AT_SYMBOL] || values
     end
     
     def ==(other)
@@ -138,11 +153,11 @@ module JetPEG
     
     def target_type
       raise ArgumentError if @target.label_types.empty?
-      @target_type ||= LabelValueType.for_types @target.label_types
+      @target_type ||= HashLabelValueType.new @target.label_types
     end
     
-    def create_value(builder, labels, begin_pos = nil, end_pos = nil)
-      value = target_type.create_value builder, labels
+    def create_llvm_value(builder, labels, begin_pos = nil, end_pos = nil)
+      value = target_type.create_llvm_value builder, labels
       ptr = builder.call builder.parser.malloc, target_type.llvm_type.size # TODO free
       casted_ptr = builder.bit_cast ptr, LLVM::Pointer(target_type.llvm_type)
       builder.store value, casted_ptr
@@ -169,7 +184,7 @@ module JetPEG
     end
     
     def create_entry(builder, labels, previous_entry)
-      @pointer_type.create_value builder, { :value => @entry_type.create_value(builder, labels), :previous => previous_entry }
+      @pointer_type.create_llvm_value builder, { :value => @entry_type.create_llvm_value(builder, labels), :previous => previous_entry }
     end
     
     def read(data, input, input_address)
@@ -186,38 +201,7 @@ module JetPEG
       other.class == self.class && other.entry_type == @entry_type
     end
   end
-  
-  class DelegateLabelValueType < LabelValueType
-    SYMBOL = "@".to_sym
-    attr_reader :type
     
-    def initialize(types)
-      raise CompilationError.new("Label @ mixed with other labels (#{types.keys.join(', ')}).") if types.size > 1
-      @type = types[SYMBOL]
-      super @type.llvm_type, @type.ffi_type
-    end
-    
-    def types
-      { SYMBOL => @type }
-    end
-    
-    def create_value(builder, labels, begin_pos = nil, end_pos = nil)
-      labels[SYMBOL]
-    end
-    
-    def read_value(builder, data)
-      { SYMBOL => data }
-    end
-    
-    def read(data, input, input_address)
-      @type.read data, input, input_address
-    end
-    
-    def ==(other)
-      other.class == self.class && other.type == @type
-    end
-  end
-  
   class ObjectCreatorLabelType < LabelValueType
     attr_reader :class_name, :data_type
     
@@ -227,12 +211,12 @@ module JetPEG
       super @data_type.llvm_type, @data_type.ffi_type
     end
     
-    def create_value(builder, labels, begin_pos = nil, end_pos = nil)
-      @data_type.create_value builder, labels, begin_pos, end_pos
+    def create_llvm_value(builder, labels, begin_pos = nil, end_pos = nil)
+      @data_type.create_llvm_value builder, labels, begin_pos, end_pos
     end
     
     def read(data, input, input_address)
-      DataObject.new @class_name, @data_type.read(data, input, input_address)
+      { :$type => :object, :class_name => @class_name, :data => @data_type.read(data, input, input_address) }
     end
     
     def ==(other)
@@ -249,12 +233,12 @@ module JetPEG
       super @data_type.llvm_type, @data_type.ffi_type
     end
     
-    def create_value(builder, labels, begin_pos = nil, end_pos = nil)
-      @data_type.create_value builder, labels, begin_pos, end_pos
+    def create_llvm_value(builder, labels, begin_pos = nil, end_pos = nil)
+      @data_type.create_llvm_value builder, labels, begin_pos, end_pos
     end
     
     def read(data, input, input_address)
-      DataValue.new @code, @data_type.read(data, input, input_address)
+      { :$type => :value, :code => @code, :data => @data_type.read(data, input, input_address) }
     end
     
     def ==(other)

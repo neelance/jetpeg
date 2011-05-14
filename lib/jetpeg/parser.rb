@@ -37,7 +37,7 @@ module JetPEG
       @rules = rules
       @rules.values.each { |rule| rule.parent = self }
       @mod = nil
-      @root_rules = []
+      @root_rules = [@rules.values.first.name]
       @optimize = false
     end
     
@@ -56,6 +56,48 @@ module JetPEG
       rule
     end
     
+    def build
+      @possible_failure_reasons = [] # needed to avoid GC
+      @mod = LLVM::Module.create "Parser"
+      @malloc = @mod.functions.add "malloc", [LLVM::Int], LLVM::Pointer(LLVM::Int8)
+      
+      add_failure_reason_callback_type = LLVM::Pointer(LLVM::Function([LLVM::Int1, LLVM_STRING, LLVM::Int], LLVM::Void()))
+      @llvm_add_failure_reason_callback = @mod.globals.add add_failure_reason_callback_type, "add_failure_reason_callback"
+      @llvm_add_failure_reason_callback.initializer = add_failure_reason_callback_type.null
+      
+      @ffi_add_failure_reason_callback = FFI::Function.new(:void, [:bool, :pointer, :long]) do |failure, pos, reason_id|
+        reason = ObjectSpace._id2ref reason_id
+        if @failure_reason_position.address < pos.address
+          @failure_reason = reason
+          @failure_reason_position = pos
+        elsif @failure_reason_position.address == pos.address
+          @failure_reason = @failure_reason.merge reason
+        end
+      end
+      
+      @rules.values.each { |rule| rule.mod = @mod }
+      
+      @rules.values.each do |rule|
+        linkage = @root_rules.include?(rule.name) ? :external : :private
+        rule.rule_function(false).linkage = linkage
+        rule.rule_function(true).linkage = linkage
+      end
+      
+      @mod.verify!
+      @execution_engine = LLVM::ExecutionEngine.create_jit_compiler @mod
+      
+      if @optimize
+        pass_manager = LLVM::PassManager.new @execution_engine # TODO tweak passes
+        pass_manager.inline!
+        pass_manager.mem2reg! # alternative: pass_manager.scalarrepl!
+        pass_manager.instcombine!
+        pass_manager.reassociate!
+        pass_manager.gvn!
+        pass_manager.simplifycfg!
+        pass_manager.run @mod
+      end
+    end
+    
     def match_rule(root_rule, input, raise_on_failure = true)
       data_pointer, input_address = match_rule_raw root_rule, input, raise_on_failure
       data_pointer && root_rule.rule_label_type.load(data_pointer, input, input_address)
@@ -64,46 +106,7 @@ module JetPEG
     def match_rule_raw(root_rule, input, raise_on_failure = true)
       if @mod.nil? or not @root_rules.include?(root_rule.name)
         @root_rules << root_rule.name
-        
-        @possible_failure_reasons = [] # needed to avoid GC
-        @mod = LLVM::Module.create "Parser"
-        @malloc = @mod.functions.add "malloc", [LLVM::Int], LLVM::Pointer(LLVM::Int8)
-        
-        add_failure_reason_callback_type = LLVM::Pointer(LLVM::Function([LLVM::Int1, LLVM_STRING, LLVM::Int], LLVM::Void()))
-        @llvm_add_failure_reason_callback = @mod.globals.add add_failure_reason_callback_type, "add_failure_reason_callback"
-        @llvm_add_failure_reason_callback.initializer = add_failure_reason_callback_type.null
-        
-        @ffi_add_failure_reason_callback = FFI::Function.new(:void, [:bool, :pointer, :long]) do |failure, pos, reason_id|
-          reason = ObjectSpace._id2ref reason_id
-          if @failure_reason_position.address < pos.address
-            @failure_reason = reason
-            @failure_reason_position = pos
-          elsif @failure_reason_position.address == pos.address
-            @failure_reason = @failure_reason.merge reason
-          end
-        end
-        
-        @rules.values.each { |rule| rule.mod = @mod }
-        
-        @rules.values.each do |rule|
-          linkage = @root_rules.include?(rule.name) ? :external : :private
-          rule.rule_function(false).linkage = linkage
-          rule.rule_function(true).linkage = linkage
-        end
-        
-        @mod.verify!
-        @execution_engine = LLVM::ExecutionEngine.create_jit_compiler @mod
-        
-        if @optimize
-          pass_manager = LLVM::PassManager.new @execution_engine # TODO tweak passes
-          pass_manager.inline!
-          pass_manager.mem2reg! # alternative: pass_manager.scalarrepl!
-          pass_manager.instcombine!
-          pass_manager.reassociate!
-          pass_manager.gvn!
-          pass_manager.simplifycfg!
-          pass_manager.run @mod
-        end
+        build
       end
       
       input_ptr = FFI::MemoryPointer.from_string input
