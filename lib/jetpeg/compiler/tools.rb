@@ -28,13 +28,7 @@ module JetPEG
       
       def slot_value(builder, value)
         if @types.size > 1
-          data = @slot_type.llvm_type.null
-          if value
-            index = @types.index value.type
-            data = builder.insert_value data, LLVM::Int(index), 0, "choice_data_with_index"
-            data = builder.insert_value data, value, index + 1, "choice_data_with_#{@name}"
-          end
-          data
+          @slot_type.create_choice_value builder, value, @name
         else
           value
         end
@@ -57,25 +51,24 @@ module JetPEG
     end
     
     class BranchingResult < Result
-      def initialize(builder, slots)
+      def initialize(builder, types)
         @builder = builder
-        @slots = slots
+        @types = types
 
         @input_phi = PhiGenerator.new builder, LLVM_STRING, "input"
-        @label_phis = slots.each_with_object({}) { |(name, slot), h| h[name] = PhiGenerator.new builder, slot.slot_type.llvm_type, name.to_s }
+        @label_phis = types.map_hash { |name, type| PhiGenerator.new builder, type.llvm_type, name.to_s }
       end
       
       def <<(result)
         @input_phi << result.input
-        @label_phis.each { |name, phi|
-          value = result.labels[name]
-          phi << @slots[name].slot_value(@builder, value)
-        }
+        @label_phis.each do |name, phi|
+          phi << result.labels[name]
+        end
       end
       
       def generate
         @input = @input_phi.generate
-        @labels = @label_phis.each_with_object({}) { |(name, phi), h| h[name] = LabelValue.new phi.generate, @slots[name].slot_type }
+        @labels = @label_phis.map_hash { |name, phi| LabelValue.new phi.generate, @types[name] }
         self
       end
     end

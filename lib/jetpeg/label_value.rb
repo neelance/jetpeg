@@ -36,8 +36,8 @@ module JetPEG
       read data, input, input_address
     end
     
-    def empty?
-      false
+    def alloca(builder, name)
+      builder.alloca llvm_type, name
     end
   end
   
@@ -61,7 +61,6 @@ module JetPEG
     attr_reader :types
     
     def initialize(types)
-      raise CompilationError.new("Label @ mixed with other labels (#{types.keys.join(', ')}).") if types.has_key?(AT_SYMBOL) and types.size > 1
       @types = types
       
       llvm_type = LLVM::Struct(*types.values.map(&:llvm_type))
@@ -98,12 +97,12 @@ module JetPEG
       values[AT_SYMBOL] || values
     end
     
+    def alloca(builder, name)
+      @types.empty? ? LLVM::Pointer(llvm_type).null : super
+    end
+
     def ==(other)
       other.class == self.class && other.types == @types
-    end
-    
-    def empty?
-      @types.empty?
     end
   end
   
@@ -120,6 +119,16 @@ module JetPEG
       ffi_type = Class.new FFI::Struct
       ffi_type.layout(:selection, :long, *ffi_layout)
       super llvm_type, ffi_type
+    end
+    
+    def create_choice_value(builder, value, name)
+      data = llvm_type.null
+      if value
+        index = @choices.index value.type
+        data = builder.insert_value data, LLVM::Int(index), 0, "choice_data_with_index"
+        data = builder.insert_value data, value, index + 1, "choice_data_with_#{name}"
+      end
+      data
     end
     
     def read(data, input, input_address)
@@ -139,20 +148,20 @@ module JetPEG
       @target = target
     end
     
-    def target_type
-      @target_type ||= HashLabelValueType.new @target.label_types
+    def create_target_type
+      @target_type = HashLabelValueType.new @target.create_label_types
     end
     
     def create_llvm_value(builder, labels, begin_pos = nil, end_pos = nil)
-      value = target_type.create_llvm_value builder, labels
-      ptr = builder.malloc target_type.llvm_type.size # TODO free
-      casted_ptr = builder.bit_cast ptr, LLVM::Pointer(target_type.llvm_type)
+      value = @target_type.create_llvm_value builder, labels
+      ptr = builder.malloc @target_type.llvm_type.size # TODO free
+      casted_ptr = builder.bit_cast ptr, LLVM::Pointer(@target_type.llvm_type)
       builder.store value, casted_ptr
       ptr
     end
     
     def read(data, input, input_address)
-      target_type.load data, input, input_address
+      @target_type.load data, input, input_address
     end
     
     def ==(other)
@@ -161,13 +170,18 @@ module JetPEG
   end
   
   class ArrayLabelValueType < LabelValueType
-    attr_reader :entry_type, :label_types
+    attr_reader :entry_type
     
     def initialize(entry_type)
       @entry_type = entry_type
-      @pointer_type = PointerLabelValueType.new(self)
+      @pointer_type = PointerLabelValueType.new self
       @label_types = { :value => entry_type, :previous => @pointer_type }
+      @pointer_type.create_target_type
       super @pointer_type.llvm_type, @pointer_type.ffi_type
+    end
+    
+    def create_label_types
+      @label_types
     end
     
     def create_entry(builder, labels, previous_entry)

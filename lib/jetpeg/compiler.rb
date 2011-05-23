@@ -11,6 +11,22 @@ class FFI::Struct
   end
 end
 
+class Hash
+  def map_hash
+    h = {}
+    self.keys.each do |key|
+      h[key] = yield key, self[key]
+    end
+    h
+  end
+  
+  def map_hash!
+    self.keys.each do |key|
+      self[key] = yield key, self[key]
+    end
+  end
+end
+
 require "jetpeg/runtime"
 require "jetpeg/parser"
 require "jetpeg/label_value"
@@ -112,13 +128,14 @@ module JetPEG
     
     class ParsingExpression
       attr_accessor :parent, :name
-      attr_reader :references
+      attr_reader :recursive_labels
       
       def initialize(data)
-        @label_types = nil
+        @name = nil
         @rule_label_type = nil
         @bare_rule_function = nil
         @traced_rule_function = nil
+        @recursive_labels = []
         
         if data.is_a?(Hash)
           @children = data.values.flatten.select { |value| value.is_a? ParsingExpression }
@@ -140,7 +157,7 @@ module JetPEG
         @name ? self : parent.rule
       end
       
-      def label_types
+      def create_label_types
         {}
       end
       
@@ -149,10 +166,10 @@ module JetPEG
         if @rule_label_type.nil?
           begin
             @rule_label_type = :recursion
-            @rule_label_type = HashLabelValueType.new label_types
+            @rule_label_type = HashLabelValueType.new create_label_types
           rescue Recursion
             @rule_label_type = HashLabelValueType.new({})
-            raise CompilationError.new("Unlabeled recursion mixed with other labels.") if not label_types.empty?
+            raise CompilationError.new("Unlabeled recursion mixed with other labels.") if not create_label_types.empty?
           end
         end
         @rule_label_type
@@ -162,8 +179,7 @@ module JetPEG
       end
       
       def realize_label_types
-        label_types
-        @children.each(&:realize_label_types)
+        @recursive_labels.map(&:label_type).each(&:create_target_type)
       end
       
       def build_allocas(builder)
@@ -227,17 +243,19 @@ module JetPEG
       
       def label_type
         @label_type ||= begin
-          if @expression.label_types.empty?
+          types = @expression.create_label_types
+          if types.empty?
             InputRangeLabelValueType::INSTANCE
           else
-            HashLabelValueType.new @expression.label_types
+            HashLabelValueType.new types
           end
         rescue Recursion
+          rule.recursive_labels << self
           PointerLabelValueType.new @expression
         end
       end
       
-      def label_types
+      def create_label_types
         label_name ? { label_name => label_type } : {}
       end
       
@@ -255,11 +273,12 @@ module JetPEG
         @children = data[:children]
       end
 
-      def label_types
-        @label_types ||= @children.map(&:label_types).each_with_object({}) { |types, total|
-          total.merge!(types) { |key, oldval, newval|
+      def create_label_types
+        @children.each_with_object({}) { |child, total|
+          total.merge!(child.create_label_types) { |key, oldval, newval|
             raise CompilationError.new("Duplicate label (#{key}).")
           }
+          raise CompilationError.new("Label @ mixed with other labels (#{total.keys.join(', ')}).") if total.has_key?(AT_SYMBOL) and total.size > 1
         }
       end
       
@@ -276,31 +295,31 @@ module JetPEG
         @children = [data[:head]] + data[:tail]
       end
       
-      def slots
-        @slots ||= begin
-          hash = {}
-          child_types = @children.map(&:label_types)
-          child_types.map(&:keys).flatten.uniq.each do |key|
-            types_for_label = child_types.map { |t| t[key] }
-            hash[key] = LabelSlot.new key, types_for_label
-          end
-          hash
+      def create_label_types
+        @slots = {}
+        @label_types = {}
+        child_types = @children.map { |child| child.create_label_types }
+        child_types.map(&:keys).flatten.uniq.each do |key|
+          types_for_label = child_types.map { |t| t[key] }
+          slot = LabelSlot.new key, types_for_label
+          @slots[key] = slot
+          @label_types[key] = slot.slot_type
         end
-      end
-      
-      def label_types
-        slots.each_with_object({}) { |(key, slot), h| h[key] = slot.slot_type }
+        
+        @label_types
       end
       
       def build(builder, start_input, failed_block)
         successful_block = builder.create_block "choice_successful"
         child_blocks = @children.map { builder.create_block "choice_child" }
-        result = BranchingResult.new builder, slots
+        result = BranchingResult.new builder, @label_types
         builder.br child_blocks.first
         
         @children.each_with_index do |child, index|
           builder.position_at_end child_blocks[index]
-          result << child.build(builder, start_input, child_blocks[index + 1] || failed_block)
+          child_result = child.build(builder, start_input, child_blocks[index + 1] || failed_block)
+          child_result.labels.map_hash! { |name, value| @slots[name].slot_value builder, value }
+          result << child_result
           builder.br successful_block
         end
         
@@ -315,13 +334,13 @@ module JetPEG
         @expression = data[:expression]
       end
 
-      def label_types
-        @expression.label_types
+      def create_label_types
+        @label_types = @expression.create_label_types
       end
       
       def build(builder, start_input, failed_block)
         exit_block = builder.create_block "optional_exit"
-        result = BranchingResult.new builder, label_types.each_with_object({}) { |(key, type), h| h[key] = LabelSlot.new key, [type] }
+        result = BranchingResult.new builder, @label_types
         
         optional_failed_block = builder.create_block "optional_failed"
         result << @expression.build(builder, start_input, optional_failed_block)
@@ -339,7 +358,7 @@ module JetPEG
     class ZeroOrMore < Label
       def label_type
         @array_label_type ||= begin
-          types = @expression.label_types
+          types = @expression.create_label_types
           !types.empty? && ArrayLabelValueType.new(super)
         end
       end
@@ -519,25 +538,17 @@ module JetPEG
         super
         @referenced_name = data[:name].to_sym
       end
-
+      
       def referenced
         @referenced ||= parser[@referenced_name]
       end
       
-      def referenced_label_type
-        @referenced_label_type ||= referenced.rule_label_type
-      end
-      
-      def label_types
-        referenced_label_type.types
+      def create_label_types
+        referenced.rule_label_type.types
       end
       
       def build_allocas(builder)
-        @label_data_ptr = if not referenced_label_type.empty?
-          builder.alloca referenced_label_type.llvm_type, "#{@referenced_name}_data_ptr"
-        else
-          LLVM::Pointer(referenced_label_type.llvm_type).null
-        end
+        @label_data_ptr = referenced.rule_label_type.alloca builder, "#{@referenced_name}_data_ptr"
       end
       
       def build(builder, start_input, failed_block)
@@ -551,7 +562,7 @@ module JetPEG
         result = Result.new rule_end_input
         unless @label_data_ptr.null?
           label_data = builder.load @label_data_ptr, "#{@referenced_name}_data"
-          result.labels = referenced_label_type.read_value builder, label_data
+          result.labels = referenced.rule_label_type.read_value builder, label_data
         end
         result
       end
@@ -562,9 +573,9 @@ module JetPEG
         super
         @expression = data[:expression]
       end
-
-      def label_types
-        @expression.label_types
+      
+      def create_label_types
+        @expression.create_label_types
       end
       
       def build(builder, start_input, failed_block)
