@@ -27,7 +27,6 @@ class Hash
   end
 end
 
-require "jetpeg/runtime"
 require "jetpeg/parser"
 require "jetpeg/label_value"
 require "jetpeg/compiler/tools"
