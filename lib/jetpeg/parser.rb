@@ -71,8 +71,8 @@ module JetPEG
       @llvm_add_failure_reason_callback = @mod.globals.add add_failure_reason_callback_type, "add_failure_reason_callback"
       @llvm_add_failure_reason_callback.initializer = add_failure_reason_callback_type.null
       
-      @ffi_add_failure_reason_callback = FFI::Function.new(:void, [:bool, :pointer, :long]) do |failure, pos, reason_id|
-        reason = ObjectSpace._id2ref reason_id
+      @ffi_add_failure_reason_callback = FFI::Function.new(:void, [:bool, :pointer, :long]) do |failure, pos, reason_index|
+        reason = @possible_failure_reasons[reason_index]
         if @failure_reason_position.address < pos.address
           @failure_reason = reason
           @failure_reason_position = pos

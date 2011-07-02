@@ -65,7 +65,7 @@ module JetPEG
         return if not @traced
         @parser.possible_failure_reasons << reason
         callback = self.load @parser.llvm_add_failure_reason_callback, "callback"
-        self.call callback, failed, position, LLVM::Int(reason.__id__)
+        self.call callback, failed, position, LLVM::Int(@parser.possible_failure_reasons.size - 1)
       end
     end
     
