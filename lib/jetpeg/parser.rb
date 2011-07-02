@@ -64,8 +64,8 @@ module JetPEG
     
     def build
       @possible_failure_reasons = [] # needed to avoid GC
-      @mod = LLVM::Module.create "Parser"
-      @malloc = @mod.functions.add "malloc", [LLVM::Int], LLVM::Pointer(LLVM::Int8)
+      @mod = LLVM::Module.new "Parser"
+      @malloc = @mod.functions.add "malloc", [LLVM::Int64], LLVM::Pointer(LLVM::Int8)
       
       add_failure_reason_callback_type = LLVM::Pointer(LLVM::Function([LLVM::Int1, LLVM_STRING, LLVM::Int], LLVM::Void()))
       @llvm_add_failure_reason_callback = @mod.globals.add add_failure_reason_callback_type, "add_failure_reason_callback"
@@ -90,7 +90,7 @@ module JetPEG
       end
       
       @mod.verify!
-      @execution_engine = LLVM::ExecutionEngine.create_jit_compiler @mod
+      @execution_engine = LLVM::JITCompiler.new @mod
       
       if @optimize
         pass_manager = LLVM::PassManager.new @execution_engine # TODO tweak passes

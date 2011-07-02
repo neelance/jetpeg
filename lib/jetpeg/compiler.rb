@@ -202,7 +202,7 @@ module JetPEG
             @bare_rule_function = function
           end
           
-          builder = Builder.create
+          builder = Builder.new
           builder.parser = parser
           builder.traced = traced
           

@@ -117,7 +117,7 @@ module JetPEG
       end
       llvm_type = LLVM::Struct(LLVM::Int, *@choices.map(&:llvm_type)) # TODO memory optimization with "union" structure and bitcasts
       ffi_type = Class.new FFI::Struct
-      ffi_type.layout(:selection, :long, *ffi_layout)
+      ffi_type.layout(:selection, :int, *ffi_layout)
       super llvm_type, ffi_type
     end
     
