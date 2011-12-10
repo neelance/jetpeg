@@ -12,15 +12,15 @@ class LabelsTests < Test::Unit::TestCase
     assert "b" == result[:char]
     assert "b" === result[:char]
     
-    rule = JetPEG::Compiler.compile_rule "word:('a' 'b' 'c')"
+    rule = JetPEG::Compiler.compile_rule "word:( 'a' 'b' 'c' )"
     assert rule.match("abc") == { word: "abc" }
     
-    rule = JetPEG::Compiler.compile_rule "(word:[abc]+)?"
+    rule = JetPEG::Compiler.compile_rule "( word:[abc]+ )?"
     assert rule.match("abc") == { word: "abc" }
   end
   
   def test_nested_label
-    rule = JetPEG::Compiler.compile_rule "word:('a' char:. 'c')"
+    rule = JetPEG::Compiler.compile_rule "word:( 'a' char:. 'c' )"
     assert rule.match("abc") == { word: { char: "b" } }
   end
   
@@ -40,7 +40,7 @@ class LabelsTests < Test::Unit::TestCase
   end
   
   def test_label_merge
-    rule = JetPEG::Compiler.compile_rule "(char:'a' x:'x' / 'b' x:'x' / char:(inner:'c') x:'x') / 'y'"
+    rule = JetPEG::Compiler.compile_rule "( char:'a' x:'x' / 'b' x:'x' / char:( inner:'c' ) x:'x' ) / 'y'"
     assert rule.match("ax") == { char: "a", x: "x" }
     assert rule.match("bx") == { char: nil, x: "x" }
     assert rule.match("cx") == { char: { inner: "c" }, x: "x" }
@@ -49,7 +49,7 @@ class LabelsTests < Test::Unit::TestCase
   def test_rule_with_label
     grammar = JetPEG::Compiler.compile_grammar "
       rule test
-        a word:('b' a) :a
+        a word:( 'b' a ) :a
       end
       rule a
         d:'d' / char:.
@@ -61,7 +61,7 @@ class LabelsTests < Test::Unit::TestCase
   def test_recursive_rule_with_label
     grammar = JetPEG::Compiler.compile_grammar "
       rule test
-        '(' inner:(test (other:'b')?) ')' / char:'a'
+        '(' inner:( test ( other:'b' )? ) ')' / char:'a'
       end
     "
     assert grammar[:test].match("((a)b)") == { inner: { inner: { inner: nil, char: "a", other: nil }, char: nil, other: "b"}, char: nil }
@@ -78,13 +78,13 @@ class LabelsTests < Test::Unit::TestCase
   end
   
   def test_repetition_with_label
-    rule = JetPEG::Compiler.compile_rule "list:(char:('a' / 'b' / 'c'))*"
+    rule = JetPEG::Compiler.compile_rule "list:( char:( 'a' / 'b' / 'c' ) )*"
     assert rule.match("abc") == { list: [{ char: "a" }, { char: "b" }, { char: "c" }] }
     
-    rule = JetPEG::Compiler.compile_rule "list:(char:'a' / char:'b' / 'c')+"
+    rule = JetPEG::Compiler.compile_rule "list:( char:'a' / char:'b' / 'c' )+"
     assert rule.match("abc") == { list: [{ char: "a" }, { char: "b" }, { char: nil }] }
     
-    rule = JetPEG::Compiler.compile_rule "('a' / 'b' / 'c')+"
+    rule = JetPEG::Compiler.compile_rule "( 'a' / 'b' / 'c' )+"
     assert rule.match("abc") == {}
   end
   
@@ -113,8 +113,13 @@ class LabelsTests < Test::Unit::TestCase
   end
   
   def test_value_creator
-    rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' { char.upcase } / word:'def' { word.chars.map { |c| c.ord } }"
+    rule = JetPEG::Compiler.compile_rule "
+      'a' char:. 'c' { char.upcase } /
+      word:'def' { word.chars.map { |c| c.ord } } /
+      'ghi' { [__FILE__, __LINE__] }
+    ", "test.jetpeg"
     assert rule.match("abc") == "B"
     assert rule.match("def") == ["d".ord, "e".ord, "f".ord]
+    assert rule.match("ghi") == ["test.jetpeg", 4]
   end
 end

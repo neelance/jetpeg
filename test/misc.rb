@@ -44,7 +44,7 @@ class MiscTests < Test::Unit::TestCase
     end
     
     assert_raise JetPEG::CompilationError do
-      grammar = JetPEG::Compiler.compile_grammar "
+      JetPEG::Compiler.compile_grammar "
         rule test
           '(' test ')' / char:'a'
         end

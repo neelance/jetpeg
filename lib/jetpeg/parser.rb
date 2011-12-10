@@ -37,7 +37,7 @@ module JetPEG
     end
     
     attr_reader :mod, :malloc, :llvm_add_failure_reason_callback, :possible_failure_reasons
-    attr_accessor :root_rules, :optimize, :failure_reason
+    attr_accessor :root_rules, :optimize, :failure_reason, :filename
     
     def initialize(rules)
       @rules = rules
@@ -45,6 +45,7 @@ module JetPEG
       @mod = nil
       @root_rules = [@rules.values.first.name]
       @optimize = false
+      @filename = "grammar"
     end
     
     def verify!

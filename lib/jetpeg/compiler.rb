@@ -92,17 +92,19 @@ module JetPEG
       @@metagrammar_parser
     end
 
-    def self.compile_rule(code)
-      expression = metagrammar_parser[:choice].match code, :output => :realized, :class_scope => self
+    def self.compile_rule(code, filename = nil)
+      expression = metagrammar_parser[:rule_expression].match code, :output => :realized, :class_scope => self
       expression.name = :rule
       parser = Parser.new({ "rule" => expression })
+      parser.filename = filename if filename
       parser.verify!
       expression
     end
     
-    def self.compile_grammar(code)
+    def self.compile_grammar(code, filename = nil)
       data = metagrammar_parser[:grammar].match code, :output => :realized, :class_scope => self
       parser = load_parser data
+      parser.filename = filename if filename
       parser.verify!
       parser
     end
@@ -601,10 +603,12 @@ module JetPEG
       def initialize(data)
         super
         @code = data[:code]
+        input_range = data.intermediate[:code]
+        @lineno = input_range[:input][0, input_range[:position].begin].count("\n") + 1
       end
 
       def label_type
-        @value_creator_label_type ||= CreatorLabelType.new super, :$type => :value, :code => @code
+        @value_creator_label_type ||= CreatorLabelType.new super, :$type => :value, :code => @code, :filename => parser.filename, :lineno => @lineno
       end
       
       def label_name

@@ -1,8 +1,8 @@
 require "jetpeg/compiler"
 
 module JetPEG
-  def self.load(file)
-    Compiler.compile_grammar IO.read(file)
+  def self.load(filename)
+    Compiler.compile_grammar IO.read(filename), filename
   end
   
   class EvaluationScope
@@ -13,6 +13,14 @@ module JetPEG
     def method_missing(name, *args)
       return @data[name] if @data.has_key? name
       super 
+    end
+  end
+  
+  class HashWithIntermediate < Hash
+    attr_reader :intermediate
+    
+    def initialize(intermediate)
+      @intermediate = intermediate
     end
   end
     
@@ -27,9 +35,11 @@ module JetPEG
         object_class.new realize_data(data[:data], class_scope)
       when :value
         scope = EvaluationScope.new realize_data(data[:data], class_scope)
-        scope.instance_eval data[:code]
+        scope.instance_eval data[:code], data[:filename], data[:lineno]
       else
-        data.each_with_object({}) { |(key, value), h| h[key] = realize_data value, class_scope }
+        realized = HashWithIntermediate.new data
+        data.each { |key, value| realized[key] = realize_data value, class_scope }
+        realized
       end
     when Array
       data.map { |value| realize_data value, class_scope }

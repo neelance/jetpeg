@@ -3,30 +3,34 @@ rule grammar
 end
 
 rule parsing_rule
-  'rule' ws :rule_name expression:choice ws 'end' ws
+  'rule' ws :rule_name expression:rule_expression ws 'end' ws
+end
+
+rule rule_expression
+  ws @:choice
 end
 
 rule choice
-  head:creator tail:('/' ws @:creator)+ <Choice> /
+  head:creator tail:( '/' ws @:creator )+ <Choice> /
   creator
 end
 
 rule creator
-  expression:sequence '<' class_name:(!'>' .)+ '>' ws <ObjectCreator> /
+  expression:sequence '<' class_name:( !'>' . )+ '>' ws <ObjectCreator> /
   expression:sequence '{' :code '}' ws <ValueCreator> /
   sequence
 end
 
 rule code
-  (![{}] . / '{' code '}')*
+  ( ![{}] . / '{' code '}' )*
 end
 
 rule sequence
   children:labeled+ <Sequence>
 end
-      
+
 rule labeled
-  name:(alpha_char alphanumeric_char*) ':' expression:lookahead <Label> /
+  name:( alpha_char alphanumeric_char* ) ':' expression:lookahead <Label> /
   lookahead
 end
 
@@ -59,7 +63,7 @@ rule rule_name_label
 end
 
 rule rule_name
-  !keyword name:(alpha_char alphanumeric_char*) ws <RuleName>
+  !keyword name:( alpha_char alphanumeric_char* ) ws <RuleName>
 end
 
 rule terminal
@@ -68,18 +72,18 @@ end
 
 rule quoted_string
   (
-    '"' string:(!'"' ("\\\\" / '\"' / .))* '"' ws /
-    "'" string:(!"'" ("\\\\" / "\\'" / .))* "'" ws
+    '"' string:( !'"' ( "\\\\" / '\"' / . ) )* '"' ws /
+    "'" string:( !"'" ( "\\\\" / "\\'" / . ) )* "'" ws
   ) <StringTerminal>
 end
 
 rule character_class
-  '[' inverted:'^'? selections:(character_class_range / character_class_single_character)+ ']' ws <CharacterClassTerminal>
+  '[' inverted:'^'? selections:( character_class_range / character_class_single_character )+ ']' ws <CharacterClassTerminal>
 end
 
 rule character_class_single_character
   '\\' char_element:. <CharacterClassEscapedCharacter> /
-  (!']') char_element:. <CharacterClassSingleCharacter>
+  ( !']' ) char_element:. <CharacterClassSingleCharacter>
 end
 
 rule character_class_range
@@ -91,7 +95,7 @@ rule anything_symbol
 end
 
 rule keyword
-  ('rule' / 'end') &single_ws
+  ( 'rule' / 'end' ) &single_ws
 end
 
 rule alpha_char
