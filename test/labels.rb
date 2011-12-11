@@ -86,6 +86,9 @@ class LabelsTests < Test::Unit::TestCase
     
     rule = JetPEG::Compiler.compile_rule "( 'a' / 'b' / 'c' )+"
     assert rule.match("abc") == {}
+    
+    rule = JetPEG::Compiler.compile_rule "list:('a' char:.)*['ada' final:.]"
+    assert rule.match("abacadae") == { list: [{ char: "b", final: nil }, { char: "c", final: nil }, { char: nil, final: "e" }] }
   end
   
   class TestClass

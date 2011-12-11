@@ -399,6 +399,51 @@ module JetPEG
       end
     end
     
+    class Until < Label
+      def initialize(data)
+        super
+        @until_expression = data[:until_expression]
+      end
+      
+      def label_type
+        @array_label_type ||= begin
+          types = @expression.create_label_types
+          types.merge!(@until_expression.create_label_types) { |key, oldval, newval| raise CompilationError.new("Overlapping labels in until-expression.") }
+          !types.empty? && ArrayLabelValueType.new(HashLabelValueType.new types)
+        end
+      end
+      
+      def label_name
+        label_type && AT_SYMBOL
+      end
+      
+      def build(builder, start_input, failed_block, start_label_value = nil)
+        start_block = builder.insert_block
+        loop1_block = builder.create_block "until_loop1"
+        loop2_block = builder.create_block "until_loop2"
+        exit_block = builder.create_block "until_exit"
+        builder.br loop1_block
+        
+        builder.position_at_end loop1_block
+        input = builder.phi LLVM_STRING, { start_block => start_input }, "loop_input"
+        label_value = builder.phi label_type.llvm_type, { start_block => start_label_value || label_type.llvm_type.null }, "loop_label_value" if label_type
+        
+        until_result = @until_expression.build builder, input, loop2_block
+        builder.br exit_block
+        
+        builder.position_at_end loop2_block
+        next_result = @expression.build builder, input, failed_block
+        input.add_incoming builder.insert_block => next_result.input
+        label_value.add_incoming builder.insert_block => label_type.create_entry(builder, next_result.labels, label_value) if label_type
+        builder.br loop1_block
+        
+        builder.position_at_end exit_block
+        result = Result.new until_result.input
+        result.labels = { AT_SYMBOL => LabelValue.new(label_type.create_entry(builder, until_result.labels, label_value), label_type) } if label_type
+        result
+      end
+    end
+    
     class PositiveLookahead < ParsingExpression
       def initialize(data)
         super

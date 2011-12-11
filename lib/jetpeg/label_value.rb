@@ -75,8 +75,8 @@ module JetPEG
 
     def create_llvm_value(builder, labels, begin_pos = nil, end_pos = nil)
       data = llvm_type.null
-      labels.each_with_index do |(name, value), index|
-        data = builder.insert_value data, value, index, "hash_data_with_#{name}"
+      labels.each do |name, value|
+        data = builder.insert_value data, value, @types.keys.index(name), "hash_data_with_#{name}"
       end
       data
     end

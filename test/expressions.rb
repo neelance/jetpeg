@@ -90,6 +90,18 @@ class ExpressionsTests < Test::Unit::TestCase
     assert !rule.match("aaaX")
   end
   
+  def test_until
+    rule = JetPEG::Compiler.compile_rule "('a' .)*['ac']"
+    assert rule.match("ac")
+    assert rule.match("ababac")
+    assert !rule.match("")
+    assert !rule.match("ab")
+    assert !rule.match("abXbac")
+    assert !rule.match("ababacX")
+    assert !rule.match("ababacab")
+    assert !rule.match("ababacac")
+  end
+  
   def test_parenthesized_expression
     rule = JetPEG::Compiler.compile_rule "( 'a' 'b' )? 'c'"
     assert rule.match("abc")
