@@ -35,7 +35,7 @@ module JetPEG
   end
   
   class Parser
-    @@default_options = { :raise_on_failure => true, :output => :realized, :class_scope => ::Object }
+    @@default_options = { raise_on_failure: true, output: :realized, class_scope: ::Object }
     
     def self.default_options
       @@default_options

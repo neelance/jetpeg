@@ -53,7 +53,7 @@ module JetPEG
     
     def read(data, input, input_address)
       return nil if data[:begin].null?
-      { :$type => :input_range, :input => input, :position => (data[:begin].address - input_address)...(data[:end].address - input_address) }
+      { __type__: :input_range, input: input, position: (data[:begin].address - input_address)...(data[:end].address - input_address) }
     end
   end
   
@@ -175,7 +175,7 @@ module JetPEG
     def initialize(entry_type)
       @entry_type = entry_type
       @pointer_type = PointerLabelValueType.new self
-      @label_types = { :value => entry_type, :previous => @pointer_type }
+      @label_types = { value: entry_type, previous: @pointer_type }
       @pointer_type.create_target_type
       super @pointer_type.llvm_type, @pointer_type.ffi_type
     end
@@ -185,7 +185,7 @@ module JetPEG
     end
     
     def create_entry(builder, labels, previous_entry)
-      @pointer_type.create_llvm_value builder, { :value => @entry_type.create_llvm_value(builder, labels), :previous => previous_entry }
+      @pointer_type.create_llvm_value builder, { value: @entry_type.create_llvm_value(builder, labels), previous: previous_entry }
     end
     
     def read(data, input, input_address)

@@ -93,7 +93,7 @@ module JetPEG
     end
 
     def self.compile_rule(code, filename = nil)
-      expression = metagrammar_parser[:rule_expression].match code, :output => :realized, :class_scope => self, :raise_on_failure => true
+      expression = metagrammar_parser[:rule_expression].match code, output: :realized, class_scope: self, raise_on_failure: true
       expression.name = :rule
       parser = Parser.new({ "rule" => expression })
       parser.filename = filename if filename
@@ -104,7 +104,7 @@ module JetPEG
     end
     
     def self.compile_grammar(code, filename = nil)
-      data = metagrammar_parser[:grammar].match code, :output => :realized, :class_scope => self
+      data = metagrammar_parser[:grammar].match code, output: :realized, class_scope: self
       parser = load_parser data
       parser.filename = filename if filename
       parser.verify!
@@ -571,7 +571,7 @@ module JetPEG
     end
     
     class AnyCharacterTerminal < CharacterClassTerminal
-      SELECTIONS = [CharacterClassSingleCharacter.new({ :char_element => "\0" })]
+      SELECTIONS = [CharacterClassSingleCharacter.new({ char_element: "\0" })]
       
       def initialize(data)
         super({})
@@ -645,7 +645,7 @@ module JetPEG
       end
 
       def label_type
-        @object_creator_label_type ||= CreatorLabelType.new super, :$type => :object, :class_name => @class_name
+        @object_creator_label_type ||= CreatorLabelType.new super, __type__: :object, class_name: @class_name
       end
       
       def label_name
@@ -662,7 +662,7 @@ module JetPEG
       end
 
       def label_type
-        @value_creator_label_type ||= CreatorLabelType.new super, :$type => :value, :code => @code, :filename => parser.filename, :lineno => @lineno
+        @value_creator_label_type ||= CreatorLabelType.new super, __type__: :value, code: @code, filename: parser.filename, lineno: @lineno
       end
       
       def label_name

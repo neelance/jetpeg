@@ -1,6 +1,5 @@
 {:
-rules["{:rule_name{:
-$type:object:class_name[:RuleName:	data{:	name{;:input_range:
+rules["{:rule_name{:__type__:object:class_name[:RuleName:	data{:	name{;:input_range:
 inputI"¶	rule grammar
   ws rules:parsing_rule*
 end

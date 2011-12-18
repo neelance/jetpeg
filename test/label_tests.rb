@@ -111,8 +111,8 @@ class LabelsTests < Test::Unit::TestCase
   
   def test_object_creator
     rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' <TestClassA> / 'd' char:. 'f' <TestClassB>"
-    assert rule.match("abc", :class_scope => self.class) == TestClassA.new({ char: "b" })
-    assert rule.match("def", :class_scope => self.class) == TestClassB.new({ char: "e" })
+    assert rule.match("abc", class_scope: self.class) == TestClassA.new({ char: "b" })
+    assert rule.match("def", class_scope: self.class) == TestClassB.new({ char: "e" })
   end
   
   def test_value_creator

@@ -27,7 +27,7 @@ module JetPEG
   def self.realize_data(data, class_scope = Object)
     case data
     when Hash
-      case data[:$type]
+      case data[:__type__]
       when :input_range
         data[:input][data[:position]]
       when :object
