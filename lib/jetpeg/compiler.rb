@@ -93,12 +93,14 @@ module JetPEG
     end
 
     def self.compile_rule(code, filename = nil)
-      expression = metagrammar_parser[:rule_expression].match code, :output => :realized, :class_scope => self
+      expression = metagrammar_parser[:rule_expression].match code, :output => :realized, :class_scope => self, :raise_on_failure => true
       expression.name = :rule
       parser = Parser.new({ "rule" => expression })
       parser.filename = filename if filename
       parser.verify!
       expression
+    rescue ParsingError => e
+      raise CompilationError, "Syntax error in grammar: #{e}"
     end
     
     def self.compile_grammar(code, filename = nil)
@@ -107,6 +109,8 @@ module JetPEG
       parser.filename = filename if filename
       parser.verify!
       parser
+    rescue ParsingError => e
+      raise CompilationError, "Syntax error in grammar: #{e}"
     end
     
     def self.load_parser(data)
@@ -375,8 +379,11 @@ module JetPEG
         builder.br loop_block
         
         builder.position_at_end loop_block
-        input = builder.phi LLVM_STRING, { start_block => start_input }, "loop_input"
-        label_value = builder.phi label_type.llvm_type, { start_block => start_label_value || label_type.llvm_type.null }, "loop_label_value" if label_type
+        input = builder.phi LLVM_STRING, {}, "loop_input"
+        label_value = builder.phi label_type.llvm_type, {}, "loop_label_value" if label_type
+
+        input.add_incoming start_block => start_input
+        label_value.add_incoming start_block => start_label_value || label_type.llvm_type.null if label_type
         
         next_result = @expression.build builder, input, exit_block
         input.add_incoming builder.insert_block => next_result.input
@@ -474,6 +481,8 @@ module JetPEG
     end
             
     class StringTerminal < ParsingExpression
+      attr_reader :string
+      
       def initialize(data)
         super
         @string = data[:string].gsub(/\\./) { |str| Compiler.translate_escaped_character str[1] }
@@ -658,6 +667,22 @@ module JetPEG
       
       def label_name
         AT_SYMBOL
+      end
+    end
+    
+    class ErrorFunction < ParsingExpression
+      def initialize(data)
+        super
+        @message = data[:message].string
+      end
+      
+      def build(builder, start_input, failed_block)
+        builder.add_failure_reason LLVM::TRUE, start_input, ParsingError.new([], [@message])
+        builder.br failed_block
+
+        dummy_block = builder.create_block "error_dummy"
+        builder.position_at_end dummy_block
+        Result.new start_input
       end
     end
   end

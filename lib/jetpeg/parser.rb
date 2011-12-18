@@ -10,22 +10,27 @@ LLVM.init_x86
 
 module JetPEG
   class ParsingError < RuntimeError
-    attr_reader :expectations
+    attr_reader :expectations, :other_reasons
     attr_accessor :position, :input
     
-    def initialize(expectations)
+    def initialize(expectations, other_reasons = [])
       @expectations = expectations.uniq.sort
+      @other_reasons = other_reasons.uniq.sort
     end
     
     def merge(other)
-      ParsingError.new(@expectations + other.expectations)
+      ParsingError.new(@expectations + other.expectations, @other_reasons + other.other_reasons)
     end
     
     def to_s
       before = @input[0...@position]
       line = before.count("\n") + 1
-      column = before.size - before.rindex("\n")
-      "At line #{line}, column #{column} (byte #{position}, after #{before[(before.size > 20 ? -20 : 0)..-1].inspect}): Expected one of #{expectations.map{ |e| e.inspect[1..-2] }.join(", ")}."
+      column = before.size - (before.rindex("\n") || 0)
+      
+      reasons = @other_reasons.dup
+      reasons << "Expected one of #{@expectations.map{ |e| e.inspect[1..-2] }.join(", ")}" unless @expectations.empty?
+      
+      "At line #{line}, column #{column} (byte #{position}, after #{before[(before.size > 20 ? -20 : 0)..-1].inspect}): #{reasons.join(' / ')}."
     end
   end
   

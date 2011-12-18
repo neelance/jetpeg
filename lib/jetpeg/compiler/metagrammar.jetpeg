@@ -51,7 +51,8 @@ end
 rule primary
   terminal /
   rule_name_label /
-  parenthesized_expression
+  parenthesized_expression /
+  function
 end
 
 rule parenthesized_expression
@@ -69,6 +70,18 @@ end
 
 rule terminal
   quoted_string / character_class / anything_symbol
+end
+
+rule function
+  '$error' '[' ws message:quoted_string ws ']' ws <ErrorFunction>
+end
+
+rule value_list
+  head:value ws tail:(',' ws @:value ws)*
+end
+
+rule value
+  quoted_string
 end
 
 rule quoted_string
