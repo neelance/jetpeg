@@ -1,19 +1,29 @@
 module JetPEG
   module Compiler
-    class PhiGenerator
-      def initialize(builder, type, name = "")
+    class DynamicPhi
+      def initialize(builder, type, name = "", first_value = nil)
         @builder = builder
         @type = type
         @name = name
         @values = {}
+        @phi = nil
+        self << first_value if first_value
       end
       
       def <<(value)
-        @values[@builder.insert_block] = value || @type.null
+        value ||= @type.null
+        @values[@builder.insert_block] = value
+        @phi.add_incoming @builder.insert_block => value if @phi
       end
       
-      def generate
-        @builder.phi @type, @values, @name
+      def build
+        raise if @phi
+        @phi = @builder.phi @type, @values, @name
+        @phi
+      end
+      
+      def to_ptr
+        @phi.to_ptr
       end
     end
     
@@ -22,13 +32,14 @@ module JetPEG
       
       def initialize(name, types)
         @name = name
-        @types = types.compact.uniq
-        @slot_type = @types.size > 1 ? ChoiceLabelValueType.new(@types) : @types.first
+        @all_types = types
+        @reduced_types = types.compact.uniq
+        @slot_type = @reduced_types.size > 1 ? ChoiceLabelValueType.new(@reduced_types) : @reduced_types.first
       end
       
-      def slot_value(builder, value)
-        if @types.size > 1
-          @slot_type.create_choice_value builder, value, @name
+      def slot_value(builder, value, child_index)
+        if @reduced_types.size > 1
+          @slot_type.create_choice_value builder, @all_types[child_index], value, @name
         else
           value
         end
@@ -53,10 +64,8 @@ module JetPEG
     class BranchingResult < Result
       def initialize(builder, types)
         @builder = builder
-        @types = types
-
-        @input_phi = PhiGenerator.new builder, LLVM_STRING, "input"
-        @label_phis = types.map_hash { |name, type| PhiGenerator.new builder, type.llvm_type, name.to_s }
+        @input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
+        @label_phis = types.map_hash { |name, type| DynamicPhi.new builder, type.llvm_type, name.to_s }
       end
       
       def <<(result)
@@ -66,9 +75,9 @@ module JetPEG
         end
       end
       
-      def generate
-        @input = @input_phi.generate
-        @labels = @label_phis.map_hash { |name, phi| LabelValue.new phi.generate, @types[name] }
+      def build
+        @input = @input_phi.build
+        @labels = @label_phis.map_hash { |name, phi| phi.build }
         self
       end
     end

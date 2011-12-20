@@ -220,7 +220,7 @@ module JetPEG
           end_result = build builder, input, failed_block
           
           data = rule_label_type.create_value builder, end_result.labels
-          builder.store data, data_ptr unless data.value.null?
+          builder.store data, data_ptr unless data.null?
           
           builder.ret end_result.input
   
@@ -323,13 +323,13 @@ module JetPEG
         @children.each_with_index do |child, index|
           builder.position_at_end child_blocks[index]
           child_result = child.build(builder, start_input, child_blocks[index + 1] || failed_block)
-          child_result.labels.map_hash! { |name, value| @slots[name].slot_value builder, value }
+          child_result.labels.map_hash! { |name, value| @slots[name].slot_value builder, value, index }
           result << child_result
           builder.br successful_block
         end
         
         builder.position_at_end successful_block
-        result.generate
+        result.build
       end
     end
     
@@ -356,7 +356,7 @@ module JetPEG
         builder.br exit_block
         
         builder.position_at_end exit_block
-        result.generate
+        result.build
       end
     end
     
@@ -373,27 +373,26 @@ module JetPEG
       end
       
       def build(builder, start_input, failed_block, start_label_value = nil)
-        start_block = builder.insert_block
         loop_block = builder.create_block "repetition_loop"
         exit_block = builder.create_block "repetition_exit"
+
+        input = DynamicPhi.new builder, LLVM_STRING, "loop_input", start_input
+        label_value = DynamicPhi.new builder, label_type.llvm_type, "loop_label_value", start_label_value || label_type.llvm_type.null if label_type
         builder.br loop_block
         
         builder.position_at_end loop_block
-        input = builder.phi LLVM_STRING, {}, "loop_input"
-        label_value = builder.phi label_type.llvm_type, {}, "loop_label_value" if label_type
-
-        input.add_incoming start_block => start_input
-        label_value.add_incoming start_block => start_label_value || label_type.llvm_type.null if label_type
+        input.build
+        label_value.build if label_type
         
         next_result = @expression.build builder, input, exit_block
-        input.add_incoming builder.insert_block => next_result.input
-        label_value.add_incoming builder.insert_block => label_type.create_entry(builder, next_result.labels, label_value) if label_type
+        input << next_result.input
+        label_value << label_type.create_entry(builder, next_result.labels, label_value) if label_type
         
         builder.br loop_block
         
         builder.position_at_end exit_block
         result = Result.new input
-        result.labels = { AT_SYMBOL => LabelValue.new(label_value, label_type) } if label_type
+        result.labels = { AT_SYMBOL => label_value } if label_type
         result
       end
     end
@@ -424,29 +423,31 @@ module JetPEG
         label_type && AT_SYMBOL
       end
       
-      def build(builder, start_input, failed_block, start_label_value = nil)
-        start_block = builder.insert_block
+      def build(builder, start_input, failed_block)
         loop1_block = builder.create_block "until_loop1"
         loop2_block = builder.create_block "until_loop2"
         exit_block = builder.create_block "until_exit"
+        
+        input = DynamicPhi.new builder, LLVM_STRING, "loop_input", start_input
+        label_value = DynamicPhi.new builder, label_type.llvm_type, "loop_label_value", label_type.llvm_type.null if label_type
         builder.br loop1_block
         
         builder.position_at_end loop1_block
-        input = builder.phi LLVM_STRING, { start_block => start_input }, "loop_input"
-        label_value = builder.phi label_type.llvm_type, { start_block => start_label_value || label_type.llvm_type.null }, "loop_label_value" if label_type
+        input.build
+        label_value.build if label_type
         
         until_result = @until_expression.build builder, input, loop2_block
         builder.br exit_block
         
         builder.position_at_end loop2_block
         next_result = @expression.build builder, input, failed_block
-        input.add_incoming builder.insert_block => next_result.input
-        label_value.add_incoming builder.insert_block => label_type.create_entry(builder, next_result.labels, label_value) if label_type
+        input << next_result.input
+        label_value << label_type.create_entry(builder, next_result.labels, label_value) if label_type
         builder.br loop1_block
         
         builder.position_at_end exit_block
         result = Result.new until_result.input
-        result.labels = { AT_SYMBOL => LabelValue.new(label_type.create_entry(builder, until_result.labels, label_value), label_type) } if label_type
+        result.labels = { AT_SYMBOL => label_type.create_entry(builder, until_result.labels, label_value) } if label_type
         result
       end
     end

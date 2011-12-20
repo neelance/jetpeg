@@ -1,19 +1,6 @@
 module JetPEG
   AT_SYMBOL = "@".to_sym
   
-  class LabelValue
-    attr_reader :value, :type
-    
-    def initialize(value, type)
-      @value = value
-      @type = type
-    end
-    
-    def to_ptr
-      @value.to_ptr
-    end
-  end
-  
   class LabelValueType
     attr_reader :llvm_type, :ffi_type
     
@@ -23,7 +10,7 @@ module JetPEG
     end
     
     def create_value(builder, labels, begin_pos = nil, end_pos = nil)
-      LabelValue.new create_llvm_value(builder, labels, begin_pos, end_pos), self
+      create_llvm_value(builder, labels, begin_pos, end_pos)
     end
     
     def load(pointer, input, input_address)
@@ -83,8 +70,8 @@ module JetPEG
     
     def read_value(builder, data)
       labels = {}
-      @types.each_with_index do |(name, type), index|
-         labels[name] = LabelValue.new builder.extract_value(data, index, name.to_s), type
+      @types.keys.each_with_index do |name, index|
+         labels[name] = builder.extract_value(data, index, name.to_s)
       end
       labels
     end
@@ -121,10 +108,10 @@ module JetPEG
       super llvm_type, ffi_type
     end
     
-    def create_choice_value(builder, value, name)
+    def create_choice_value(builder, type, value, name)
       data = llvm_type.null
       if value
-        index = @choices.index value.type
+        index = @choices.index type
         data = builder.insert_value data, LLVM::Int(index), 0, "choice_data_with_index"
         data = builder.insert_value data, value, index + 1, "choice_data_with_#{name}"
       end
