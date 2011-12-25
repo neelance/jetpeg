@@ -62,9 +62,17 @@ module JetPEG
     end
     
     class BranchingResult < Result
-      def initialize(builder, types)
+      def initialize(builder, return_type)
         @builder = builder
         @input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
+        types = case return_type
+        when nil
+          {}
+        when Hash
+          return_type
+        else
+          return_type.types
+        end
         @label_phis = types.map_hash { |name, type| DynamicPhi.new builder, type.llvm_type, name.to_s }
       end
       
