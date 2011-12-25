@@ -159,7 +159,7 @@ module JetPEG
     end
     
     def create_target_type
-      @target_type = HashLabelValueType.new @target.create_label_types
+      @target_type = @target.create_return_type
     end
     
     def create_llvm_value(builder, labels, begin_pos = nil, end_pos = nil)
@@ -185,13 +185,13 @@ module JetPEG
     def initialize(entry_type)
       @entry_type = entry_type
       @pointer_type = PointerLabelValueType.new self
-      @label_types = { value: entry_type, previous: @pointer_type }
+      @return_type = HashLabelValueType.new value: entry_type, previous: @pointer_type
       @pointer_type.create_target_type
       super @pointer_type.llvm_type, @pointer_type.ffi_type
     end
     
-    def create_label_types
-      @label_types
+    def create_return_type
+      @return_type
     end
     
     def create_entry(builder, labels, previous_entry)
