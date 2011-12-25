@@ -1,7 +1,7 @@
 module JetPEG
   AT_SYMBOL = "@".to_sym
   
-  class LabelValueType
+  class ValueType
     attr_reader :llvm_type, :ffi_type
     
     def initialize(llvm_type, ffi_type)
@@ -32,11 +32,11 @@ module JetPEG
     end
   end
   
-  class SingleLabelValueType < LabelValueType
+  class SingleValueType < ValueType
     attr_reader :type
     
     def self.new(type)
-      return type if type.is_a? ChoiceLabelValueType
+      return type if type.is_a? ChoiceValueType
       super
     end
     
@@ -50,7 +50,7 @@ module JetPEG
     end
   end
   
-  class InputRangeLabelValueType < LabelValueType
+  class InputRangeValueType < ValueType
     INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }
     
     def create_llvm_value(builder, labels, begin_pos, end_pos)
@@ -66,7 +66,7 @@ module JetPEG
     end
   end
   
-  class HashLabelValueType < LabelValueType
+  class HashValueType < ValueType
     attr_reader :types
     
     def initialize(types)
@@ -116,7 +116,7 @@ module JetPEG
     end
   end
   
-  class ChoiceLabelValueType < LabelValueType
+  class ChoiceValueType < ValueType
     attr_reader :choices
     
     def initialize(choices)
@@ -150,7 +150,7 @@ module JetPEG
     end
   end
   
-  class PointerLabelValueType < LabelValueType
+  class PointerValueType < ValueType
     attr_reader :target
     
     def initialize(target)
@@ -179,13 +179,13 @@ module JetPEG
     end
   end
   
-  class ArrayLabelValueType < LabelValueType
+  class ArrayValueType < ValueType
     attr_reader :entry_type
     
     def initialize(entry_type)
       @entry_type = entry_type
-      @pointer_type = PointerLabelValueType.new self
-      @return_type = HashLabelValueType.new value: entry_type, previous: @pointer_type
+      @pointer_type = PointerValueType.new self
+      @return_type = HashValueType.new value: entry_type, previous: @pointer_type
       @pointer_type.create_target_type
       super @pointer_type.llvm_type, @pointer_type.ffi_type
     end
@@ -213,7 +213,7 @@ module JetPEG
     end
   end
     
-  class CreatorLabelType < LabelValueType
+  class CreatorType < ValueType
     attr_reader :creator_data, :data_type
     
     def initialize(data_type, creator_data = {})

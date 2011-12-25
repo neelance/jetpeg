@@ -34,7 +34,7 @@ module JetPEG
         @name = name
         @all_types = types
         @reduced_types = types.compact.uniq
-        @slot_type = @reduced_types.size > 1 ? ChoiceLabelValueType.new(@reduced_types) : @reduced_types.first
+        @slot_type = @reduced_types.size > 1 ? ChoiceValueType.new(@reduced_types) : @reduced_types.first
       end
       
       def slot_value(builder, value, child_index)

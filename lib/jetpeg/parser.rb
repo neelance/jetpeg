@@ -54,7 +54,7 @@ module JetPEG
     end
     
     def verify!
-      @rules.values.each(&:rule_label_type)
+      @rules.values.each(&:rule_return_type)
       @rules.values.each(&:realize_label_types)
     end
     
@@ -126,8 +126,8 @@ module JetPEG
       args << input_ptr
 
       data_pointer = nil
-      unless root_rule.rule_label_type.nil?
-        data_pointer = FFI::MemoryPointer.new root_rule.rule_label_type.ffi_type
+      unless root_rule.rule_return_type.nil?
+        data_pointer = FFI::MemoryPointer.new root_rule.rule_return_type.ffi_type
         args << data_pointer
       end
 
@@ -146,7 +146,7 @@ module JetPEG
       
       return [data_pointer, input_ptr.address] if options[:output] == :pointer
 
-      intermediate = root_rule.rule_label_type ? root_rule.rule_label_type.load(data_pointer, input, input_ptr.address) : {}
+      intermediate = root_rule.rule_return_type ? root_rule.rule_return_type.load(data_pointer, input, input_ptr.address) : {}
       return intermediate if options[:output] == :intermediate
 
       realized = JetPEG.realize_data intermediate, options[:class_scope]

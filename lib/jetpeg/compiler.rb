@@ -34,7 +34,7 @@ class Module
 end
 
 require "jetpeg/parser"
-require "jetpeg/label_value"
+require "jetpeg/values"
 require "jetpeg/compiler/tools"
 
 module JetPEG
@@ -143,7 +143,7 @@ module JetPEG
       
       def initialize(data)
         @name = nil
-        @rule_label_type = :pending
+        @rule_return_type = :pending
         @bare_rule_function = nil
         @traced_rule_function = nil
         @recursive_labels = []
@@ -172,18 +172,18 @@ module JetPEG
         nil
       end
       
-      def rule_label_type
-        raise Recursion if @rule_label_type == :recursion
-        if @rule_label_type == :pending
+      def rule_return_type
+        raise Recursion if @rule_return_type == :recursion
+        if @rule_return_type == :pending
           begin
-            @rule_label_type = :recursion
-            @rule_label_type = create_return_type
+            @rule_return_type = :recursion
+            @rule_return_type = create_return_type
           rescue Recursion
-            @rule_label_type = nil
+            @rule_return_type = nil
             raise CompilationError.new("Unlabeled recursion mixed with other labels.") if not create_return_type.nil?
           end
         end
-        @rule_label_type
+        @rule_return_type
       rescue CompilationError => e
         e.rule ||= self
         raise e
@@ -209,7 +209,7 @@ module JetPEG
         
         params = []
         params << LLVM_STRING
-        params << LLVM::Pointer(rule_label_type.llvm_type) unless rule_label_type.nil?
+        params << LLVM::Pointer(rule_return_type.llvm_type) unless rule_return_type.nil?
         @mod.functions.add @name, params, LLVM_STRING do |function, *args|
           if traced
             @traced_rule_function = function
@@ -229,7 +229,7 @@ module JetPEG
           end_result = build builder, args[0], failed_block
           
           if args[1]
-            data = rule_label_type.create_llvm_value builder, end_result.labels
+            data = rule_return_type.create_llvm_value builder, end_result.labels
             builder.store data, args[1]
           end
           
@@ -260,10 +260,10 @@ module JetPEG
       
       def label_type
         @label_type ||= begin
-          @expression.create_return_type || InputRangeLabelValueType::INSTANCE
+          @expression.create_return_type || InputRangeValueType::INSTANCE
         rescue Recursion
           rule.recursive_labels << self
-          PointerLabelValueType.new @expression
+          PointerValueType.new @expression
         end
       end
 
@@ -271,9 +271,9 @@ module JetPEG
         if not label_name
           nil
         elsif label_name == AT_SYMBOL
-          SingleLabelValueType.new label_type
+          SingleValueType.new label_type
         else
-          HashLabelValueType.new label_name => label_type
+          HashValueType.new label_name => label_type
         end
       end
       
@@ -293,16 +293,16 @@ module JetPEG
 
       def create_return_type
         child_types = @children.map(&:create_return_type).compact
-        if not child_types.empty? and child_types.all?(&HashLabelValueType)
+        if not child_types.empty? and child_types.all?(&HashValueType)
           merged = {}
           child_types.each { |type|
             merged.merge!(type.types) { |key, oldval, newval|
               raise CompilationError.new("Duplicate label (#{key}).")
             }
           }
-          HashLabelValueType.new merged
+          HashValueType.new merged
         else
-          raise CompilationError.new("Specific return value mixed with labels.") if child_types.any?(&HashLabelValueType)
+          raise CompilationError.new("Specific return value mixed with labels.") if child_types.any?(&HashValueType)
           raise CompilationError.new("Multiple specific return values.") if child_types.size > 1
           child_types.first
         end
@@ -327,7 +327,7 @@ module JetPEG
         child_types = @children.map(&:create_return_type)
         if not child_types.any?
           nil
-        elsif child_types.compact.all?(&HashLabelValueType)
+        elsif child_types.compact.all?(&HashValueType)
           keys = child_types.compact.map(&:types).map(&:keys).flatten.uniq
           keys.each do |key|
             types_for_label = child_types.map { |t| t && t.types[key] }
@@ -335,9 +335,9 @@ module JetPEG
             @slots[key] = slot
             @label_types[key] = slot.slot_type
           end
-          HashLabelValueType.new @label_types
+          HashValueType.new @label_types
         else
-          raise CompilationError.new("Specific return value mixed with labels.") if child_types.any?(&HashLabelValueType)
+          raise CompilationError.new("Specific return value mixed with labels.") if child_types.any?(&HashValueType)
           slot = LabelSlot.new AT_SYMBOL, child_types
           @slots[AT_SYMBOL] = slot
           @label_types[AT_SYMBOL] = slot.slot_type
@@ -395,7 +395,7 @@ module JetPEG
       def label_type
         @array_label_type ||= begin
           type = @expression.create_return_type
-          type && ArrayLabelValueType.new(super)
+          type && ArrayValueType.new(super)
         end
       end
       
@@ -447,14 +447,14 @@ module JetPEG
           loop_type = @expression.create_return_type
           until_type = @until_expression.create_return_type
           entry_type = if loop_type && until_type
-            raise CompilationError.new("Incompatible return values in until expression.") if not loop_type.is_a?(HashLabelValueType) or not until_type.is_a?(HashLabelValueType)
+            raise CompilationError.new("Incompatible return values in until expression.") if not loop_type.is_a?(HashValueType) or not until_type.is_a?(HashValueType)
             types = loop_type.types
             types.merge!(until_type.types) { |key, oldval, newval| raise CompilationError.new("Overlapping labels in until-expression.") }
-            HashLabelValueType.new types
+            HashValueType.new types
           else
             loop_type || until_type
           end
-          entry_type && ArrayLabelValueType.new(entry_type)
+          entry_type && ArrayValueType.new(entry_type)
         end
       end
       
@@ -639,11 +639,11 @@ module JetPEG
       end
       
       def create_return_type
-        referenced.rule_label_type
+        referenced.rule_return_type
       end
       
       def build_allocas(builder)
-        @label_data_ptr = referenced.rule_label_type && referenced.rule_label_type.alloca(builder, "#{@referenced_name}_data_ptr")
+        @label_data_ptr = referenced.rule_return_type && referenced.rule_return_type.alloca(builder, "#{@referenced_name}_data_ptr")
       end
       
       def build(builder, start_input, failed_block)
@@ -660,7 +660,7 @@ module JetPEG
         result = Result.new rule_end_input
         if @label_data_ptr
           label_data = builder.load @label_data_ptr, "#{@referenced_name}_data"
-          result.labels = referenced.rule_label_type.read_value builder, label_data
+          result.labels = referenced.rule_return_type.read_value builder, label_data
         end
         result
       end
@@ -688,7 +688,7 @@ module JetPEG
       end
 
       def label_type
-        @object_creator_label_type ||= CreatorLabelType.new super, __type__: :object, class_name: @class_name
+        @object_creator_label_type ||= CreatorType.new super, __type__: :object, class_name: @class_name
       end
       
       def label_name
@@ -705,7 +705,7 @@ module JetPEG
       end
 
       def label_type
-        @value_creator_label_type ||= CreatorLabelType.new super, __type__: :value, code: @code, filename: parser.filename, lineno: @lineno
+        @value_creator_label_type ||= CreatorType.new super, __type__: :value, code: @code, filename: parser.filename, lineno: @lineno
       end
       
       def label_name
