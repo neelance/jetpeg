@@ -30,7 +30,7 @@ rule sequence
 end
 
 rule labeled
-  name:( alpha_char alphanumeric_char* ) ':' expression:lookahead <Label> /
+  is_local:'%'? name:( alpha_char alphanumeric_char* ) ':' expression:lookahead <Label> /
   lookahead
 end
 
@@ -52,11 +52,16 @@ rule primary
   terminal /
   rule_name_label /
   parenthesized_expression /
+  local_value /
   function
 end
 
 rule parenthesized_expression
   '(' ws expression:choice ')' ws <ParenthesizedExpression>
+end
+
+rule local_value
+  '%' name:( alpha_char alphanumeric_char* ) ws <LocalValue>
 end
 
 rule rule_name_label

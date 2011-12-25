@@ -69,7 +69,7 @@ module JetPEG
     end
     
     def build
-      @possible_failure_reasons = [] # needed to avoid GC
+      @possible_failure_reasons = []
       @mod = LLVM::Module.new "Parser"
       @malloc = @mod.functions.add "malloc", [LLVM::Int64], LLVM::Pointer(LLVM::Int8)
       
@@ -120,15 +120,24 @@ module JetPEG
         build
       end
       
+      args = []
+
       input_ptr = FFI::MemoryPointer.from_string input
-      data_pointer = FFI::MemoryPointer.new root_rule.rule_label_type.ffi_type
-      input_end_ptr = @execution_engine.run_function(root_rule.rule_function(false), input_ptr, data_pointer).to_value_ptr
+      args << input_ptr
+
+      data_pointer = nil
+      unless root_rule.rule_label_type.nil?
+        data_pointer = FFI::MemoryPointer.new root_rule.rule_label_type.ffi_type
+        args << data_pointer
+      end
+
+      input_end_ptr = @execution_engine.run_function(root_rule.rule_function(false), *args).to_value_ptr
       
       if input_end_ptr.null? or input_ptr.address + input.size != input_end_ptr.address
         @failure_reason = ParsingError.new([])
         @failure_reason_position = input_ptr
         @execution_engine.pointer_to_global(@llvm_add_failure_reason_callback).put_pointer 0, @ffi_add_failure_reason_callback
-        @execution_engine.run_function(root_rule.rule_function(true), input_ptr, data_pointer)
+        @execution_engine.run_function(root_rule.rule_function(true), *args)
         @failure_reason.input = input
         @failure_reason.position = @failure_reason_position.address - input_ptr.address
         raise @failure_reason if options[:raise_on_failure]
@@ -137,7 +146,7 @@ module JetPEG
       
       return [data_pointer, input_ptr.address] if options[:output] == :pointer
 
-      intermediate = root_rule.rule_label_type.load data_pointer, input, input_ptr.address
+      intermediate = root_rule.rule_label_type ? root_rule.rule_label_type.load(data_pointer, input, input_ptr.address) : {}
       return intermediate if options[:output] == :intermediate
 
       realized = JetPEG.realize_data intermediate, options[:class_scope]

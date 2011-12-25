@@ -9,22 +9,44 @@ module JetPEG
       @ffi_type = ffi_type
     end
     
-    def create_value(builder, labels, begin_pos = nil, end_pos = nil)
-      create_llvm_value(builder, labels, begin_pos, end_pos)
-    end
-    
     def load(pointer, input, input_address)
       return nil if pointer.null?
-      data = if ffi_type == :pointer
-        pointer.get_pointer 0
-      else
-        ffi_type.new pointer
-      end
+      data = ffi_type.new pointer
       read data, input, input_address
     end
     
     def alloca(builder, name)
       builder.alloca llvm_type, name
+    end
+    
+    def types
+      { AT_SYMBOL => self }
+    end
+    
+    def create_llvm_value(builder, labels, begin_pos = nil, end_pos = nil)
+      labels[AT_SYMBOL]
+    end
+    
+    def read_value(builder, data)
+      { AT_SYMBOL => data }
+    end
+  end
+  
+  class SingleLabelValueType < LabelValueType
+    attr_reader :type
+    
+    def self.new(type)
+      return type if type.is_a? ChoiceLabelValueType
+      super
+    end
+    
+    def initialize(type)
+      @type = type
+      super type.llvm_type, type.ffi_type
+    end
+    
+    def read(data, input, input_address)
+      @type.read data, input, input_address
     end
   end
   
@@ -63,6 +85,7 @@ module JetPEG
     def create_llvm_value(builder, labels, begin_pos = nil, end_pos = nil)
       data = llvm_type.null
       labels.each do |name, value|
+        #puts name, @types.keys.inspect
         data = builder.insert_value data, value, @types.keys.index(name), "hash_data_with_#{name}"
       end
       data

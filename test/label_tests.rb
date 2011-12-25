@@ -125,4 +125,11 @@ class LabelsTests < Test::Unit::TestCase
     assert rule.match("def") == ["d".ord, "e".ord, "f".ord]
     assert rule.match("ghi") == ["test.jetpeg", 4]
   end
+  
+  #def test_local_label
+  #  rule = JetPEG::Compiler.compile_rule "'a' %temp:. 'c' char:%temp"
+  #  result = rule.match "abc"
+  #  assert result == { char: "b" }
+  #end
+  
 end

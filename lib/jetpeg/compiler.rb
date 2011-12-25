@@ -137,7 +137,7 @@ module JetPEG
       
       def initialize(data)
         @name = nil
-        @rule_label_type = nil
+        @rule_label_type = :pending
         @bare_rule_function = nil
         @traced_rule_function = nil
         @recursive_labels = []
@@ -166,15 +166,26 @@ module JetPEG
         {}
       end
       
+      def create_label_types2
+        types = create_label_types
+        if types.empty?
+          nil
+        elsif types.keys == [AT_SYMBOL]
+          SingleLabelValueType.new types[AT_SYMBOL]
+        else
+          HashLabelValueType.new types
+        end
+      end
+      
       def rule_label_type
         raise Recursion if @rule_label_type == :recursion
-        if @rule_label_type.nil?
+        if @rule_label_type == :pending
           begin
             @rule_label_type = :recursion
-            @rule_label_type = HashLabelValueType.new create_label_types
+            @rule_label_type = create_label_types2
           rescue Recursion
-            @rule_label_type = HashLabelValueType.new({})
-            raise CompilationError.new("Unlabeled recursion mixed with other labels.") if not create_label_types.empty?
+            @rule_label_type = nil
+            raise CompilationError.new("Unlabeled recursion mixed with other labels.") if not create_label_types2.nil?
           end
         end
         @rule_label_type
@@ -201,7 +212,10 @@ module JetPEG
         return @bare_rule_function if not traced and @bare_rule_function
         return @traced_rule_function if traced and @traced_rule_function
         
-        @mod.functions.add @name, [LLVM_STRING, LLVM::Pointer(rule_label_type.llvm_type)], LLVM_STRING do |function, input, data_ptr|
+        params = []
+        params << LLVM_STRING
+        params << LLVM::Pointer(rule_label_type.llvm_type) unless rule_label_type.nil?
+        @mod.functions.add @name, params, LLVM_STRING do |function, *args|
           if traced
             @traced_rule_function = function
           else
@@ -217,10 +231,12 @@ module JetPEG
           build_allocas builder
   
           failed_block = builder.create_block "failed"
-          end_result = build builder, input, failed_block
+          end_result = build builder, args[0], failed_block
           
-          data = rule_label_type.create_value builder, end_result.labels
-          builder.store data, data_ptr unless data.null?
+          if args[1]
+            data = rule_label_type.create_llvm_value builder, end_result.labels
+            builder.store data, args[1]
+          end
           
           builder.ret end_result.input
   
@@ -244,12 +260,13 @@ module JetPEG
         super
         @label_name = data[:name] && data[:name].to_sym
         @expression = data[:expression]
+        @is_local = data[:is_local]
       end
       
       def label_type
         @label_type ||= begin
           types = @expression.create_label_types
-          if types.empty?
+          if types.nil? || types.empty? # TODO deleteme
             InputRangeLabelValueType::INSTANCE
           else
             HashLabelValueType.new types
@@ -266,7 +283,7 @@ module JetPEG
       
       def build(builder, start_input, failed_block)
         result = @expression.build builder, start_input, failed_block
-        value = label_type.create_value builder, result.labels, start_input, result.input
+        value = label_type.create_llvm_value builder, result.labels, start_input, result.input
         result.labels = { label_name => value }
         result
       end
@@ -279,12 +296,34 @@ module JetPEG
       end
 
       def create_label_types
-        @children.each_with_object({}) { |child, total|
-          total.merge!(child.create_label_types) { |key, oldval, newval|
+        child_types = @children.map { |child| child.create_label_types }
+        child_types.compact!
+        merged = {}
+        child_types.each { |types|
+          merged.merge!(types) { |key, oldval, newval|
             raise CompilationError.new("Duplicate label (#{key}).")
           }
-          raise CompilationError.new("Label @ mixed with other labels (#{total.keys.join(', ')}).") if total.has_key?(AT_SYMBOL) and total.size > 1
+          raise CompilationError.new("Specific return value mixed with labels (#{merged.keys.join(', ')}).") if merged.has_key?(AT_SYMBOL) and merged.size > 1
         }
+        merged
+      end
+      
+      def create_label_types2
+        child_types = @children.map { |child| child.create_label_types2 }
+        child_types.compact!
+        if not child_types.empty? and child_types.all? { |type| type.is_a? HashLabelValueType }
+          merged = {}
+          child_types.each { |type|
+            merged.merge!(type.types) { |key, oldval, newval|
+              raise CompilationError.new("Duplicate label (#{key}).")
+            }
+          }
+          HashLabelValueType.new merged
+        else
+          raise CompilationError.new("Specific return value mixed with labels.") if child_types.any? { |type| type.is_a? HashLabelValueType }
+          raise CompilationError.new("Multiple specific return values.") if child_types.size > 1
+          child_types.first
+        end
       end
       
       def build(builder, start_input, failed_block)
@@ -304,7 +343,25 @@ module JetPEG
         @slots = {}
         @label_types = {}
         child_types = @children.map { |child| child.create_label_types }
-        child_types.map(&:keys).flatten.uniq.each do |key|
+        keys = child_types.map(&:keys).flatten.uniq
+        raise CompilationError.new("Specific return value mixed with labels.") if keys.include?(AT_SYMBOL) and keys.size > 1
+        keys.each do |key|
+          types_for_label = child_types.map { |t| t[key] }
+          slot = LabelSlot.new key, types_for_label
+          @slots[key] = slot
+          @label_types[key] = slot.slot_type
+        end
+        
+        @label_types
+      end
+      
+      def create_label_types2disabled
+        @slots = {}
+        @label_types = {}
+        child_types = @children.map { |child| child.create_label_types }
+        keys = child_types.map(&:keys).flatten.uniq
+        raise CompilationError.new("Specific return value mixed with labels.") if keys.include?(AT_SYMBOL) and keys.size > 1
+        keys.each do |key|
           types_for_label = child_types.map { |t| t[key] }
           slot = LabelSlot.new key, types_for_label
           @slots[key] = slot
@@ -600,15 +657,24 @@ module JetPEG
       end
       
       def create_label_types
-        referenced.rule_label_type.types
+        if referenced.rule_label_type.nil?
+          {}
+        elsif referenced.rule_label_type.is_a? HashLabelValueType
+          referenced.rule_label_type.types
+        else
+          { AT_SYMBOL => referenced.rule_label_type }
+        end
       end
       
       def build_allocas(builder)
-        @label_data_ptr = referenced.rule_label_type.alloca builder, "#{@referenced_name}_data_ptr"
+        @label_data_ptr = referenced.rule_label_type && referenced.rule_label_type.alloca(builder, "#{@referenced_name}_data_ptr")
       end
       
       def build(builder, start_input, failed_block)
-        rule_end_input = builder.call_rule referenced, start_input, @label_data_ptr, "rule_end_input"
+        args = []
+        args << start_input
+        args << @label_data_ptr if @label_data_ptr
+        rule_end_input = builder.call_rule referenced, *args, "rule_end_input"
         
         rule_successful = builder.icmp :ne, rule_end_input, LLVM_STRING.null_pointer, "rule_successful"
         successful_block = builder.create_block "rule_call_successful"
@@ -616,7 +682,7 @@ module JetPEG
         
         builder.position_at_end successful_block
         result = Result.new rule_end_input
-        unless @label_data_ptr.null?
+        if @label_data_ptr
           label_data = builder.load @label_data_ptr, "#{@referenced_name}_data"
           result.labels = referenced.rule_label_type.read_value builder, label_data
         end
@@ -668,6 +734,12 @@ module JetPEG
       
       def label_name
         AT_SYMBOL
+      end
+    end
+    
+    class LocalValue < ParsingExpression
+      def build(builder, start_input, failed_block)
+        Result.new start_input
       end
     end
     
