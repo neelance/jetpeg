@@ -229,7 +229,7 @@ module JetPEG
           end_result = build builder, args[0], failed_block
           
           if args[1]
-            data = rule_return_type.create_llvm_value builder, end_result.labels
+            data = rule_return_type.create_llvm_value builder, end_result.value
             builder.store data, args[1]
           end
           
@@ -268,19 +268,46 @@ module JetPEG
       end
 
       def create_return_type
-        if not label_name
-          nil
-        elsif label_name == AT_SYMBOL
-          SingleValueType.new label_type
-        else
-          HashValueType.new label_name => label_type
-        end
+        label_type && HashValueType.new(label_name => label_type)
       end
       
       def build(builder, start_input, failed_block)
         result = @expression.build builder, start_input, failed_block
-        value = label_type.create_llvm_value builder, result.labels, start_input, result.input
-        result.labels = { label_name => value }
+        value = label_type.create_llvm_value builder, result.value, start_input, result.input
+        result.value = { label_name => value }
+        result
+      end
+    end
+    
+    class RuleNameLabel < Label
+      def label_name
+        @expression.referenced_name
+      end
+    end
+    
+    class AtLabel < ParsingExpression
+      def initialize(data)
+        super
+        @expression = data[:expression]
+      end
+      
+      def label_type
+        @label_type ||= begin
+          @expression.create_return_type || InputRangeValueType::INSTANCE
+        rescue Recursion
+          rule.recursive_labels << self
+          PointerValueType.new @expression
+        end
+      end
+
+      def create_return_type
+        label_type && SingleValueType.new(label_type)
+      end
+      
+      def build(builder, start_input, failed_block)
+        result = @expression.build builder, start_input, failed_block
+        value = label_type.create_llvm_value builder, result.value, start_input, result.input
+        result.value = { AT_SYMBOL => value }
         result
       end
     end
@@ -354,7 +381,7 @@ module JetPEG
         @children.each_with_index do |child, index|
           builder.position_at_end child_blocks[index]
           child_result = child.build(builder, start_input, child_blocks[index + 1] || failed_block)
-          child_result.labels.map_hash! { |name, value| @slots[name].slot_value builder, value, index }
+          child_result.value.map_hash! { |name, value| @slots[name].slot_value builder, value, index }
           result << child_result
           builder.br successful_block
         end
@@ -391,16 +418,21 @@ module JetPEG
       end
     end
     
-    class ZeroOrMore < Label
+    class ZeroOrMore < ParsingExpression
+      def initialize(data)
+        super
+        @expression = data[:expression]
+      end
+      
       def label_type
         @array_label_type ||= begin
           type = @expression.create_return_type
-          type && ArrayValueType.new(super)
+          type && ArrayValueType.new(@expression.create_return_type)
         end
       end
       
-      def label_name
-        label_type && AT_SYMBOL
+      def create_return_type
+        label_type
       end
       
       def build(builder, start_input, failed_block, start_label_value = nil)
@@ -417,13 +449,13 @@ module JetPEG
         
         next_result = @expression.build builder, input, exit_block
         input << next_result.input
-        label_value << label_type.create_entry(builder, next_result.labels, label_value) if label_type
+        label_value << label_type.create_entry(builder, next_result.value, label_value) if label_type
         
         builder.br loop_block
         
         builder.position_at_end exit_block
         result = Result.new input
-        result.labels = { AT_SYMBOL => label_value } if label_type
+        result.value = { AT_SYMBOL => label_value } if label_type
         result
       end
     end
@@ -431,14 +463,15 @@ module JetPEG
     class OneOrMore < ZeroOrMore
       def build(builder, start_input, failed_block)
         result = @expression.build builder, start_input, failed_block
-        label_value = label_type.create_entry(builder, result.labels, label_type.llvm_type.null) if label_type
+        label_value = label_type.create_entry(builder, result.value, label_type.llvm_type.null) if label_type
         super builder, result.input, failed_block, label_value
       end
     end
     
-    class Until < Label
+    class Until < ParsingExpression
       def initialize(data)
         super
+        @expression = data[:expression]
         @until_expression = data[:until_expression]
       end
       
@@ -449,7 +482,7 @@ module JetPEG
           entry_type = if loop_type && until_type
             raise CompilationError.new("Incompatible return values in until expression.") if not loop_type.is_a?(HashValueType) or not until_type.is_a?(HashValueType)
             types = loop_type.types
-            types.merge!(until_type.types) { |key, oldval, newval| raise CompilationError.new("Overlapping labels in until-expression.") }
+            types.merge!(until_type.types) { |key, oldval, newval| raise CompilationError.new("Overlapping value in until-expression.") }
             HashValueType.new types
           else
             loop_type || until_type
@@ -458,8 +491,8 @@ module JetPEG
         end
       end
       
-      def label_name
-        label_type && AT_SYMBOL
+      def create_return_type
+        label_type
       end
       
       def build(builder, start_input, failed_block)
@@ -481,12 +514,12 @@ module JetPEG
         builder.position_at_end loop2_block
         next_result = @expression.build builder, input, failed_block
         input << next_result.input
-        label_value << label_type.create_entry(builder, next_result.labels, label_value) if label_type
+        label_value << label_type.create_entry(builder, next_result.value, label_value) if label_type
         builder.br loop1_block
         
         builder.position_at_end exit_block
         result = Result.new until_result.input
-        result.labels = { AT_SYMBOL => label_type.create_entry(builder, until_result.labels, label_value) } if label_type
+        result.value = { AT_SYMBOL => label_type.create_entry(builder, until_result.value, label_value) } if label_type
         result
       end
     end
@@ -620,12 +653,6 @@ module JetPEG
       end
     end
     
-    class RuleNameLabel < Label
-      def label_name
-        @expression.referenced_name
-      end
-    end
-    
     class RuleName < ParsingExpression
       attr_reader :referenced_name
       
@@ -660,7 +687,7 @@ module JetPEG
         result = Result.new rule_end_input
         if @label_data_ptr
           label_data = builder.load @label_data_ptr, "#{@referenced_name}_data"
-          result.labels = referenced.rule_return_type.read_value builder, label_data
+          result.value = referenced.rule_return_type.read_value builder, label_data
         end
         result
       end
@@ -681,7 +708,7 @@ module JetPEG
       end
     end
     
-    class ObjectCreator < Label
+    class ObjectCreator < AtLabel
       def initialize(data)
         super
         @class_name = data[:class_name].split("::").map(&:to_sym)
@@ -690,13 +717,9 @@ module JetPEG
       def label_type
         @object_creator_label_type ||= CreatorType.new super, __type__: :object, class_name: @class_name
       end
-      
-      def label_name
-        AT_SYMBOL
-      end
     end
     
-    class ValueCreator < Label
+    class ValueCreator < AtLabel
       def initialize(data)
         super
         @code = data[:code]
@@ -706,10 +729,6 @@ module JetPEG
 
       def label_type
         @value_creator_label_type ||= CreatorType.new super, __type__: :value, code: @code, filename: parser.filename, lineno: @lineno
-      end
-      
-      def label_name
-        AT_SYMBOL
       end
     end
     

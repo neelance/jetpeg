@@ -47,16 +47,16 @@ module JetPEG
     end
         
     class Result
-      attr_accessor :input, :labels
+      attr_accessor :input, :value
       
       def initialize(input = nil)
         @input = input
-        @labels = {}
+        @value = {}
       end
       
       def merge!(result)
         @input = result.input
-        @labels.merge! result.labels
+        @value.merge! result.value
         self
       end
     end
@@ -79,13 +79,13 @@ module JetPEG
       def <<(result)
         @input_phi << result.input
         @label_phis.each do |name, phi|
-          phi << result.labels[name]
+          phi << result.value[name]
         end
       end
       
       def build
         @input = @input_phi.build
-        @labels = @label_phis.map_hash { |name, phi| phi.build }
+        @value = @label_phis.map_hash { |name, phi| phi.build }
         self
       end
     end

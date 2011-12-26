@@ -31,6 +31,7 @@ end
 
 rule labeled
   is_local:'%'? name:( alpha_char alphanumeric_char* ) ':' expression:lookahead <Label> /
+  '@:' expression:lookahead <AtLabel> /
   lookahead
 end
 
@@ -118,7 +119,7 @@ rule keyword
 end
 
 rule alpha_char
-  [A-Za-z_@]
+  [A-Za-z_]
 end
 
 rule alphanumeric_char

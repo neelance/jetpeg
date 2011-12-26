@@ -23,8 +23,8 @@ module JetPEG
       { AT_SYMBOL => self }
     end
     
-    def create_llvm_value(builder, labels, begin_pos = nil, end_pos = nil)
-      labels[AT_SYMBOL]
+    def create_llvm_value(builder, value, begin_pos = nil, end_pos = nil)
+      value[AT_SYMBOL]
     end
     
     def read_value(builder, data)
@@ -53,7 +53,7 @@ module JetPEG
   class InputRangeValueType < ValueType
     INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }
     
-    def create_llvm_value(builder, labels, begin_pos, end_pos)
+    def create_llvm_value(builder, value, begin_pos, end_pos)
       pos = llvm_type.null
       pos = builder.insert_value pos, begin_pos, 0, "pos"
       pos = builder.insert_value pos, end_pos, 1, "pos"
@@ -82,9 +82,9 @@ module JetPEG
       super llvm_type, ffi_type
     end
 
-    def create_llvm_value(builder, labels, begin_pos = nil, end_pos = nil)
+    def create_llvm_value(builder, value, begin_pos = nil, end_pos = nil)
       data = llvm_type.null
-      labels.each do |name, value|
+      value.each do |name, value|
         #puts name, @types.keys.inspect
         data = builder.insert_value data, value, @types.keys.index(name), "hash_data_with_#{name}"
       end
@@ -92,11 +92,11 @@ module JetPEG
     end
     
     def read_value(builder, data)
-      labels = {}
+      value = {}
       @types.keys.each_with_index do |name, index|
-         labels[name] = builder.extract_value(data, index, name.to_s)
+         value[name] = builder.extract_value(data, index, name.to_s)
       end
-      labels
+      value
     end
     
     def read(data, input, input_address)
@@ -162,8 +162,8 @@ module JetPEG
       @target_type = @target.create_return_type
     end
     
-    def create_llvm_value(builder, labels, begin_pos = nil, end_pos = nil)
-      value = @target_type.create_llvm_value builder, labels
+    def create_llvm_value(builder, value, begin_pos = nil, end_pos = nil)
+      value = @target_type.create_llvm_value builder, value
       ptr = builder.malloc @target_type.llvm_type.size # TODO free
       casted_ptr = builder.bit_cast ptr, LLVM::Pointer(@target_type.llvm_type)
       builder.store value, casted_ptr
@@ -194,8 +194,8 @@ module JetPEG
       @return_type
     end
     
-    def create_entry(builder, labels, previous_entry)
-      @pointer_type.create_llvm_value builder, { value: @entry_type.create_llvm_value(builder, labels), previous: previous_entry }
+    def create_entry(builder, value, previous_entry)
+      @pointer_type.create_llvm_value builder, { value: @entry_type.create_llvm_value(builder, value), previous: previous_entry }
     end
     
     def read(data, input, input_address)
@@ -222,8 +222,8 @@ module JetPEG
       super @data_type.llvm_type, @data_type.ffi_type
     end
     
-    def create_llvm_value(builder, labels, begin_pos = nil, end_pos = nil)
-      @data_type.create_llvm_value builder, labels, begin_pos, end_pos
+    def create_llvm_value(builder, value, begin_pos = nil, end_pos = nil)
+      @data_type.create_llvm_value builder, value, begin_pos, end_pos
     end
     
     def read(data, input, input_address)
