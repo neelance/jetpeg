@@ -27,36 +27,44 @@ module JetPEG
       end
     end
     
-    class LabelSlot
-      attr_reader :slot_type
-      
-      def initialize(name, types)
-        @name = name
-        @all_types = types
-        @reduced_types = types.compact.uniq
-        @slot_type = @reduced_types.size > 1 ? ChoiceValueType.new(@reduced_types) : @reduced_types.first
+    class DynamicPhiHash
+      def initialize(builder, types)
+        @builder = builder
+        @phis = types.map_hash { |name, type| [DynamicPhi.new(builder, type.llvm_type, name.to_s), type] }
+        @index = 0
       end
       
-      def slot_value(builder, value, child_index)
-        if @reduced_types.size > 1
-          @slot_type.create_choice_value builder, @all_types[child_index], value, @name
-        else
-          value
+      def <<(value)
+        @phis.each do |name, (phi, type)|
+          phi_value = value && value[name]
+          phi_value = type.create_choice_value @builder, @index, phi_value if type.is_a?(ChoiceValueType)
+          phi << phi_value
         end
+        @index += 1
+      end
+      
+      def build
+        @phis.map_hash { |name, (phi, _)| phi.build }
       end
     end
-        
+    
     class Result
       attr_accessor :input, :value
       
-      def initialize(input = nil)
+      def initialize(input, return_type = nil)
         @input = input
-        @value = {}
+        @hash_mode = return_type.is_a?(HashValueType) || return_type.is_a?(ChoiceValueType)
+        @value = @hash_mode ? {} : nil
       end
       
       def merge!(result)
         @input = result.input
-        @value.merge! result.value
+        if @hash_mode
+          @value.merge! result.value if result.value
+        elsif result.value
+          raise "Internal error." if not @value.nil?
+          @value = result.value
+        end
         self
       end
     end
@@ -65,27 +73,22 @@ module JetPEG
       def initialize(builder, return_type)
         @builder = builder
         @input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
-        types = case return_type
-        when nil
-          {}
-        when Hash
-          return_type
+        hash_mode = return_type.is_a?(HashValueType) || return_type.is_a?(ChoiceValueType)
+        @value_phi = if hash_mode
+          DynamicPhiHash.new builder, return_type.types
         else
-          return_type.types
+          return_type && DynamicPhi.new(builder, return_type.llvm_type, "return_value")
         end
-        @label_phis = types.map_hash { |name, type| DynamicPhi.new builder, type.llvm_type, name.to_s }
       end
       
       def <<(result)
         @input_phi << result.input
-        @label_phis.each do |name, phi|
-          phi << result.value[name]
-        end
+        @value_phi << result.value if @value_phi
       end
       
       def build
         @input = @input_phi.build
-        @value = @label_phis.map_hash { |name, phi| phi.build }
+        @value = @value_phi.build if @value_phi
         self
       end
     end

@@ -320,7 +320,7 @@ module JetPEG
 
       def create_return_type
         child_types = @children.map(&:create_return_type).compact
-        if not child_types.empty? and child_types.all?(&HashValueType)
+        @return_type = if not child_types.empty? and child_types.all?(&HashValueType)
           merged = {}
           child_types.each { |type|
             merged.merge!(type.types) { |key, oldval, newval|
@@ -336,9 +336,11 @@ module JetPEG
       end
       
       def build(builder, start_input, failed_block)
-        @children.inject(Result.new(start_input)) do |result, child|
+        result = Result.new start_input, @return_type
+        @children.each do |child|
           result.merge! child.build(builder, result.input, failed_block)
         end
+        result
       end
     end
     
@@ -350,38 +352,32 @@ module JetPEG
       
       def create_return_type
         @slots = {}
-        @label_types = {}
         child_types = @children.map(&:create_return_type)
-        if not child_types.any?
+        @return_type = if not child_types.any?
           nil
         elsif child_types.compact.all?(&HashValueType)
           keys = child_types.compact.map(&:types).map(&:keys).flatten.uniq
+          return_hash_types = {}
           keys.each do |key|
-            types_for_label = child_types.map { |t| t && t.types[key] }
-            slot = LabelSlot.new key, types_for_label
-            @slots[key] = slot
-            @label_types[key] = slot.slot_type
+            all_types = child_types.map { |t| t && t.types[key] }
+            return_hash_types[key] = ChoiceValueType.new(all_types, key)
           end
-          HashValueType.new @label_types
+          HashValueType.new return_hash_types
         else
           raise CompilationError.new("Specific return value mixed with labels.") if child_types.any?(&HashValueType)
-          slot = LabelSlot.new AT_SYMBOL, child_types
-          @slots[AT_SYMBOL] = slot
-          @label_types[AT_SYMBOL] = slot.slot_type
-          slot.slot_type
+          ChoiceValueType.new child_types, "return_value"
         end
       end
       
       def build(builder, start_input, failed_block)
         successful_block = builder.create_block "choice_successful"
         child_blocks = @children.map { builder.create_block "choice_child" }
-        result = BranchingResult.new builder, @label_types
+        result = BranchingResult.new builder, @return_type
         builder.br child_blocks.first
         
         @children.each_with_index do |child, index|
           builder.position_at_end child_blocks[index]
           child_result = child.build(builder, start_input, child_blocks[index + 1] || failed_block)
-          child_result.value.map_hash! { |name, value| @slots[name].slot_value builder, value, index }
           result << child_result
           builder.br successful_block
         end
