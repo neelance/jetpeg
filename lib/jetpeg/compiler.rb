@@ -189,7 +189,7 @@ module JetPEG
         raise e
       end
       
-      def realize_label_types
+      def realize_return_types
         @recursive_labels.map(&:label_type).each(&:create_target_type)
       end
       
@@ -393,12 +393,12 @@ module JetPEG
       end
       
       def create_return_type
-        @label_type = @expression.create_return_type
+        @return_type = @expression.create_return_type
       end
       
       def build(builder, start_input, failed_block)
         exit_block = builder.create_block "optional_exit"
-        result = BranchingResult.new builder, @label_type
+        result = BranchingResult.new builder, @return_type
         
         optional_failed_block = builder.create_block "optional_failed"
         result << @expression.build(builder, start_input, optional_failed_block)
@@ -419,38 +419,34 @@ module JetPEG
         @expression = data[:expression]
       end
       
-      def label_type
-        @array_label_type ||= begin
+      def create_return_type
+        @return_type ||= begin
           type = @expression.create_return_type
           type && ArrayValueType.new(@expression.create_return_type)
         end
       end
       
-      def create_return_type
-        label_type
-      end
-      
-      def build(builder, start_input, failed_block, start_label_value = nil)
+      def build(builder, start_input, failed_block, start_return_value = nil)
         loop_block = builder.create_block "repetition_loop"
         exit_block = builder.create_block "repetition_exit"
 
         input = DynamicPhi.new builder, LLVM_STRING, "loop_input", start_input
-        label_value = DynamicPhi.new builder, label_type.llvm_type, "loop_label_value", start_label_value || label_type.llvm_type.null if label_type
+        return_value = DynamicPhi.new builder, @return_type, "loop_return_value", start_return_value || @return_type.llvm_type.null if @return_type
         builder.br loop_block
         
         builder.position_at_end loop_block
         input.build
-        label_value.build if label_type
+        return_value.build if @return_type
         
         next_result = @expression.build builder, input, exit_block
         input << next_result.input
-        label_value << label_type.create_entry(builder, next_result.value, label_value) if label_type
+        return_value << @return_type.create_entry(builder, next_result.value, return_value) if @return_type
         
         builder.br loop_block
         
         builder.position_at_end exit_block
         result = Result.new input
-        result.value = label_value if label_type
+        result.value = return_value if @return_type
         result
       end
     end
@@ -458,8 +454,8 @@ module JetPEG
     class OneOrMore < ZeroOrMore
       def build(builder, start_input, failed_block)
         result = @expression.build builder, start_input, failed_block
-        label_value = label_type.create_entry(builder, result.value, label_type.llvm_type.null) if label_type
-        super builder, result.input, failed_block, label_value
+        return_value = @return_type.create_entry(builder, result.value, @return_type.llvm_type.null) if @return_type
+        super builder, result.input, failed_block, return_value
       end
     end
     
@@ -470,8 +466,8 @@ module JetPEG
         @until_expression = data[:until_expression]
       end
       
-      def label_type
-        @array_label_type ||= begin
+      def create_return_type
+        @return_type ||= begin
           loop_type = @expression.create_return_type
           until_type = @until_expression.create_return_type
           entry_type = if loop_type && until_type
@@ -486,22 +482,18 @@ module JetPEG
         end
       end
       
-      def create_return_type
-        label_type
-      end
-      
       def build(builder, start_input, failed_block)
         loop1_block = builder.create_block "until_loop1"
         loop2_block = builder.create_block "until_loop2"
         exit_block = builder.create_block "until_exit"
         
         input = DynamicPhi.new builder, LLVM_STRING, "loop_input", start_input
-        label_value = DynamicPhi.new builder, label_type.llvm_type, "loop_label_value", label_type.llvm_type.null if label_type
+        return_value = DynamicPhi.new builder, @return_type.llvm_type, "loop_return_value", @return_type.llvm_type.null if @return_type
         builder.br loop1_block
         
         builder.position_at_end loop1_block
         input.build
-        label_value.build if label_type
+        return_value.build if @return_type
         
         until_result = @until_expression.build builder, input, loop2_block
         builder.br exit_block
@@ -509,12 +501,12 @@ module JetPEG
         builder.position_at_end loop2_block
         next_result = @expression.build builder, input, failed_block
         input << next_result.input
-        label_value << label_type.create_entry(builder, next_result.value, label_value) if label_type
+        return_value << @return_type.create_entry(builder, next_result.value, return_value) if @return_type
         builder.br loop1_block
         
         builder.position_at_end exit_block
         result = Result.new until_result.input
-        result.value = label_type.create_entry(builder, until_result.value, label_value) if label_type
+        result.value = @return_type.create_entry(builder, until_result.value, return_value) if @return_type
         result
       end
     end

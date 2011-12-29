@@ -13,6 +13,7 @@ module JetPEG
       end
       
       def <<(value)
+        return if @type.nil?
         value = @type.create_choice_value @builder, @index, value if @type.is_a?(ChoiceValueType)
         value ||= @llvm_type.null
         @values[@builder.insert_block] = value
@@ -21,6 +22,7 @@ module JetPEG
       end
       
       def build
+        return if @type.nil?
         raise if @phi
         @phi = @builder.phi @llvm_type, @values, @name
         @phi
