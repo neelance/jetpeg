@@ -1,6 +1,4 @@
 module JetPEG
-  AT_SYMBOL = "@".to_sym
-  
   class ValueType
     attr_reader :llvm_type, :ffi_type
     
@@ -19,34 +17,12 @@ module JetPEG
       builder.alloca llvm_type, name
     end
     
-    def types
-      { AT_SYMBOL => self }
-    end
-    
     def create_llvm_value(builder, value, begin_pos = nil, end_pos = nil)
-      value[AT_SYMBOL]
+      value
     end
     
     def read_value(builder, data)
-      { AT_SYMBOL => data }
-    end
-  end
-  
-  class SingleValueType < ValueType
-    attr_reader :type
-    
-    def self.new(type)
-      return type if type.is_a? ChoiceValueType
-      super
-    end
-    
-    def initialize(type)
-      @type = type
-      super type.llvm_type, type.ffi_type
-    end
-    
-    def read(data, input, input_address)
-      @type.read data, input, input_address
+      data
     end
   end
   
@@ -63,6 +39,17 @@ module JetPEG
     def read(data, input, input_address)
       return nil if data[:begin].null?
       { __type__: :input_range, input: input, position: (data[:begin].address - input_address)...(data[:end].address - input_address) }
+    end
+  end
+  
+  class SingleValueType < ValueType
+    def initialize(type)
+      super type.llvm_type, type.ffi_type
+      @type = type
+    end
+    
+    def read(data, input, input_address)
+      @type.read data, input, input_address
     end
   end
   
@@ -85,7 +72,6 @@ module JetPEG
     def create_llvm_value(builder, value, begin_pos = nil, end_pos = nil)
       data = llvm_type.null
       value.each do |name, entry|
-        #puts name, @types.keys.inspect
         data = builder.insert_value data, entry, @types.keys.index(name), "hash_data_with_#{name}"
       end
       data
@@ -104,7 +90,7 @@ module JetPEG
       @types.each do |name, type|
         values[name] = type.read data[name], input, input_address
       end
-      values[AT_SYMBOL] || values
+      values
     end
     
     def alloca(builder, name)
@@ -115,7 +101,7 @@ module JetPEG
       other.class == self.class && other.types == @types
     end
   end
-      
+  
   class ChoiceValueType < ValueType
     attr_reader :reduced_types
 

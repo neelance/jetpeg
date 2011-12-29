@@ -306,8 +306,7 @@ module JetPEG
       
       def build(builder, start_input, failed_block)
         result = @expression.build builder, start_input, failed_block
-        value = label_type.create_llvm_value builder, result.value, start_input, result.input
-        result.value = { AT_SYMBOL => value }
+        result.value = label_type.create_llvm_value builder, result.value, start_input, result.input
         result
       end
     end
@@ -451,7 +450,7 @@ module JetPEG
         
         builder.position_at_end exit_block
         result = Result.new input
-        result.value = { AT_SYMBOL => label_value } if label_type
+        result.value = label_value if label_type
         result
       end
     end
@@ -515,7 +514,7 @@ module JetPEG
         
         builder.position_at_end exit_block
         result = Result.new until_result.input
-        result.value = { AT_SYMBOL => label_type.create_entry(builder, until_result.value, label_value) } if label_type
+        result.value = label_type.create_entry(builder, until_result.value, label_value) if label_type
         result
       end
     end

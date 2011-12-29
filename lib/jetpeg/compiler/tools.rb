@@ -4,21 +4,25 @@ module JetPEG
       def initialize(builder, type, name = "", first_value = nil)
         @builder = builder
         @type = type
+        @llvm_type = type.is_a?(ValueType) ? type.llvm_type : type
         @name = name
         @values = {}
         @phi = nil
+        @index = 0
         self << first_value if first_value
       end
       
       def <<(value)
-        value ||= @type.null
+        value = @type.create_choice_value @builder, @index, value if @type.is_a?(ChoiceValueType)
+        value ||= @llvm_type.null
         @values[@builder.insert_block] = value
         @phi.add_incoming @builder.insert_block => value if @phi
+        @index += 1
       end
       
       def build
         raise if @phi
-        @phi = @builder.phi @type, @values, @name
+        @phi = @builder.phi @llvm_type, @values, @name
         @phi
       end
       
@@ -29,22 +33,17 @@ module JetPEG
     
     class DynamicPhiHash
       def initialize(builder, types)
-        @builder = builder
-        @phis = types.map_hash { |name, type| [DynamicPhi.new(builder, type.llvm_type, name.to_s), type] }
-        @index = 0
+        @phis = types.map_hash { |name, type| DynamicPhi.new(builder, type, name.to_s) }
       end
       
       def <<(value)
-        @phis.each do |name, (phi, type)|
-          phi_value = value && value[name]
-          phi_value = type.create_choice_value @builder, @index, phi_value if type.is_a?(ChoiceValueType)
-          phi << phi_value
+        @phis.each do |name, phi|
+          phi << (value && value[name])
         end
-        @index += 1
       end
       
       def build
-        @phis.map_hash { |name, (phi, _)| phi.build }
+        @phis.map_hash { |name, phi| phi.build }
       end
     end
     
@@ -53,7 +52,7 @@ module JetPEG
       
       def initialize(input, return_type = nil)
         @input = input
-        @hash_mode = return_type.is_a?(HashValueType) || return_type.is_a?(ChoiceValueType)
+        @hash_mode = return_type.is_a? HashValueType
         @value = @hash_mode ? {} : nil
       end
       
@@ -73,11 +72,11 @@ module JetPEG
       def initialize(builder, return_type)
         @builder = builder
         @input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
-        hash_mode = return_type.is_a?(HashValueType) || return_type.is_a?(ChoiceValueType)
+        hash_mode = return_type.is_a? HashValueType
         @value_phi = if hash_mode
           DynamicPhiHash.new builder, return_type.types
         else
-          return_type && DynamicPhi.new(builder, return_type.llvm_type, "return_value")
+          return_type && DynamicPhi.new(builder, return_type, "return_value")
         end
       end
       
