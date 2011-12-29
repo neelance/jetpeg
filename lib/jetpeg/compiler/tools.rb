@@ -37,9 +37,7 @@ module JetPEG
       end
       
       def <<(value)
-        @phis.each do |name, phi|
-          phi << (value && value[name])
-        end
+        @phis.each { |name, phi| phi << (value && value[name]) }
       end
       
       def build

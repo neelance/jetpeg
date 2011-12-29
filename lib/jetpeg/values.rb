@@ -9,7 +9,7 @@ module JetPEG
     
     def load(pointer, input, input_address)
       return nil if pointer.null?
-      data = ffi_type.new pointer
+      data = ffi_type == :pointer ? pointer.get_pointer(0) : ffi_type.new(pointer)
       read data, input, input_address
     end
     
