@@ -153,20 +153,16 @@ module JetPEG
       @target = target
     end
     
-    def create_target_type
-      @target_type = @target.create_return_type
-    end
-    
     def create_llvm_value(builder, value, begin_pos = nil, end_pos = nil)
-      value = @target_type.create_llvm_value builder, value
-      ptr = builder.malloc @target_type.llvm_type.size # TODO free
-      casted_ptr = builder.bit_cast ptr, LLVM::Pointer(@target_type.llvm_type)
+      value = @target.return_type.create_llvm_value builder, value
+      ptr = builder.malloc @target.return_type.llvm_type.size # TODO free
+      casted_ptr = builder.bit_cast ptr, LLVM::Pointer(@target.return_type.llvm_type)
       builder.store value, casted_ptr
       ptr
     end
     
     def read(data, input, input_address)
-      @target_type.load data, input, input_address
+      @target.return_type.load data, input, input_address
     end
     
     def ==(other)
@@ -175,18 +171,13 @@ module JetPEG
   end
   
   class ArrayValueType < ValueType
-    attr_reader :entry_type
+    attr_reader :entry_type, :return_type
     
     def initialize(entry_type)
       @entry_type = entry_type
       @pointer_type = PointerValueType.new self
       @return_type = HashValueType.new value: entry_type, previous: @pointer_type
-      @pointer_type.create_target_type
       super @pointer_type.llvm_type, @pointer_type.ffi_type
-    end
-    
-    def create_return_type
-      @return_type
     end
     
     def create_entry(builder, value, previous_entry)

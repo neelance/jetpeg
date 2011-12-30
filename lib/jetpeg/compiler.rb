@@ -139,14 +139,14 @@ module JetPEG
     
     class ParsingExpression
       attr_accessor :parent, :name
-      attr_reader :recursive_labels
+      attr_reader :recursive_expressions
       
       def initialize(data)
         @name = nil
         @rule_return_type = :pending
         @bare_rule_function = nil
         @traced_rule_function = nil
-        @recursive_labels = []
+        @recursive_expressions = []
         
         if data.is_a?(Hash)
           @children = data.values.flatten.select(&ParsingExpression)
@@ -168,6 +168,10 @@ module JetPEG
         @name ? self : parent.rule
       end
       
+      def return_type
+        @return_type ||= create_return_type
+      end
+      
       def create_return_type
         nil
       end
@@ -177,10 +181,10 @@ module JetPEG
         if @rule_return_type == :pending
           begin
             @rule_return_type = :recursion
-            @rule_return_type = create_return_type
+            @rule_return_type = return_type
           rescue Recursion
             @rule_return_type = nil
-            raise CompilationError.new("Unlabeled recursion mixed with other labels.") if not create_return_type.nil?
+            raise CompilationError.new("Unlabeled recursion mixed with other labels.") if not return_type.nil?
           end
         end
         @rule_return_type
@@ -189,8 +193,8 @@ module JetPEG
         raise e
       end
       
-      def realize_return_types
-        @recursive_labels.map(&:label_type).each(&:create_target_type)
+      def realize_recursive_return_types
+        @recursive_expressions.each(&:return_type)
       end
       
       def build_allocas(builder)
@@ -260,9 +264,9 @@ module JetPEG
       
       def label_type
         @label_type ||= begin
-          @expression.create_return_type || InputRangeValueType::INSTANCE
+          @expression.return_type || InputRangeValueType::INSTANCE
         rescue Recursion
-          rule.recursive_labels << self
+          rule.recursive_expressions << @expression
           PointerValueType.new @expression
         end
       end
@@ -293,9 +297,9 @@ module JetPEG
       
       def label_type
         @label_type ||= begin
-          @expression.create_return_type || InputRangeValueType::INSTANCE
+          @expression.return_type || InputRangeValueType::INSTANCE
         rescue Recursion
-          rule.recursive_labels << self
+          rule.recursive_expressions << @expression
           PointerValueType.new @expression
         end
       end
@@ -318,8 +322,8 @@ module JetPEG
       end
 
       def create_return_type
-        child_types = @children.map(&:create_return_type).compact
-        @return_type = if not child_types.empty? and child_types.all?(&HashValueType)
+        child_types = @children.map(&:return_type).compact
+        if not child_types.empty? and child_types.all?(&HashValueType)
           merged = {}
           child_types.each { |type|
             merged.merge!(type.types) { |key, oldval, newval|
@@ -351,8 +355,8 @@ module JetPEG
       
       def create_return_type
         @slots = {}
-        child_types = @children.map(&:create_return_type)
-        @return_type = if not child_types.any?
+        child_types = @children.map(&:return_type)
+        if not child_types.any?
           nil
         elsif child_types.compact.all?(&HashValueType)
           keys = child_types.compact.map(&:types).map(&:keys).flatten.uniq
@@ -393,7 +397,7 @@ module JetPEG
       end
       
       def create_return_type
-        @return_type = @expression.create_return_type
+        @expression.return_type
       end
       
       def build(builder, start_input, failed_block)
@@ -420,10 +424,7 @@ module JetPEG
       end
       
       def create_return_type
-        @return_type ||= begin
-          type = @expression.create_return_type
-          type && ArrayValueType.new(@expression.create_return_type)
-        end
+        @expression.return_type && ArrayValueType.new(@expression.return_type)
       end
       
       def build(builder, start_input, failed_block, start_return_value = nil)
@@ -467,19 +468,17 @@ module JetPEG
       end
       
       def create_return_type
-        @return_type ||= begin
-          loop_type = @expression.create_return_type
-          until_type = @until_expression.create_return_type
-          entry_type = if loop_type && until_type
-            raise CompilationError.new("Incompatible return values in until expression.") if not loop_type.is_a?(HashValueType) or not until_type.is_a?(HashValueType)
-            types = loop_type.types
-            types.merge!(until_type.types) { |key, oldval, newval| raise CompilationError.new("Overlapping value in until-expression.") }
-            HashValueType.new types
-          else
-            loop_type || until_type
-          end
-          entry_type && ArrayValueType.new(entry_type)
+        loop_type = @expression.return_type
+        until_type = @until_expression.return_type
+        entry_type = if loop_type && until_type
+          raise CompilationError.new("Incompatible return values in until expression.") if not loop_type.is_a?(HashValueType) or not until_type.is_a?(HashValueType)
+          types = loop_type.types
+          types.merge!(until_type.types) { |key, oldval, newval| raise CompilationError.new("Overlapping value in until-expression.") }
+          HashValueType.new types
+        else
+          loop_type || until_type
         end
+        entry_type && ArrayValueType.new(entry_type)
       end
       
       def build(builder, start_input, failed_block)
@@ -687,7 +686,7 @@ module JetPEG
       end
       
       def create_return_type
-        @expression.create_return_type
+        @expression.return_type
       end
       
       def build(builder, start_input, failed_block)
@@ -701,8 +700,8 @@ module JetPEG
         @class_name = data[:class_name].split("::").map(&:to_sym)
       end
 
-      def label_type
-        @object_creator_label_type ||= CreatorType.new super, __type__: :object, class_name: @class_name
+      def create_return_type
+        CreatorType.new super, __type__: :object, class_name: @class_name
       end
     end
     
@@ -714,8 +713,8 @@ module JetPEG
         @lineno = input_range[:input][0, input_range[:position].begin].count("\n") + 1
       end
 
-      def label_type
-        @value_creator_label_type ||= CreatorType.new super, __type__: :value, code: @code, filename: parser.filename, lineno: @lineno
+      def create_return_type
+        CreatorType.new super, __type__: :value, code: @code, filename: parser.filename, lineno: @lineno
       end
     end
     

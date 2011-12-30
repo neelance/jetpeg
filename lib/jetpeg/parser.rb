@@ -55,7 +55,7 @@ module JetPEG
     
     def verify!
       @rules.values.each(&:rule_return_type)
-      @rules.values.each(&:realize_return_types)
+      @rules.values.each(&:realize_recursive_return_types)
     end
     
     def parser
