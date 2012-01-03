@@ -30,7 +30,7 @@ rule sequence
 end
 
 rule labeled
-  is_local:'%'? name:( alpha_char alphanumeric_char* ) ':' expression:lookahead <Label> /
+  (is_local:'%')? name:( alpha_char alphanumeric_char* ) ':' expression:lookahead <Label> /
   '@:' expression:lookahead <AtLabel> /
   lookahead
 end
@@ -79,6 +79,8 @@ rule terminal
 end
 
 rule function
+  '$true' ws <TrueFunction> /
+  '$false' ws <FalseFunction> /
   '$error' '[' ws message:quoted_string ws ']' ws <ErrorFunction>
 end
 

@@ -201,6 +201,10 @@ module JetPEG
         @children.each { |child| child.build_allocas builder }
       end
       
+      def build(builder, start_input, failed_block)
+        Result.new start_input
+      end
+      
       def mod=(mod)
         @mod = mod
         @bare_rule_function = nil
@@ -233,7 +237,7 @@ module JetPEG
           end_result = build builder, args[0], failed_block
           
           if args[1]
-            data = rule_return_type.create_llvm_value builder, end_result.value
+            data = rule_return_type.create_llvm_value builder, end_result.return_value
             builder.store data, args[1]
           end
           
@@ -259,26 +263,31 @@ module JetPEG
         super
         @label_name = data[:name] && data[:name].to_sym
         @expression = data[:expression]
-        @is_local = data[:is_local]
+        #@is_local = data[:is_local]
+        @is_local = false
       end
-      
-      def label_type
-        @label_type ||= begin
+
+      def create_return_type
+        return nil if @is_local
+        
+        @label_type = begin
           @expression.return_type || InputRangeValueType::INSTANCE
         rescue Recursion
           rule.recursive_expressions << @expression
           PointerValueType.new @expression
         end
-      end
-
-      def create_return_type
-        label_type && HashValueType.new(label_name => label_type)
+        
+        HashValueType.new(label_name => @label_type)
       end
       
       def build(builder, start_input, failed_block)
         result = @expression.build builder, start_input, failed_block
-        value = label_type.create_llvm_value builder, result.value, start_input, result.input
-        result.value = { label_name => value }
+        value = @label_type.create_llvm_value builder, result.return_value, start_input, result.input
+        if @is_local
+          
+        else
+          result.return_value = { label_name => value }
+        end
         result
       end
     end
@@ -295,22 +304,20 @@ module JetPEG
         @expression = data[:expression]
       end
       
-      def label_type
-        @label_type ||= begin
+      def create_return_type
+        @label_type = begin
           @expression.return_type || InputRangeValueType::INSTANCE
         rescue Recursion
           rule.recursive_expressions << @expression
           PointerValueType.new @expression
         end
-      end
-
-      def create_return_type
-        label_type && SingleValueType.new(label_type)
+        
+        SingleValueType.new(@label_type)
       end
       
       def build(builder, start_input, failed_block)
         result = @expression.build builder, start_input, failed_block
-        result.value = label_type.create_llvm_value builder, result.value, start_input, result.input
+        result.return_value = @label_type.create_llvm_value builder, result.return_value, start_input, result.input
         result
       end
     end
@@ -441,13 +448,13 @@ module JetPEG
         
         next_result = @expression.build builder, input, exit_block
         input << next_result.input
-        return_value << @return_type.create_entry(builder, next_result.value, return_value) if @return_type
+        return_value << @return_type.create_entry(builder, next_result.return_value, return_value) if @return_type
         
         builder.br loop_block
         
         builder.position_at_end exit_block
         result = Result.new input
-        result.value = return_value if @return_type
+        result.return_value = return_value if @return_type
         result
       end
     end
@@ -455,7 +462,7 @@ module JetPEG
     class OneOrMore < ZeroOrMore
       def build(builder, start_input, failed_block)
         result = @expression.build builder, start_input, failed_block
-        return_value = @return_type.create_entry(builder, result.value, @return_type.llvm_type.null) if @return_type
+        return_value = @return_type.create_entry(builder, result.return_value, @return_type.llvm_type.null) if @return_type
         super builder, result.input, failed_block, return_value
       end
     end
@@ -500,12 +507,12 @@ module JetPEG
         builder.position_at_end loop2_block
         next_result = @expression.build builder, input, failed_block
         input << next_result.input
-        return_value << @return_type.create_entry(builder, next_result.value, return_value) if @return_type
+        return_value << @return_type.create_entry(builder, next_result.return_value, return_value) if @return_type
         builder.br loop1_block
         
         builder.position_at_end exit_block
         result = Result.new until_result.input
-        result.value = @return_type.create_entry(builder, until_result.value, return_value) if @return_type
+        result.return_value = @return_type.create_entry(builder, until_result.return_value, return_value) if @return_type
         result
       end
     end
@@ -673,7 +680,7 @@ module JetPEG
         result = Result.new rule_end_input
         if @label_data_ptr
           label_data = builder.load @label_data_ptr, "#{@referenced_name}_data"
-          result.value = referenced.rule_return_type.read_value builder, label_data
+          result.return_value = referenced.rule_return_type.read_value builder, label_data
         end
         result
       end
@@ -721,6 +728,18 @@ module JetPEG
     class LocalValue < ParsingExpression
       def build(builder, start_input, failed_block)
         Result.new start_input
+      end
+    end
+    
+    class TrueFunction < ParsingExpression
+      def create_return_type
+        ScalarValueType.new true
+      end
+    end
+    
+    class FalseFunction < ParsingExpression
+      def create_return_type
+        ScalarValueType.new false
       end
     end
     

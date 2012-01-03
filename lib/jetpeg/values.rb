@@ -42,6 +42,23 @@ module JetPEG
     end
   end
   
+  class ScalarValueType < ValueType
+    @@instances = {}
+
+    def self.new(value)
+      @@instances[value] ||= super
+    end
+    
+    def initialize(value)
+      @value = value
+      super nil, nil
+    end
+    
+    def read(data, input, input_address)
+      @value
+    end
+  end
+  
   class SingleValueType < ValueType
     def initialize(type)
       super type.llvm_type, type.ffi_type
@@ -58,13 +75,14 @@ module JetPEG
     
     def initialize(types)
       @types = types
+      @types_with_data = @types.select { |key, value| value.llvm_type }
       
-      llvm_type = LLVM::Struct(*types.values.map(&:llvm_type))
+      llvm_type = LLVM::Struct(*@types_with_data.values.map(&:llvm_type))
       ffi_type = Class.new FFI::Struct
-      if types.empty?
+      if @types_with_data.empty?
         ffi_type.layout(:dummy, :char)
       else
-        ffi_type.layout(*types.map{ |name, type| [name, type.ffi_type] }.flatten)
+        ffi_type.layout(*@types_with_data.map{ |name, type| [name, type.ffi_type] }.flatten)
       end
       super llvm_type, ffi_type
     end
@@ -72,14 +90,14 @@ module JetPEG
     def create_llvm_value(builder, value, begin_pos = nil, end_pos = nil)
       data = llvm_type.null
       value.each do |name, entry|
-        data = builder.insert_value data, entry, @types.keys.index(name), "hash_data_with_#{name}"
+        data = builder.insert_value data, entry, @types_with_data.keys.index(name), "hash_data_with_#{name}" if entry
       end
       data
     end
     
     def read_value(builder, data)
       value = {}
-      @types.keys.each_with_index do |name, index|
+      @types_with_data.keys.each_with_index do |name, index|
          value[name] = builder.extract_value(data, index, name.to_s)
       end
       value
@@ -88,7 +106,7 @@ module JetPEG
     def read(data, input, input_address)
       values = {}
       @types.each do |name, type|
-        values[name] = type.read data[name], input, input_address
+        values[name] = type.read((@types_with_data.has_key?(name) ? data[name] : nil), input, input_address)
       end
       values
     end

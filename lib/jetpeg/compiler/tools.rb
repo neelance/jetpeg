@@ -48,46 +48,50 @@ module JetPEG
     end
     
     class Result
-      attr_accessor :input, :value
+      attr_accessor :input, :return_value
       
       def initialize(input, return_type = nil)
         @input = input
         @hash_mode = return_type.is_a? HashValueType
-        @value = @hash_mode ? {} : nil
+        @return_value = @hash_mode ? {} : nil
+        @local_values = []
       end
       
       def merge!(result)
         @input = result.input
         if @hash_mode
-          @value.merge! result.value if result.value
-        elsif result.value
-          raise "Internal error." if not @value.nil?
-          @value = result.value
+          @return_value.merge! result.return_value if result.return_value
+        elsif result.return_value
+          raise "Internal error." if not @return_value.nil?
+          @return_value = result.return_value
         end
         self
       end
     end
     
-    class BranchingResult < Result
+    class BranchingResult
+      attr_accessor :input, :return_value
+
       def initialize(builder, return_type)
         @builder = builder
         @input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
         hash_mode = return_type.is_a? HashValueType
-        @value_phi = if hash_mode
+        @return_value_phi = if hash_mode
           DynamicPhiHash.new builder, return_type.types
         else
           return_type && DynamicPhi.new(builder, return_type, "return_value")
         end
+        @local_values = []
       end
       
       def <<(result)
         @input_phi << result.input
-        @value_phi << result.value if @value_phi
+        @return_value_phi << result.return_value if @return_value_phi
       end
       
       def build
         @input = @input_phi.build
-        @value = @value_phi.build if @value_phi
+        @return_value = @return_value_phi.build if @return_value_phi
         self
       end
     end
