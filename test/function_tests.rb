@@ -3,14 +3,10 @@ require "jetpeg"
 JetPEG::Parser.default_options[:raise_on_failure] = false
 
 class FunctionTests < Test::Unit::TestCase
-  def test_true_function
-    rule = JetPEG::Compiler.compile_rule "'a' v:$true 'bc'"
+  def test_boolean_functions
+    rule = JetPEG::Compiler.compile_rule "'a' v:$true 'bc' / 'd' v:$false 'ef'"
     assert rule.match("abc") == { v: true }
-  end
-  
-  def test_false_function
-    rule = JetPEG::Compiler.compile_rule "'a' v:$false 'bc'"
-    assert rule.match("abc") == { v: false }
+    assert rule.match("def") == { v: false }
   end
   
   def test_error_function

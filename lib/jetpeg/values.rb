@@ -76,14 +76,11 @@ module JetPEG
     def initialize(types)
       @types = types
       @types_with_data = @types.select { |key, value| value.llvm_type }
+      return super nil, nil if @types_with_data.empty?
       
       llvm_type = LLVM::Struct(*@types_with_data.values.map(&:llvm_type))
       ffi_type = Class.new FFI::Struct
-      if @types_with_data.empty?
-        ffi_type.layout(:dummy, :char)
-      else
-        ffi_type.layout(*@types_with_data.map{ |name, type| [name, type.ffi_type] }.flatten)
-      end
+      ffi_type.layout(*@types_with_data.map{ |name, type| [name, type.ffi_type] }.flatten)
       super llvm_type, ffi_type
     end
 
@@ -106,7 +103,7 @@ module JetPEG
     def read(data, input, input_address)
       values = {}
       @types.each do |name, type|
-        values[name] = type.read((@types_with_data.has_key?(name) ? data[name] : nil), input, input_address)
+        values[name] = type.read(type.llvm_type && data[name], input, input_address)
       end
       values
     end
@@ -130,11 +127,14 @@ module JetPEG
       
       return super @reduced_types.first.llvm_type, @reduced_types.first.ffi_type if @reduced_types.size == 1
 
+      llvm_layout = []
       ffi_layout = []
-      @reduced_types.each_with_index do |choice, index|
-        ffi_layout.push index.to_s.to_sym, choice.ffi_type
+      @reduced_types.each_with_index do |type, index|
+        next if type.llvm_type.nil?
+        llvm_layout.push type.llvm_type
+        ffi_layout.push index.to_s.to_sym, type.ffi_type
       end
-      llvm_type = LLVM::Struct(LLVM::Int, *@reduced_types.map(&:llvm_type)) # TODO memory optimization with "union" structure and bitcasts
+      llvm_type = LLVM::Struct(LLVM::Int, *llvm_layout) # TODO memory optimization with "union" structure and bitcasts
       ffi_type = Class.new FFI::Struct
       ffi_type.layout(:selection, :int, *ffi_layout)
       super llvm_type, ffi_type
@@ -143,19 +143,20 @@ module JetPEG
     def create_choice_value(builder, all_types_index, value)
       return value if @reduced_types.size == 1
 
+      reduced_types_index = @reduced_types.index @all_types[all_types_index]
+      return nil if reduced_types_index.nil?
+      
       data = llvm_type.null
-      if value
-        reduced_types_index = @reduced_types.index @all_types[all_types_index]
-        data = builder.insert_value data, LLVM::Int(reduced_types_index), 0, "choice_data_with_index"
-        data = builder.insert_value data, value, reduced_types_index + 1, "choice_data_with_#{@name}"
-      end
+      data = builder.insert_value data, LLVM::Int(reduced_types_index), 0, "choice_data_with_index"
+      data = builder.insert_value data, value, reduced_types_index + 1, "choice_data_with_#{@name}" if value
       data
     end
     
     def read(data, input, input_address)
       return @reduced_types.first.read data, input, input_address if @reduced_types.size == 1
 
-      @reduced_types[data[:selection]].read data[data[:selection].to_s.to_sym], input, input_address
+      type = @reduced_types[data[:selection]]
+      type.read(type.llvm_type && data[data[:selection].to_s.to_sym], input, input_address)
     end
     
     def ==(other)
