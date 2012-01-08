@@ -7,6 +7,10 @@ class FunctionTests < Test::Unit::TestCase
     rule = JetPEG::Compiler.compile_rule "'a' v:$true 'bc' / 'd' v:$false 'ef'"
     assert rule.match("abc") == { v: true }
     assert rule.match("def") == { v: false }
+    
+    rule = JetPEG::Compiler.compile_rule "'a' ('b' v:$true)? 'c'"
+    assert rule.match("abc") == { v: true }
+    assert rule.match("ac") == { v: nil }
   end
   
   def test_error_function

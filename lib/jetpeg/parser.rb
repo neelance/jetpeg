@@ -41,7 +41,7 @@ module JetPEG
       @@default_options
     end
     
-    attr_reader :mod, :malloc, :llvm_add_failure_reason_callback, :possible_failure_reasons
+    attr_reader :mod, :malloc, :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_values
     attr_accessor :root_rules, :optimize, :failure_reason, :filename
     
     def initialize(rules)
@@ -51,6 +51,7 @@ module JetPEG
       @root_rules = [@rules.values.first.name]
       @optimize = false
       @filename = "grammar"
+      @scalar_values = [nil]
     end
     
     def verify!
@@ -66,6 +67,15 @@ module JetPEG
       rule = @rules[name]
       raise CompilationError.new("Undefined rule \"#{name}\".") if rule.nil?
       rule
+    end
+    
+    def scalar_value_for(scalar)
+      index = @scalar_values.index(scalar)
+      if index.nil?
+        index = @scalar_values.size
+        @scalar_values << scalar
+      end
+      LLVM::Int index
     end
     
     def build

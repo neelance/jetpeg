@@ -15,7 +15,7 @@ module JetPEG
       def <<(value)
         return if @type.nil?
         value = @type.create_choice_value @builder, @index, value if @type.is_a?(ChoiceValueType)
-        value ||= @llvm_type.null
+        value ||= LLVM::Constant.null @llvm_type
         @values[@builder.insert_block] = value
         @phi.add_incoming @builder.insert_block => value if @phi
         @index += 1

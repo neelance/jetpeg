@@ -24,6 +24,10 @@ module JetPEG
     def read_value(builder, data)
       data
     end
+    
+    def eql?(other)
+      self == other
+    end
   end
   
   class InputRangeValueType < ValueType
@@ -43,23 +47,29 @@ module JetPEG
   end
   
   class ScalarValueType < ValueType
-    @@instances = {}
-
-    def self.new(value)
-      @@instances[value] ||= super
-    end
+    attr_reader :scalar_values
     
-    def initialize(value)
-      @value = value
-      super nil, nil
+    def initialize(scalar_values)
+      super LLVM::Int, :long
+      @scalar_values = scalar_values
     end
     
     def read(data, input, input_address)
-      @value
+      @scalar_values[data]
+    end
+    
+    def ==(other)
+      other.is_a?(ScalarValueType) && other.scalar_values.equal?(@scalar_values)
+    end
+    
+    def hash
+      @scalar_values.hash
     end
   end
   
   class SingleValueType < ValueType
+    attr_reader :type
+    
     def initialize(type)
       super type.llvm_type, type.ffi_type
       @type = type
@@ -67,6 +77,14 @@ module JetPEG
     
     def read(data, input, input_address)
       @type.read data, input, input_address
+    end
+    
+    def ==(other)
+      other.is_a?(SingleValueType) && other.type == @type
+    end
+    
+    def hash
+      @type.hash
     end
   end
   
@@ -113,7 +131,11 @@ module JetPEG
     end
 
     def ==(other)
-      other.class == self.class && other.types == @types
+      other.is_a?(HashValueType) && other.types == @types
+    end
+    
+    def hash
+      @types.hash
     end
   end
   
@@ -160,7 +182,11 @@ module JetPEG
     end
     
     def ==(other)
-      other.class == self.class && other.reduced_types == @reduced_types
+      other.is_a?(ChoiceValueType) && other.reduced_types == @reduced_types
+    end
+    
+    def hash
+      @reduced_types.hash
     end
   end
   
@@ -185,7 +211,11 @@ module JetPEG
     end
     
     def ==(other)
-      other.class == self.class && other.target == @target
+      other.is_a?(PointerValueType) && other.target == @target
+    end
+    
+    def hash
+      @target.hash
     end
   end
   
@@ -214,7 +244,11 @@ module JetPEG
     end
     
     def ==(other)
-      other.class == self.class && other.entry_type == @entry_type
+      other.is_a?(ArrayValueType) && other.entry_type == @entry_type
+    end
+    
+    def hash
+      @entry_type.hash
     end
   end
     
@@ -238,7 +272,11 @@ module JetPEG
     end
     
     def ==(other)
-      other.class == self.class && other.creator_data == @creator_data && other.data_type == @data_type
+      other.is_a?(CreatorType) && other.creator_data == @creator_data && other.data_type == @data_type
+    end
+    
+    def hash
+      @data_type.hash
     end
   end
 end

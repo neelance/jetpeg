@@ -201,10 +201,6 @@ module JetPEG
         @children.each { |child| child.build_allocas builder }
       end
       
-      def build(builder, start_input, failed_block)
-        Result.new start_input
-      end
-      
       def mod=(mod)
         @mod = mod
         @bare_rule_function = nil
@@ -733,13 +729,25 @@ module JetPEG
     
     class TrueFunction < ParsingExpression
       def create_return_type
-        ScalarValueType.new true
+        ScalarValueType.new parser.scalar_values
+      end
+      
+      def build(builder, start_input, failed_block)
+        result = Result.new start_input
+        result.return_value = parser.scalar_value_for true
+        result
       end
     end
     
     class FalseFunction < ParsingExpression
       def create_return_type
-        ScalarValueType.new false
+        ScalarValueType.new parser.scalar_values
+      end
+      
+      def build(builder, start_input, failed_block)
+        result = Result.new start_input
+        result.return_value = parser.scalar_value_for false
+        result
       end
     end
     
