@@ -30,7 +30,7 @@ rule sequence
 end
 
 rule labeled
-  (is_local:'%')? name:( alpha_char alphanumeric_char* ) ':' expression:lookahead <Label> /
+  ('%' is_local:$true)? name:( alpha_char alphanumeric_char* ) ':' expression:lookahead <Label> /
   '@:' expression:lookahead <AtLabel> /
   lookahead
 end
@@ -100,7 +100,7 @@ rule quoted_string
 end
 
 rule character_class
-  '[' inverted:'^'? selections:( character_class_range / character_class_single_character )+ ']' ws <CharacterClassTerminal>
+  '[' ('^' inverted:$true)? selections:( character_class_range / character_class_single_character )+ ']' ws <CharacterClassTerminal>
 end
 
 rule character_class_single_character

@@ -569,7 +569,7 @@ module JetPEG
       def initialize(data)
         super
         @selections = data[:selections]
-        @inverted = data[:inverted] && !data[:inverted].empty?
+        @inverted = data[:inverted]
       end
 
       def build(builder, start_input, failed_block)
