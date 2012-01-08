@@ -1,9 +1,28 @@
 require 'rake/testtask'
 
-Rake::TestTask.new "test" do |t|
+Rake::TestTask.new :test do |t|
   #t.pattern = 'test/*.rb'
   t.test_files = FileList['test/*.rb']
   t.warning = true
+end
+
+task :profile do
+  $: << "."
+  $: << "lib"
+  require 'ruby-prof'
+  Dir.glob("test/*.rb") do |file|
+    require file
+  end
+
+  RubyProf.start
+  MiniTest::Unit.new.run
+  result = RubyProf.stop
+
+  printer = RubyProf::CallTreePrinter.new result
+  File.open("profile.out", "w") do |out|
+    printer.print out
+  end
+  exit!
 end
 
 task :generate_metagrammar_data do

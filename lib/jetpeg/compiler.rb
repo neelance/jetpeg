@@ -729,7 +729,7 @@ module JetPEG
     
     class TrueFunction < ParsingExpression
       def create_return_type
-        ScalarValueType.new parser.scalar_values
+        parser.scalar_value_type
       end
       
       def build(builder, start_input, failed_block)
@@ -741,7 +741,7 @@ module JetPEG
     
     class FalseFunction < ParsingExpression
       def create_return_type
-        ScalarValueType.new parser.scalar_values
+        parser.scalar_value_type
       end
       
       def build(builder, start_input, failed_block)

@@ -41,7 +41,7 @@ module JetPEG
       @@default_options
     end
     
-    attr_reader :mod, :malloc, :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_values
+    attr_reader :mod, :malloc, :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_value_type
     attr_accessor :root_rules, :optimize, :failure_reason, :filename
     
     def initialize(rules)
@@ -52,6 +52,7 @@ module JetPEG
       @optimize = false
       @filename = "grammar"
       @scalar_values = [nil]
+      @scalar_value_type = ScalarValueType.new @scalar_values
     end
     
     def verify!

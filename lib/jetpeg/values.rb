@@ -28,6 +28,10 @@ module JetPEG
     def eql?(other)
       self == other
     end
+    
+    def hash
+      0 # no hash used for Array.uniq, always eql?
+    end
   end
   
   class InputRangeValueType < ValueType
@@ -50,7 +54,7 @@ module JetPEG
     attr_reader :scalar_values
     
     def initialize(scalar_values)
-      super LLVM::Int, :long
+      super LLVM::Int32, :int32
       @scalar_values = scalar_values
     end
     
@@ -60,10 +64,6 @@ module JetPEG
     
     def ==(other)
       other.is_a?(ScalarValueType) && other.scalar_values.equal?(@scalar_values)
-    end
-    
-    def hash
-      @scalar_values.hash
     end
   end
   
@@ -81,10 +81,6 @@ module JetPEG
     
     def ==(other)
       other.is_a?(SingleValueType) && other.type == @type
-    end
-    
-    def hash
-      @type.hash
     end
   end
   
@@ -133,10 +129,6 @@ module JetPEG
     def ==(other)
       other.is_a?(HashValueType) && other.types == @types
     end
-    
-    def hash
-      @types.hash
-    end
   end
   
   class ChoiceValueType < ValueType
@@ -156,9 +148,9 @@ module JetPEG
         llvm_layout.push type.llvm_type
         ffi_layout.push index.to_s.to_sym, type.ffi_type
       end
-      llvm_type = LLVM::Struct(LLVM::Int, *llvm_layout) # TODO memory optimization with "union" structure and bitcasts
+      llvm_type = LLVM::Struct(LLVM::Int32, *llvm_layout) # TODO memory optimization with "union" structure and bitcasts
       ffi_type = Class.new FFI::Struct
-      ffi_type.layout(:selection, :int, *ffi_layout)
+      ffi_type.layout(:selection, :int32, *ffi_layout)
       super llvm_type, ffi_type
     end
     
@@ -184,10 +176,6 @@ module JetPEG
     def ==(other)
       other.is_a?(ChoiceValueType) && other.reduced_types == @reduced_types
     end
-    
-    def hash
-      @reduced_types.hash
-    end
   end
   
   class PointerValueType < ValueType
@@ -212,10 +200,6 @@ module JetPEG
     
     def ==(other)
       other.is_a?(PointerValueType) && other.target == @target
-    end
-    
-    def hash
-      @target.hash
     end
   end
   
@@ -246,10 +230,6 @@ module JetPEG
     def ==(other)
       other.is_a?(ArrayValueType) && other.entry_type == @entry_type
     end
-    
-    def hash
-      @entry_type.hash
-    end
   end
     
   class CreatorType < ValueType
@@ -273,10 +253,6 @@ module JetPEG
     
     def ==(other)
       other.is_a?(CreatorType) && other.creator_data == @creator_data && other.data_type == @data_type
-    end
-    
-    def hash
-      @data_type.hash
     end
   end
 end

@@ -32,7 +32,7 @@ class ExpressionsTests < Test::Unit::TestCase
     assert rule.match("\n")
     assert !rule.match("n")
   end
-    
+  
   def test_any_character_terminal
     rule = JetPEG::Compiler.compile_rule "."
     assert rule.match("a")
