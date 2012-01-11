@@ -56,7 +56,7 @@ module JetPEG
       attr_writer :parser, :traced
       
       def create_block(name)
-        LLVM::BasicBlock.create self.insert_block.parent, name
+        self.insert_block.parent.basic_blocks.append name
       end
       
       def malloc(size)
@@ -214,34 +214,36 @@ module JetPEG
         params = []
         params << LLVM_STRING
         params << LLVM::Pointer(rule_return_type.llvm_type) unless rule_return_type.nil?
-        @mod.functions.add @name, params, LLVM_STRING do |function, *args|
-          if traced
-            @traced_rule_function = function
-          else
-            @bare_rule_function = function
-          end
-          
-          builder = Builder.new
-          builder.parser = parser
-          builder.traced = traced
-          
-          entry = function.basic_blocks.append "entry"
-          builder.position_at_end entry
-          build_allocas builder
-  
-          failed_block = builder.create_block "failed"
-          end_result = build builder, args[0], failed_block
-          
-          if args[1]
-            data = rule_return_type.create_llvm_value builder, end_result.return_value
-            builder.store data, args[1]
-          end
-          
-          builder.ret end_result.input
-  
-          builder.position_at_end failed_block
-          builder.ret LLVM_STRING.null_pointer
+        function = @mod.functions.add @name, params, LLVM_STRING
+        
+        if traced
+          @traced_rule_function = function
+        else
+          @bare_rule_function = function
         end
+        
+        builder = Builder.new
+        builder.parser = parser
+        builder.traced = traced
+        
+        entry = function.basic_blocks.append "entry"
+        builder.position_at_end entry
+        build_allocas builder
+
+        failed_block = builder.create_block "failed"
+        end_result = build builder, function.params[0], failed_block
+        
+        unless rule_return_type.nil?
+          data = rule_return_type.create_llvm_value builder, end_result.return_value
+          builder.store data, function.params[1]
+        end
+        
+        builder.ret end_result.input
+
+        builder.position_at_end failed_block
+        builder.ret LLVM_STRING.null_pointer
+
+        function
       rescue CompilationError => e
         e.rule ||= self
         raise e
