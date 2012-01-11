@@ -35,21 +35,20 @@ module JetPEG
   end
   
   class Parser
-    @@default_options = { raise_on_failure: true, output: :realized, class_scope: ::Object }
+    @@default_options = { raise_on_failure: true, output: :realized, class_scope: ::Object, bitcode_optimization: false, machine_code_optimization: 0 }
     
     def self.default_options
       @@default_options
     end
     
     attr_reader :mod, :malloc, :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_value_type
-    attr_accessor :root_rules, :optimize, :failure_reason, :filename
+    attr_accessor :root_rules, :failure_reason, :filename
     
     def initialize(rules)
       @rules = rules
       @rules.values.each { |rule| rule.parent = self }
       @mod = nil
       @root_rules = [@rules.values.first.name]
-      @optimize = false
       @filename = "grammar"
       @scalar_values = [nil]
       @scalar_value_type = ScalarValueType.new @scalar_values
@@ -79,7 +78,9 @@ module JetPEG
       LLVM::Int index
     end
     
-    def build
+    def build(options = {})
+      options.merge!(@@default_options) { |key, oldval, newval| oldval }
+      
       @possible_failure_reasons = []
       @mod = LLVM::Module.new "Parser"
       @malloc = @mod.functions.add "malloc", [LLVM::Int64], LLVM::Pointer(LLVM::Int8)
@@ -107,9 +108,9 @@ module JetPEG
       end
       
       @mod.verify!
-      @execution_engine = LLVM::JITCompiler.new @mod
+      @execution_engine = LLVM::JITCompiler.new @mod, options[:machine_code_optimization]
       
-      if @optimize
+      if options[:bitcode_optimization]
         pass_manager = LLVM::PassManager.new @execution_engine # TODO tweak passes
         pass_manager.inline!
         pass_manager.mem2reg! # alternative: pass_manager.scalarrepl!
@@ -122,13 +123,11 @@ module JetPEG
     end
         
     def match_rule(root_rule, input, options = {})
-      @@default_options.each do |key, value|
-        options[key] = value if not options.has_key? key
-      end
+      options.merge!(@@default_options) { |key, oldval, newval| oldval }
       
       if @mod.nil? or not @root_rules.include?(root_rule.name)
         @root_rules << root_rule.name
-        build
+        build options
       end
       
       args = []

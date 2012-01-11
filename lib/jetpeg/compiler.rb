@@ -53,10 +53,22 @@ module JetPEG
   
   module Compiler
     class Builder < LLVM::Builder
+      class LazyBlock
+        def initialize(function, name)
+          @function = function
+          @name = name
+        end
+        
+        def to_ptr
+          @block ||= @function.basic_blocks.append @name
+          @block.to_ptr
+        end
+      end
+      
       attr_writer :parser, :traced
       
       def create_block(name)
-        self.insert_block.parent.basic_blocks.append name
+        LazyBlock.new self.insert_block.parent, name
       end
       
       def malloc(size)
