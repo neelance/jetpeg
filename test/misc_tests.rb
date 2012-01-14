@@ -30,6 +30,17 @@ class MiscTests < Test::Unit::TestCase
     assert rule.parser.failure_reason.expectations == ["2-5", "b"]
   end
   
+  def test_argument_errors
+    assert_raise ArgumentError do
+      rule = JetPEG::Compiler.compile_rule true
+    end
+    
+    assert_raise ArgumentError do
+      rule = JetPEG::Compiler.compile_rule "'a'"
+      rule.match true
+    end
+  end
+  
   def test_compilation_errors
     assert_raise JetPEG::CompilationError do
       JetPEG::Compiler.compile_rule "missing_rule"

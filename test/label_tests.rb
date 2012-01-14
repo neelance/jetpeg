@@ -137,10 +137,16 @@ class LabelsTests < Test::Unit::TestCase
     assert rule.match("ghi") == ["test.jetpeg", 4]
   end
   
-  #def test_local_label
-  #  rule = JetPEG::Compiler.compile_rule "'a' %temp:. 'c' char:%temp"
-  #  result = rule.match "abc"
-  #  assert result == { char: "b" }
-  #end
+  def test_local_label
+    rule = JetPEG::Compiler.compile_rule "'a' %temp:. 'c' char:%temp"
+    assert rule.match("abc") == { char: "b" }
+  end
+  
+  def test_undefined_local_label_error
+    assert_raise JetPEG::CompilationError do
+      rule = JetPEG::Compiler.compile_rule "char:%missing"
+      rule.match "abc"
+    end
+  end
   
 end

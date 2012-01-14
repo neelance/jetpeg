@@ -123,6 +123,7 @@ module JetPEG
     end
         
     def match_rule(root_rule, input, options = {})
+      raise ArgumentError.new("Input must be a String.") if not input.is_a? String
       options.merge!(@@default_options) { |key, oldval, newval| oldval }
       
       if @mod.nil? or not @root_rules.include?(root_rule.name)
