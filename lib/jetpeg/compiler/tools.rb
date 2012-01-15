@@ -34,8 +34,9 @@ module JetPEG
     end
     
     class DynamicPhiHash
-      def initialize(builder, types)
-        @phis = types.map_hash { |name, type| DynamicPhi.new(builder, type, name.to_s) }
+      def initialize(builder, hash_value_type)
+        @phis = hash_value_type.types.map_hash { |name, type| DynamicPhi.new(builder, type, name.to_s) }
+        @hash_value = HashValue.new builder, hash_value_type
       end
       
       def <<(value)
@@ -43,18 +44,26 @@ module JetPEG
       end
       
       def build
-        @phis.map_hash { |name, phi| phi.build }
+        hash = @phis.map_hash { |name, phi| phi.build }
+        @hash_value.merge! hash
+        @hash_value
       end
     end
     
     class Result
       attr_accessor :input, :return_value
       
-      def initialize(input, return_type = nil)
+      def initialize(input, return_value = nil)
         @input = input
+        @return_value = return_value
+      end
+    end
+    
+    class MergingResult < Result
+      def initialize(builder, input, return_type)
+        super input
         @hash_mode = return_type.is_a? HashValueType
-        @return_value = @hash_mode ? {} : nil
-        @local_values = []
+        @return_value = @hash_mode ? HashValue.new(builder, return_type) : nil
       end
       
       def merge!(result)
@@ -66,18 +75,17 @@ module JetPEG
           @return_value = result.return_value
         end
         self
-      end
+      end      
     end
     
-    class BranchingResult
-      attr_accessor :input, :return_value
-
+    class BranchingResult < Result
       def initialize(builder, return_type)
+        super nil
         @builder = builder
         @input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
         hash_mode = return_type.is_a? HashValueType
         @return_value_phi = if hash_mode
-          DynamicPhiHash.new builder, return_type.types
+          DynamicPhiHash.new builder, return_type
         else
           return_type && DynamicPhi.new(builder, return_type, "return_value")
         end

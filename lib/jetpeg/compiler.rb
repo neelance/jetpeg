@@ -246,8 +246,7 @@ module JetPEG
         end_result = build builder, function.params[0], failed_block
         
         unless rule_return_type.nil?
-          data = rule_return_type.create_llvm_value builder, end_result.return_value
-          builder.store data, function.params[1]
+          builder.store end_result.return_value, function.params[1]
         end
         
         builder.ret end_result.input
@@ -274,14 +273,22 @@ module JetPEG
         @label_name = data[:name] && data[:name].to_sym
         @expression = data[:expression]
         @is_local = data[:is_local]
+        @capture_input = false
+        @recursive = false
       end
 
       def create_return_type
         @label_type = begin
-          @expression.return_type || InputRangeValueType::INSTANCE
+          @expression.return_type
         rescue Recursion
+          @recursive = true
           rule.recursive_expressions << @expression
           PointerValueType.new @expression
+        end
+        
+        if @label_type.nil?
+          @label_type = InputRangeValueType::INSTANCE
+          @capture_input = true
         end
 
         return nil if @is_local
@@ -291,12 +298,23 @@ module JetPEG
       
       def build(builder, start_input, failed_block, local_values = nil)
         result = @expression.build builder, start_input, failed_block, local_values
-        value = @label_type.create_llvm_value builder, result.return_value, start_input, result.input
+        
+        value = nil
+        if @capture_input
+          value = @label_type.llvm_type.null
+          value = builder.insert_value value, start_input, 0, "pos"
+          value = builder.insert_value value, result.input, 1, "pos"
+        elsif @recursive
+          value = @label_type.store_value builder, result.return_value
+        else
+          value = result.return_value
+        end
+        
         if @is_local
           raise CompilationError.new("Duplicate local value \"%#{@label_name}\".") if local_values.has_key? @label_name
           local_values[@label_name] = value
         else
-          result.return_value = { label_name => value }
+          result.return_value = HashValue.new builder, return_type, { label_name => value }
         end
         result
       end
@@ -312,14 +330,22 @@ module JetPEG
       def initialize(data)
         super
         @expression = data[:expression]
+        @capture_input = false
+        @recursive = false
       end
       
       def create_return_type
         @label_type = begin
-          @expression.return_type || InputRangeValueType::INSTANCE
+          @expression.return_type
         rescue Recursion
+          @recursive = true
           rule.recursive_expressions << @expression
           PointerValueType.new @expression
+        end
+                
+        if @label_type.nil?
+          @label_type = InputRangeValueType::INSTANCE
+          @capture_input = true
         end
         
         SingleValueType.new(@label_type)
@@ -327,7 +353,16 @@ module JetPEG
       
       def build(builder, start_input, failed_block, local_values = nil)
         result = @expression.build builder, start_input, failed_block
-        result.return_value = @label_type.create_llvm_value builder, result.return_value, start_input, result.input
+        
+        if @capture_input
+          value = @label_type.llvm_type.null
+          value = builder.insert_value value, start_input, 0, "pos"
+          value = builder.insert_value value, result.input, 1, "pos"
+          result.return_value = value
+        elsif @recursive
+          result.return_value = @label_type.store_value builder, result.return_value
+        end
+        
         result
       end
     end
@@ -356,7 +391,7 @@ module JetPEG
       end
       
       def build(builder, start_input, failed_block, local_values = nil)
-        result = Result.new start_input, @return_type
+        result = MergingResult.new builder, start_input, return_type
         local_values = {}
         @children.each do |child|
           result.merge! child.build(builder, result.input, failed_block, local_values)
@@ -743,7 +778,7 @@ module JetPEG
       end
       
       def create_return_type
-        SingleValueType.new InputRangeValueType::INSTANCE
+        InputRangeValueType::INSTANCE
       end
       
       def build(builder, start_input, failed_block, local_values = nil)
@@ -760,9 +795,7 @@ module JetPEG
       end
       
       def build(builder, start_input, failed_block, local_values = nil)
-        result = Result.new start_input
-        result.return_value = parser.scalar_value_for true
-        result
+        Result.new start_input, parser.scalar_value_for(true)
       end
     end
     
@@ -772,9 +805,7 @@ module JetPEG
       end
       
       def build(builder, start_input, failed_block, local_values = nil)
-        result = Result.new start_input
-        result.return_value = parser.scalar_value_for false
-        result
+        Result.new start_input, parser.scalar_value_for(false)
       end
     end
     

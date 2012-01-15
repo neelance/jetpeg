@@ -32,7 +32,7 @@ class MiscTests < Test::Unit::TestCase
   
   def test_argument_errors
     assert_raise ArgumentError do
-      rule = JetPEG::Compiler.compile_rule true
+      JetPEG::Compiler.compile_rule true
     end
     
     assert_raise ArgumentError do

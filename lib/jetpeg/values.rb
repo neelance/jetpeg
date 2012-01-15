@@ -17,10 +17,6 @@ module JetPEG
       builder.alloca llvm_type, name
     end
     
-    def create_llvm_value(builder, value, begin_pos = nil, end_pos = nil)
-      value
-    end
-    
     def read_value(builder, data)
       data
     end
@@ -36,13 +32,6 @@ module JetPEG
   
   class InputRangeValueType < ValueType
     INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }
-    
-    def create_llvm_value(builder, value, begin_pos, end_pos)
-      pos = llvm_type.null
-      pos = builder.insert_value pos, begin_pos, 0, "pos"
-      pos = builder.insert_value pos, end_pos, 1, "pos"
-      pos
-    end
     
     def read(data, input, input_address)
       return nil if data[:begin].null?
@@ -84,30 +73,46 @@ module JetPEG
     end
   end
   
+  class HashValue < Hash
+    attr_reader :type
+    
+    def initialize(builder, type, hash = nil)
+      @builder = builder
+      @type = type
+      @ptr = nil
+      self.merge! hash if hash
+    end
+    
+    def to_ptr
+      if @ptr.nil?
+        data = @type.llvm_type.null
+        self.each do |name, entry|
+          data = @builder.insert_value data, entry, @type.struct_keys.index(name), "hash_data_with_#{name}" if entry
+        end
+        @ptr = data.to_ptr
+        self.freeze
+      end
+      @ptr
+    end
+  end
+
   class HashValueType < ValueType
-    attr_reader :types
+    attr_reader :types, :struct_keys
     
     def initialize(types)
       @types = types
       @types_with_data = @types.select { |key, value| value.llvm_type }
-      return super nil, nil if @types_with_data.empty?
+      @struct_keys = @types_with_data.keys
       
       llvm_type = LLVM::Struct(*@types_with_data.values.map(&:llvm_type))
       ffi_type = Class.new FFI::Struct
       ffi_type.layout(*@types_with_data.map{ |name, type| [name, type.ffi_type] }.flatten)
+      
       super llvm_type, ffi_type
-    end
-
-    def create_llvm_value(builder, value, begin_pos = nil, end_pos = nil)
-      data = llvm_type.null
-      value.each do |name, entry|
-        data = builder.insert_value data, entry, @types_with_data.keys.index(name), "hash_data_with_#{name}" if entry
-      end
-      data
     end
     
     def read_value(builder, data)
-      value = {}
+      value = HashValue.new builder, self
       @types_with_data.keys.each_with_index do |name, index|
          value[name] = builder.extract_value(data, index, name.to_s)
       end
@@ -120,10 +125,6 @@ module JetPEG
         values[name] = type.read(type.llvm_type && data[name], input, input_address)
       end
       values
-    end
-    
-    def alloca(builder, name)
-      @types.empty? ? LLVM::Pointer(llvm_type).null : super
     end
 
     def ==(other)
@@ -186,8 +187,7 @@ module JetPEG
       @target = target
     end
     
-    def create_llvm_value(builder, value, begin_pos = nil, end_pos = nil)
-      value = @target.return_type.create_llvm_value builder, value
+    def store_value(builder, value, begin_pos = nil, end_pos = nil)
       ptr = builder.malloc @target.return_type.llvm_type.size # TODO free
       casted_ptr = builder.bit_cast ptr, LLVM::Pointer(@target.return_type.llvm_type)
       builder.store value, casted_ptr
@@ -214,7 +214,8 @@ module JetPEG
     end
     
     def create_entry(builder, value, previous_entry)
-      @pointer_type.create_llvm_value builder, { value: @entry_type.create_llvm_value(builder, value), previous: previous_entry }
+      value = HashValue.new builder, @entry_type, value if @entry_type.is_a? HashValueType
+      @pointer_type.store_value builder, HashValue.new(builder, @return_type, { value: value, previous: previous_entry })
     end
     
     def read(data, input, input_address)
@@ -239,10 +240,6 @@ module JetPEG
       @data_type = data_type
       @creator_data = creator_data
       super @data_type.llvm_type, @data_type.ffi_type
-    end
-    
-    def create_llvm_value(builder, value, begin_pos = nil, end_pos = nil)
-      @data_type.create_llvm_value builder, value, begin_pos, end_pos
     end
     
     def read(data, input, input_address)
