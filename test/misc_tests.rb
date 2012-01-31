@@ -70,4 +70,11 @@ class MiscTests < Test::Unit::TestCase
       "
     end
   end
+  
+  def test_metagrammar
+    parser = JetPEG.load "lib/jetpeg/compiler/metagrammar.jetpeg"
+    parser[:grammar].match ""
+    parser.mod.write_bitcode "meta.bc"
+    #assert parser[:grammar].match(IO.read("lib/jetpeg/compiler/metagrammar.jetpeg"), output: :realized, class_scope: JetPEG::Compiler)
+  end
 end
