@@ -41,7 +41,7 @@ module JetPEG
       @@default_options
     end
     
-    attr_reader :mod, :malloc, :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_value_type
+    attr_reader :mod, :malloc, :free, :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_value_type
     attr_accessor :root_rules, :failure_reason, :filename
     
     def initialize(rules)
@@ -55,7 +55,7 @@ module JetPEG
     end
     
     def verify!
-      @rules.values.each(&:rule_return_type)
+      @rules.values.each(&:return_type)
       @rules.values.each(&:realize_recursive_return_types)
     end
     
@@ -64,9 +64,7 @@ module JetPEG
     end
     
     def [](name)
-      rule = @rules[name]
-      raise CompilationError.new("Undefined rule \"#{name}\".") if rule.nil?
-      rule
+      @rules[name]
     end
     
     def scalar_value_for(scalar)
@@ -84,6 +82,8 @@ module JetPEG
       @possible_failure_reasons = []
       @mod = LLVM::Module.new "Parser"
       @malloc = @mod.functions.add "malloc", [LLVM::Int64], LLVM::Pointer(LLVM::Int8)
+      @free = @mod.functions.add "free", [LLVM::Pointer(LLVM::Int8)], LLVM.Void()
+      @free_value_functions = {}
       
       add_failure_reason_callback_type = LLVM::Pointer(LLVM::Function([LLVM::Int1, LLVM_STRING, LLVM::Int], LLVM::Void()))
       @llvm_add_failure_reason_callback = @mod.globals.add add_failure_reason_callback_type, "add_failure_reason_callback"
@@ -136,10 +136,10 @@ module JetPEG
       input_ptr = FFI::MemoryPointer.from_string input
       args << input_ptr
 
-      data_pointer = nil
-      unless root_rule.rule_return_type.nil?
-        data_pointer = FFI::MemoryPointer.new root_rule.rule_return_type.ffi_type
-        args << data_pointer
+      value_pointer = nil
+      unless root_rule.return_type.nil?
+        value_pointer = FFI::MemoryPointer.new root_rule.return_type.ffi_type
+        args << value_pointer
       end
 
       input_end_ptr = @execution_engine.run_function(root_rule.rule_function(false), *args).to_value_ptr
@@ -155,9 +155,9 @@ module JetPEG
         return nil
       end
       
-      return [data_pointer, input_ptr.address] if options[:output] == :pointer
+      return [value_pointer, input_ptr.address] if options[:output] == :pointer
 
-      intermediate = root_rule.rule_return_type ? root_rule.rule_return_type.load(data_pointer, input, input_ptr.address) : {}
+      intermediate = value_pointer ? root_rule.return_type.load(value_pointer, input, input_ptr.address) : {}
       return intermediate if options[:output] == :intermediate
 
       realized = JetPEG.realize_data intermediate, options[:class_scope]

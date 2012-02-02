@@ -39,7 +39,7 @@ require "jetpeg/compiler/tools"
 
 module JetPEG
   class CompilationError < RuntimeError
-    attr_accessor :rule
+    attr_reader :rule
     
     def initialize(msg, rule = nil)
       @msg = msg
@@ -71,8 +71,13 @@ module JetPEG
         LazyBlock.new self.insert_block.parent, name
       end
       
-      def malloc(size)
-        self.call @parser.malloc, size
+      def malloc(llvm_type)
+        ptr = self.call @parser.malloc, llvm_type.size
+        self.bit_cast ptr, LLVM::Pointer(llvm_type)
+      end
+      
+      def free(ptr)
+        self.call @parser.free, ptr
       end
       
       def call_rule(rule, *args)
@@ -155,7 +160,8 @@ module JetPEG
       
       def initialize(data)
         @name = nil
-        @rule_return_type = :pending
+        @return_type = :pending
+        @return_type_recursion = false
         @bare_rule_function = nil
         @traced_rule_function = nil
         @recursive_expressions = []
@@ -181,28 +187,26 @@ module JetPEG
       end
       
       def return_type
-        @return_type ||= create_return_type
+        raise Recursion if @return_type_recursion
+        if @return_type == :pending
+          @return_type = if @name
+            begin
+              @return_type_recursion = true
+              create_return_type
+            rescue Recursion
+              nil
+            end
+          else
+            create_return_type
+          end
+          @return_type_recursion = false
+          raise CompilationError.new("Unlabeled recursion mixed with other labels.", rule) if @return_type.nil? and not create_return_type.nil?
+        end
+        @return_type
       end
       
       def create_return_type
         nil
-      end
-      
-      def rule_return_type
-        raise Recursion if @rule_return_type == :recursion
-        if @rule_return_type == :pending
-          begin
-            @rule_return_type = :recursion
-            @rule_return_type = return_type
-          rescue Recursion
-            @rule_return_type = nil
-            raise CompilationError.new("Unlabeled recursion mixed with other labels.") if not return_type.nil?
-          end
-        end
-        @rule_return_type
-      rescue CompilationError => e
-        e.rule ||= self
-        raise e
       end
       
       def realize_recursive_return_types
@@ -225,7 +229,7 @@ module JetPEG
         
         params = []
         params << LLVM_STRING
-        params << LLVM::Pointer(rule_return_type.llvm_type) unless rule_return_type.nil?
+        params << LLVM::Pointer(return_type.llvm_type) unless return_type.nil?
         function = @mod.functions.add @name, params, LLVM_STRING
         
         if traced
@@ -245,7 +249,7 @@ module JetPEG
         failed_block = builder.create_block "failed"
         end_result = build builder, function.params[0], failed_block
         
-        unless rule_return_type.nil?
+        unless return_type.nil?
           builder.store end_result.return_value, function.params[1]
         end
         
@@ -255,9 +259,6 @@ module JetPEG
         builder.ret LLVM_STRING.null_pointer
 
         function
-      rescue CompilationError => e
-        e.rule ||= self
-        raise e
       end
       
       def match(input, options = {})
@@ -293,7 +294,7 @@ module JetPEG
 
         return nil if @is_local
         
-        HashValueType.new(label_name => @label_type)
+        HashValueType.new({ label_name => @label_type }, "#{rule.name}_label")
       end
       
       def build(builder, start_input, failed_block, local_values = {})
@@ -311,7 +312,7 @@ module JetPEG
         end
         
         if @is_local
-          raise CompilationError.new("Duplicate local value \"%#{@label_name}\".") if local_values.has_key? @label_name
+          raise CompilationError.new("Duplicate local value \"%#{@label_name}\".", rule) if local_values.has_key? @label_name
           local_values[@label_name] = value
         else
           result.return_value = HashValue.new builder, return_type, { label_name => value }
@@ -379,13 +380,13 @@ module JetPEG
           merged = {}
           child_types.each { |type|
             merged.merge!(type.types) { |key, oldval, newval|
-              raise CompilationError.new("Duplicate label \"#{key}\".")
+              raise CompilationError.new("Duplicate label \"#{key}\".", rule)
             }
           }
-          HashValueType.new merged
+          HashValueType.new merged, "#{rule.name}_sequence"
         else
-          raise CompilationError.new("Specific return value mixed with labels.") if child_types.any?(&HashValueType)
-          raise CompilationError.new("Multiple specific return values.") if child_types.size > 1
+          raise CompilationError.new("Specific return value mixed with labels.", rule) if child_types.any?(&HashValueType)
+          raise CompilationError.new("Multiple specific return values.", rule) if child_types.size > 1
           child_types.first
         end
       end
@@ -416,19 +417,19 @@ module JetPEG
           return_hash_types = {}
           keys.each do |key|
             all_types = child_types.map { |t| t && t.types[key] }
-            return_hash_types[key] = ChoiceValueType.new(all_types, key)
+            return_hash_types[key] = ChoiceValueType.new(all_types, "#{rule.name}_#{key}")
           end
-          HashValueType.new return_hash_types
+          HashValueType.new return_hash_types, "#{rule.name}_choice_return_value"
         else
-          raise CompilationError.new("Specific return value mixed with labels.") if child_types.any?(&HashValueType)
-          ChoiceValueType.new child_types, "return_value"
+          raise CompilationError.new("Specific return value mixed with labels.", rule) if child_types.any?(&HashValueType)
+          ChoiceValueType.new child_types, "#{rule.name}_choice_return_value"
         end
       end
       
       def build(builder, start_input, failed_block, local_values = {})
         successful_block = builder.create_block "choice_successful"
         child_blocks = @children.map { builder.create_block "choice_child" }
-        result = BranchingResult.new builder, @return_type
+        result = BranchingResult.new builder, return_type
         builder.br child_blocks.first
         
         @children.each_with_index do |child, index|
@@ -455,7 +456,7 @@ module JetPEG
       
       def build(builder, start_input, failed_block, local_values = {})
         exit_block = builder.create_block "optional_exit"
-        result = BranchingResult.new builder, @return_type
+        result = BranchingResult.new builder, return_type
         
         optional_failed_block = builder.create_block "optional_failed"
         result << @expression.build(builder, start_input, optional_failed_block)
@@ -477,7 +478,7 @@ module JetPEG
       end
       
       def create_return_type
-        @expression.return_type && ArrayValueType.new(@expression.return_type)
+        @expression.return_type && ArrayValueType.new(@expression.return_type, "#{rule.name}_loop")
       end
       
       def build(builder, start_input, failed_block, local_values = {}, start_return_value = nil)
@@ -485,22 +486,22 @@ module JetPEG
         exit_block = builder.create_block "repetition_exit"
 
         input = DynamicPhi.new builder, LLVM_STRING, "loop_input", start_input
-        return_value = DynamicPhi.new builder, @return_type, "loop_return_value", start_return_value || @return_type.llvm_type.null if @return_type
+        return_value = DynamicPhi.new builder, return_type, "loop_return_value", start_return_value || return_type.llvm_type.null if return_type
         builder.br loop_block
         
         builder.position_at_end loop_block
         input.build
-        return_value.build if @return_type
+        return_value.build if return_type
         
         next_result = @expression.build builder, input, exit_block
         input << next_result.input
-        return_value << @return_type.create_entry(builder, next_result.return_value, return_value) if @return_type
+        return_value << return_type.create_entry(builder, next_result.return_value, return_value) if return_type
         
         builder.br loop_block
         
         builder.position_at_end exit_block
         result = Result.new input
-        result.return_value = return_value if @return_type
+        result.return_value = return_value if return_type
         result
       end
     end
@@ -508,7 +509,7 @@ module JetPEG
     class OneOrMore < ZeroOrMore
       def build(builder, start_input, failed_block, local_values = {})
         result = @expression.build builder, start_input, failed_block
-        return_value = @return_type.create_entry(builder, result.return_value, @return_type.llvm_type.null) if @return_type
+        return_value = return_type.create_entry(builder, result.return_value, return_type.llvm_type.null) if return_type
         super builder, result.input, failed_block, local_values, return_value
       end
     end
@@ -524,14 +525,14 @@ module JetPEG
         loop_type = @expression.return_type
         until_type = @until_expression.return_type
         entry_type = if loop_type && until_type
-          raise CompilationError.new("Incompatible return values in until expression.") if not loop_type.is_a?(HashValueType) or not until_type.is_a?(HashValueType)
+          raise CompilationError.new("Incompatible return values in until expression.", rule) if not loop_type.is_a?(HashValueType) or not until_type.is_a?(HashValueType)
           types = loop_type.types
-          types.merge!(until_type.types) { |key, oldval, newval| raise CompilationError.new("Overlapping value in until-expression.") }
-          HashValueType.new types
+          types.merge!(until_type.types) { |key, oldval, newval| raise CompilationError.new("Overlapping value in until-expression.", rule) }
+          HashValueType.new types, "#{rule.name}_until_entry"
         else
           loop_type || until_type
         end
-        entry_type && ArrayValueType.new(entry_type)
+        entry_type && ArrayValueType.new(entry_type, "#{rule.name}_until")
       end
       
       def build(builder, start_input, failed_block, local_values = {})
@@ -540,12 +541,12 @@ module JetPEG
         exit_block = builder.create_block "until_exit"
         
         input = DynamicPhi.new builder, LLVM_STRING, "loop_input", start_input
-        return_value = DynamicPhi.new builder, @return_type.llvm_type, "loop_return_value", @return_type.llvm_type.null if @return_type
+        return_value = DynamicPhi.new builder, return_type.llvm_type, "loop_return_value", return_type.llvm_type.null if return_type
         builder.br loop1_block
         
         builder.position_at_end loop1_block
         input.build
-        return_value.build if @return_type
+        return_value.build if return_type
         
         until_result = @until_expression.build builder, input, loop2_block
         builder.br exit_block
@@ -553,12 +554,12 @@ module JetPEG
         builder.position_at_end loop2_block
         next_result = @expression.build builder, input, failed_block
         input << next_result.input
-        return_value << @return_type.create_entry(builder, next_result.return_value, return_value) if @return_type
+        return_value << return_type.create_entry(builder, next_result.return_value, return_value) if return_type
         builder.br loop1_block
         
         builder.position_at_end exit_block
         result = Result.new until_result.input
-        result.return_value = @return_type.create_entry(builder, until_result.return_value, return_value) if @return_type
+        result.return_value = return_type.create_entry(builder, until_result.return_value, return_value) if return_type
         result
       end
     end
@@ -701,15 +702,15 @@ module JetPEG
       end
       
       def referenced
-        @referenced ||= parser[@referenced_name]
+        @referenced ||= parser[@referenced_name] || raise(CompilationError.new("Undefined rule \"#{name}\".", rule))
       end
       
       def create_return_type
-        referenced.rule_return_type
+        referenced.return_type
       end
       
       def build_allocas(builder)
-        @label_data_ptr = referenced.rule_return_type && referenced.rule_return_type.alloca(builder, "#{@referenced_name}_data_ptr")
+        @label_data_ptr = referenced.return_type && referenced.return_type.alloca(builder, "#{@referenced_name}_data_ptr")
       end
       
       def build(builder, start_input, failed_block, local_values = {})
@@ -726,7 +727,7 @@ module JetPEG
         result = Result.new rule_end_input
         if @label_data_ptr
           label_data = builder.load @label_data_ptr, "#{@referenced_name}_data"
-          result.return_value = referenced.rule_return_type.read_value builder, label_data
+          result.return_value = referenced.return_type.read_value builder, label_data
         end
         result
       end
@@ -783,7 +784,7 @@ module JetPEG
       
       def build(builder, start_input, failed_block, local_values = {})
         result = Result.new start_input
-        raise CompilationError.new("Undefined local value \"%#{name}\".") if not local_values.has_key? @name
+        raise CompilationError.new("Undefined local value \"%#{name}\".", rule) if not local_values.has_key? @name
         result.return_value = local_values[@name]
         result
       end

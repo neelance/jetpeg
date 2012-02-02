@@ -31,7 +31,7 @@ module JetPEG
   end
   
   class InputRangeValueType < ValueType
-    INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }
+    INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING, "input_range"), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }
     
     def read(data, input, input_address)
       return nil if data[:begin].null?
@@ -99,12 +99,12 @@ module JetPEG
   class HashValueType < ValueType
     attr_reader :types, :struct_keys
     
-    def initialize(types)
+    def initialize(types, value_name)
       @types = types
       @types_with_data = @types.select { |key, value| value.llvm_type }
       @struct_keys = @types_with_data.keys
       
-      llvm_type = LLVM::Struct(*@types_with_data.values.map(&:llvm_type))
+      llvm_type = LLVM::Struct(*@types_with_data.values.map(&:llvm_type), "#{value_name}_struct")
       ffi_type = Class.new FFI::Struct
       ffi_type.layout(*@types_with_data.map{ |name, type| [name, type.ffi_type] }.flatten)
       
@@ -149,7 +149,7 @@ module JetPEG
         llvm_layout.push type.llvm_type
         ffi_layout.push index.to_s.to_sym, type.ffi_type
       end
-      llvm_type = LLVM::Struct(LLVM::Int32, *llvm_layout) # TODO memory optimization with "union" structure and bitcasts
+      llvm_type = LLVM::Struct(LLVM::Int32, *llvm_layout, "#{name}_struct") # TODO memory optimization with "union" structure and bitcasts
       ffi_type = Class.new FFI::Struct
       ffi_type.layout(:selection, :int32, *ffi_layout)
       super llvm_type, ffi_type
@@ -183,14 +183,23 @@ module JetPEG
     attr_reader :target
     
     def initialize(target)
-      super LLVM::Pointer(LLVM::Int8), :pointer
       @target = target
+      @target_struct = LLVM::Struct("pointer_target")
+      @target_struct_initialized = false
+      super LLVM::Pointer(@target_struct), :pointer
     end
     
     def store_value(builder, value, begin_pos = nil, end_pos = nil)
-      ptr = builder.malloc @target.return_type.llvm_type.size # TODO free
-      casted_ptr = builder.bit_cast ptr, LLVM::Pointer(@target.return_type.llvm_type)
-      builder.store value, casted_ptr
+      if not @target_struct_initialized
+        @target_struct.element_types = [@target.return_type.llvm_type]
+        @target_struct_initialized = true
+      end
+
+      target_data = @target_struct.null
+      target_data = builder.insert_value target_data, value, 0, "pointer_target_data"
+      
+      ptr = builder.malloc @target_struct # TODO free
+      builder.store target_data, ptr
       ptr
     end
     
@@ -206,10 +215,10 @@ module JetPEG
   class ArrayValueType < ValueType
     attr_reader :entry_type, :return_type
     
-    def initialize(entry_type)
+    def initialize(entry_type, name)
       @entry_type = entry_type
       @pointer_type = PointerValueType.new self
-      @return_type = HashValueType.new value: entry_type, previous: @pointer_type
+      @return_type = HashValueType.new({ value: entry_type, previous: @pointer_type }, name)
       super @pointer_type.llvm_type, @pointer_type.ffi_type
     end
     
