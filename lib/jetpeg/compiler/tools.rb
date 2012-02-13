@@ -31,6 +31,10 @@ module JetPEG
       def to_ptr
         @phi.to_ptr
       end
+      
+      def type
+        @llvm_type
+      end
     end
     
     class DynamicPhiHash
@@ -75,7 +79,7 @@ module JetPEG
           @return_value = result.return_value
         end
         self
-      end      
+      end
     end
     
     class BranchingResult < Result

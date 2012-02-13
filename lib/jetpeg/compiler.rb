@@ -72,12 +72,25 @@ module JetPEG
       end
       
       def malloc(llvm_type)
+        if @parser.malloc_counter
+          old_value = self.load @parser.malloc_counter
+          new_value = self.add old_value, LLVM::Int(1)
+          self.store new_value, @parser.malloc_counter
+        end
+        
         ptr = self.call @parser.malloc, llvm_type.size
         self.bit_cast ptr, LLVM::Pointer(llvm_type)
       end
       
       def free(ptr)
-        self.call @parser.free, ptr
+        if @parser.malloc_counter
+          old_value = self.load @parser.malloc_counter
+          new_value = self.sub old_value, LLVM::Int(1)
+          self.store new_value, @parser.malloc_counter
+        end
+        
+        casted_ptr = self.bit_cast ptr, LLVM::Pointer(LLVM::Int8)
+        self.call @parser.free, casted_ptr
       end
       
       def call_rule(rule, *args)
@@ -89,6 +102,34 @@ module JetPEG
         @parser.possible_failure_reasons << reason
         callback = self.load @parser.llvm_add_failure_reason_callback, "callback"
         self.call callback, failed, position, LLVM::Int(@parser.possible_failure_reasons.size - 1)
+      end
+      
+      def build_free(type, value)
+        llvm_type = type.is_a?(ValueType) ? type.llvm_type : type
+        case llvm_type.kind
+        when :struct
+          llvm_type.element_types.each_with_index do |element_type, i|
+            if [:struct, :pointer].include? element_type.kind
+              element = self.extract_value value, i
+              build_free element_type, element
+            end
+          end
+        when :pointer
+          if [:struct, :pointer].include? llvm_type.element_type.kind
+            follow_pointer_block = self.create_block "follow_pointer"
+            continue_block = self.create_block "continue"
+            
+            not_null = self.icmp :ne, value, llvm_type.null, "not_null"
+            self.cond not_null, follow_pointer_block, continue_block
+            
+            self.position_at_end follow_pointer_block
+            self.call @parser.free_value_functions[llvm_type.element_type], value
+            self.free value
+            self.br continue_block
+            
+            self.position_at_end continue_block
+          end
+        end
       end
     end
     
@@ -187,8 +228,8 @@ module JetPEG
       end
       
       def return_type
-        raise Recursion if @return_type_recursion
         if @return_type == :pending
+          raise Recursion if @return_type_recursion
           @return_type = if @name
             begin
               @return_type_recursion = true
@@ -245,19 +286,16 @@ module JetPEG
         entry = function.basic_blocks.append "entry"
         builder.position_at_end entry
         build_allocas builder
-
+        
         failed_block = builder.create_block "failed"
         end_result = build builder, function.params[0], failed_block
         
-        unless return_type.nil?
-          builder.store end_result.return_value, function.params[1]
-        end
-        
+        builder.store end_result.return_value, function.params[1] if return_type
         builder.ret end_result.input
-
+        
         builder.position_at_end failed_block
         builder.ret LLVM_STRING.null_pointer
-
+        
         function
       end
       
@@ -279,6 +317,12 @@ module JetPEG
       end
 
       def create_return_type
+        if @is_local # local labels can only capture input ranges atm
+          @label_type = InputRangeValueType::INSTANCE
+          @capture_input = true
+          return nil
+        end
+        
         @label_type = begin
           @expression.return_type
         rescue Recursion
@@ -291,8 +335,6 @@ module JetPEG
           @label_type = InputRangeValueType::INSTANCE
           @capture_input = true
         end
-
-        return nil if @is_local
         
         HashValueType.new({ label_name => @label_type }, "#{rule.name}_label")
       end
@@ -302,6 +344,7 @@ module JetPEG
         
         value = nil
         if @capture_input
+          builder.build_free @expression.return_type, result.return_value if @expression.return_type
           value = @label_type.llvm_type.null
           value = builder.insert_value value, start_input, 0, "pos"
           value = builder.insert_value value, result.input, 1, "pos"
@@ -394,8 +437,23 @@ module JetPEG
       def build(builder, start_input, failed_block, local_values = {})
         result = MergingResult.new builder, start_input, return_type
         local_values = {}
+        previous_fail_cleanup_block = failed_block
         @children.each do |child|
-          result.merge! child.build(builder, result.input, failed_block, local_values)
+          current_result = child.build builder, result.input, previous_fail_cleanup_block, local_values
+          result.merge! current_result
+          successful_block = builder.insert_block
+          
+          if child.return_type
+            current_fail_cleanup_block = builder.create_block "sequence_fail_cleanup"
+            builder.position_at_end current_fail_cleanup_block
+            builder.build_free child.return_type, current_result.return_value
+            builder.br previous_fail_cleanup_block
+            previous_fail_cleanup_block = current_fail_cleanup_block
+          end
+          
+          builder.position_at_end successful_block
+          local_values.each do |name, value|
+          end
         end
         result
       end
@@ -427,19 +485,18 @@ module JetPEG
       end
       
       def build(builder, start_input, failed_block, local_values = {})
-        successful_block = builder.create_block "choice_successful"
-        child_blocks = @children.map { builder.create_block "choice_child" }
+        choice_successful_block = builder.create_block "choice_successful"
         result = BranchingResult.new builder, return_type
-        builder.br child_blocks.first
         
         @children.each_with_index do |child, index|
-          builder.position_at_end child_blocks[index]
-          child_result = child.build(builder, start_input, child_blocks[index + 1] || failed_block)
+          next_child_block = index < @children.size - 1 ? builder.create_block("next_choice_child") : failed_block
+          child_result = child.build(builder, start_input, next_child_block)
           result << child_result
-          builder.br successful_block
+          builder.br choice_successful_block
+          builder.position_at_end next_child_block
         end
         
-        builder.position_at_end successful_block
+        builder.position_at_end choice_successful_block
         result.build
       end
     end
@@ -538,6 +595,7 @@ module JetPEG
       def build(builder, start_input, failed_block, local_values = {})
         loop1_block = builder.create_block "until_loop1"
         loop2_block = builder.create_block "until_loop2"
+        until_failed_block = builder.create_block "until_failed"
         exit_block = builder.create_block "until_exit"
         
         input = DynamicPhi.new builder, LLVM_STRING, "loop_input", start_input
@@ -552,10 +610,14 @@ module JetPEG
         builder.br exit_block
         
         builder.position_at_end loop2_block
-        next_result = @expression.build builder, input, failed_block
+        next_result = @expression.build builder, input, until_failed_block
         input << next_result.input
         return_value << return_type.create_entry(builder, next_result.return_value, return_value) if return_type
         builder.br loop1_block
+        
+        builder.position_at_end until_failed_block
+        builder.build_free return_type, return_value if return_type
+        builder.br failed_block
         
         builder.position_at_end exit_block
         result = Result.new until_result.input
@@ -571,7 +633,8 @@ module JetPEG
       end
 
       def build(builder, start_input, failed_block, local_values = {})
-        @expression.build builder, start_input, failed_block
+        result = @expression.build builder, start_input, failed_block
+        builder.build_free @expression.return_type, result.return_value if @expression.return_type
         Result.new start_input
       end
     end
@@ -585,7 +648,8 @@ module JetPEG
       def build(builder, start_input, failed_block, local_values = {})
         lookahead_failed_block = builder.create_block "lookahead_failed"
 
-        @expression.build builder, start_input, lookahead_failed_block
+        result = @expression.build builder, start_input, lookahead_failed_block
+        builder.build_free @expression.return_type, result.return_value if @expression.return_type
         builder.br failed_block
         
         builder.position_at_end lookahead_failed_block
@@ -604,7 +668,7 @@ module JetPEG
       def build(builder, start_input, failed_block, local_values = {})
         end_input = @string.chars.inject(start_input) do |input, char|
           input_char = builder.load input, "char"
-          failed = builder.icmp :ne, input_char, LLVM::Int8.from_i(char.ord), "matching"
+          failed = builder.icmp :ne, input_char, LLVM::Int8.from_i(char.ord), "failed"
           builder.add_failure_reason failed, start_input, ParsingError.new([@string])
           next_char_block = builder.create_block "string_terminal_next_char"
           builder.cond failed, failed_block, next_char_block

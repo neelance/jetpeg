@@ -35,13 +35,13 @@ module JetPEG
   end
   
   class Parser
-    @@default_options = { raise_on_failure: true, output: :realized, class_scope: ::Object, bitcode_optimization: false, machine_code_optimization: 0 }
+    @@default_options = { raise_on_failure: true, output: :realized, class_scope: ::Object, bitcode_optimization: false, machine_code_optimization: 0, track_malloc: false }
     
     def self.default_options
       @@default_options
     end
     
-    attr_reader :mod, :malloc, :free, :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_value_type
+    attr_reader :mod, :malloc, :free, :free_value_functions, :malloc_counter, :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_value_type
     attr_accessor :root_rules, :failure_reason, :filename
     
     def initialize(rules)
@@ -83,7 +83,14 @@ module JetPEG
       @mod = LLVM::Module.new "Parser"
       @malloc = @mod.functions.add "malloc", [LLVM::Int64], LLVM::Pointer(LLVM::Int8)
       @free = @mod.functions.add "free", [LLVM::Pointer(LLVM::Int8)], LLVM.Void()
-      @free_value_functions = {}
+      @free_value_functions = Hash.new { |hash, llvm_type| hash[llvm_type] = @mod.functions.add("free_value", [LLVM::Pointer(llvm_type)], LLVM.Void()) }
+
+      if options[:track_malloc]
+        @malloc_counter = @mod.globals.add LLVM::Int32, "malloc_counter"
+        @malloc_counter.initializer = LLVM::Int(0)
+      else
+        @malloc_counter = nil
+      end
       
       add_failure_reason_callback_type = LLVM::Pointer(LLVM::Function([LLVM::Int1, LLVM_STRING, LLVM::Int], LLVM::Void()))
       @llvm_add_failure_reason_callback = @mod.globals.add add_failure_reason_callback_type, "add_failure_reason_callback"
@@ -102,9 +109,23 @@ module JetPEG
       @rules.values.each { |rule| rule.mod = @mod }
       
       @rules.values.each do |rule|
+        @free_value_functions[rule.return_type.llvm_type] if rule.return_type
+        
         linkage = @root_rules.include?(rule.name) ? :external : :private
         rule.rule_function(false).linkage = linkage
         rule.rule_function(true).linkage = linkage
+      end
+      
+      @free_value_functions.each do |llvm_type, function|
+        builder = Compiler::Builder.new
+        builder.parser = self
+        
+        entry = function.basic_blocks.append "entry"
+        builder.position_at_end entry
+        value = builder.load function.params[0], "value"
+        builder.build_free llvm_type, value
+        
+        builder.ret nil
       end
       
       @mod.verify!
@@ -131,24 +152,23 @@ module JetPEG
         build options
       end
       
-      args = []
-
       input_ptr = FFI::MemoryPointer.from_string input
-      args << input_ptr
+      value_pointer = root_rule.return_type && FFI::MemoryPointer.new(root_rule.return_type.ffi_type)
 
-      value_pointer = nil
-      unless root_rule.return_type.nil?
-        value_pointer = FFI::MemoryPointer.new root_rule.return_type.ffi_type
-        args << value_pointer
-      end
-
-      input_end_ptr = @execution_engine.run_function(root_rule.rule_function(false), *args).to_value_ptr
+      input_end_ptr = @execution_engine.run_function(root_rule.rule_function(false), input_ptr, *(value_pointer ? [value_pointer] : [])).to_value_ptr
       
       if input_end_ptr.null? or input_ptr.address + input.size != input_end_ptr.address
+        free_value value_pointer, root_rule.return_type if value_pointer
+        check_malloc_counter
+        
         @failure_reason = ParsingError.new([])
         @failure_reason_position = input_ptr
         @execution_engine.pointer_to_global(@llvm_add_failure_reason_callback).put_pointer 0, @ffi_add_failure_reason_callback
-        @execution_engine.run_function(root_rule.rule_function(true), *args)
+        
+        @execution_engine.run_function(root_rule.rule_function(true), input_ptr, *(value_pointer ? [value_pointer] : []))
+        free_value value_pointer, root_rule.return_type if value_pointer
+        check_malloc_counter
+        
         @failure_reason.input = input
         @failure_reason.position = @failure_reason_position.address - input_ptr.address
         raise @failure_reason if options[:raise_on_failure]
@@ -156,8 +176,15 @@ module JetPEG
       end
       
       return [value_pointer, input_ptr.address] if options[:output] == :pointer
-
-      intermediate = value_pointer ? root_rule.return_type.load(value_pointer, input, input_ptr.address) : {}
+      
+      intermediate = {} 
+      if value_pointer
+        rule_return_type = root_rule.return_type
+        rule_data = rule_return_type.ffi_type == :pointer ? value_pointer.get_pointer(0) : rule_return_type.ffi_type.new(value_pointer)
+        intermediate = rule_return_type.read rule_data, input, input_ptr.address
+        free_value value_pointer, root_rule.return_type
+      end
+      check_malloc_counter
       return intermediate if options[:output] == :intermediate
 
       realized = JetPEG.realize_data intermediate, options[:class_scope]
@@ -170,10 +197,20 @@ module JetPEG
       match_rule @rules.values.first, input
     end
     
+    def free_value(value, value_type)
+      @execution_engine.run_function @free_value_functions[value_type.llvm_type], value
+    end
+    
     def stats
       block_counts = @mod.functions.map { |f| f.basic_blocks.size }
       instruction_counts = @mod.functions.map { |f| f.basic_blocks.map { |b| b.instructions.to_a.size } }
       "#{@mod.functions.to_a.size} functions / #{block_counts.reduce(:+)} blocks / #{instruction_counts.flatten.reduce(:+)} instructions"
+    end
+    
+    def check_malloc_counter
+      return if @malloc_counter.nil?
+      value = @execution_engine.pointer_to_global(@malloc_counter).read_int32
+      raise "Internal error: Memory leak (#{value})." if value != 0
     end
   end
 end

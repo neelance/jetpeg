@@ -1,6 +1,7 @@
 require 'test/unit'
 require "jetpeg"
 JetPEG::Parser.default_options[:raise_on_failure] = false
+JetPEG::Parser.default_options[:track_malloc] = true
 
 class FunctionTests < Test::Unit::TestCase
   def test_boolean_functions

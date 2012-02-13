@@ -7,12 +7,6 @@ module JetPEG
       @ffi_type = ffi_type
     end
     
-    def load(pointer, input, input_address)
-      return nil if pointer.null?
-      data = ffi_type == :pointer ? pointer.get_pointer(0) : ffi_type.new(pointer)
-      read data, input, input_address
-    end
-    
     def alloca(builder, name)
       builder.alloca llvm_type, name
     end
@@ -74,25 +68,25 @@ module JetPEG
   end
   
   class HashValue < Hash
-    attr_reader :type
+    #attr_reader :type
     
-    def initialize(builder, type, hash = nil)
+    def initialize(builder, hash_type, hash = nil)
       @builder = builder
-      @type = type
+      @hash_type = hash_type
       @ptr = nil
       self.merge! hash if hash
     end
     
     def to_ptr
-      if @ptr.nil?
-        data = @type.llvm_type.null
-        self.each do |name, entry|
-          data = @builder.insert_value data, entry, @type.struct_keys.index(name), "hash_data_with_#{name}" if entry
-        end
-        @ptr = data.to_ptr
-        self.freeze
+      data = @hash_type.llvm_type.null
+      self.each do |name, entry|
+        data = @builder.insert_value data, entry, @hash_type.struct_keys.index(name), "hash_data_with_#{name}" if entry
       end
-      @ptr
+      data.to_ptr
+    end
+    
+    def type
+      @hash_type.llvm_type
     end
   end
 
@@ -185,26 +179,31 @@ module JetPEG
     def initialize(target)
       @target = target
       @target_struct = LLVM::Struct("pointer_target")
-      @target_struct_initialized = false
+      @target_struct_realized = false
       super LLVM::Pointer(@target_struct), :pointer
     end
     
+    def realize_target_struct
+      return if @target_struct_realized
+      @target_struct.element_types = [@target.return_type.llvm_type]
+      @target_struct_realized = true
+    end
+    
     def store_value(builder, value, begin_pos = nil, end_pos = nil)
-      if not @target_struct_initialized
-        @target_struct.element_types = [@target.return_type.llvm_type]
-        @target_struct_initialized = true
-      end
-
+      realize_target_struct
       target_data = @target_struct.null
       target_data = builder.insert_value target_data, value, 0, "pointer_target_data"
       
-      ptr = builder.malloc @target_struct # TODO free
+      ptr = builder.malloc @target_struct
       builder.store target_data, ptr
       ptr
     end
     
     def read(data, input, input_address)
-      @target.return_type.load data, input, input_address
+      return nil if data.null?
+      target_type = @target.return_type
+      target_data = target_type.ffi_type == :pointer ? data.get_pointer(0) : target_type.ffi_type.new(data)
+      target_type.read target_data, input, input_address
     end
     
     def ==(other)
