@@ -64,6 +64,10 @@ module JetPEG
       self
     end
     
+    def get_local_label(name)
+      nil
+    end
+    
     def [](name)
       @rules[name]
     end

@@ -196,7 +196,7 @@ module JetPEG
     end
     
     class ParsingExpression
-      attr_accessor :parent, :name
+      attr_accessor :parent, :name, :local_label_source
       attr_reader :recursive_expressions
       
       def initialize(data)
@@ -206,6 +206,7 @@ module JetPEG
         @bare_rule_function = nil
         @traced_rule_function = nil
         @recursive_expressions = []
+        @local_label_source = nil
         
         if data.is_a?(Hash)
           @children = data.values.flatten.select(&ParsingExpression)
@@ -252,6 +253,11 @@ module JetPEG
       
       def realize_recursive_return_types
         @recursive_expressions.each(&:return_type)
+      end
+      
+      def get_local_label(name)
+        @local_label_source ||= parent
+        @local_label_source.get_local_label name
       end
       
       def build_allocas(builder)
@@ -307,7 +313,7 @@ module JetPEG
     end
     
     class Label < ParsingExpression
-      attr_reader :label_name
+      attr_reader :label_name, :value
       
       def initialize(data)
         super
@@ -316,53 +322,55 @@ module JetPEG
         @is_local = data[:is_local]
         @capture_input = false
         @recursive = false
+        @value_type = nil
+        @value = nil
+      end
+      
+      def value_type
+        if @value_type.nil?
+          @value_type = begin
+            @expression.return_type
+          rescue Recursion
+            @recursive = true
+            rule.recursive_expressions << @expression
+            PointerValueType.new @expression
+          end
+          
+          if @value_type.nil?
+            @value_type = InputRangeValueType::INSTANCE
+            @capture_input = true
+          end
+        end
+        @value_type
       end
 
       def create_return_type
-        if @is_local # local labels can only capture input ranges atm
-          @label_type = InputRangeValueType::INSTANCE
-          @capture_input = true
-          return nil
-        end
-        
-        @label_type = begin
-          @expression.return_type
-        rescue Recursion
-          @recursive = true
-          rule.recursive_expressions << @expression
-          PointerValueType.new @expression
-        end
-        
-        if @label_type.nil?
-          @label_type = InputRangeValueType::INSTANCE
-          @capture_input = true
-        end
-        
-        HashValueType.new({ label_name => @label_type }, "#{rule.name}_label")
+        return nil if @is_local
+        HashValueType.new({ label_name => value_type }, "#{rule.name}_label")
       end
       
-      def build(builder, start_input, failed_block, local_values = {})
-        result = @expression.build builder, start_input, failed_block, local_values
+      def build(builder, start_input, failed_block)
+        expresion_result = @expression.build builder, start_input, failed_block
         
-        value = nil
         if @capture_input
-          builder.build_free @expression.return_type, result.return_value if @expression.return_type
-          value = @label_type.llvm_type.null
-          value = builder.insert_value value, start_input, 0, "pos"
-          value = builder.insert_value value, result.input, 1, "pos"
+          builder.build_free @expression.return_type, expresion_result.return_value if @expression.return_type
+          @value = value_type.llvm_type.null
+          @value = builder.insert_value @value, start_input, 0, "pos"
+          @value = builder.insert_value @value, expresion_result.input, 1, "pos"
         elsif @recursive
-          value = @label_type.store_value builder, result.return_value
+          @value = value_type.store_value builder, expresion_result.return_value
         else
-          value = result.return_value
+          @value = expresion_result.return_value
         end
         
-        if @is_local
-          raise CompilationError.new("Duplicate local value \"%#{@label_name}\".", rule) if local_values.has_key? @label_name
-          local_values[@label_name] = value
-        else
-          result.return_value = HashValue.new builder, return_type, { label_name => value }
-        end
+        result = Result.new expresion_result.input
+        result.return_value = HashValue.new builder, return_type, { label_name => value } unless @is_local
         result
+      end
+      
+      def get_local_label(name)
+        return self if @is_local and @label_name == name
+        super
       end
     end
     
@@ -397,18 +405,20 @@ module JetPEG
         SingleValueType.new(@label_type)
       end
       
-      def build(builder, start_input, failed_block, local_values = {})
-        result = @expression.build builder, start_input, failed_block
+      def build(builder, start_input, failed_block)
+        expresion_result = @expression.build builder, start_input, failed_block
         
+        result = Result.new expresion_result.input
         if @capture_input
           value = @label_type.llvm_type.null
           value = builder.insert_value value, start_input, 0, "pos"
-          value = builder.insert_value value, result.input, 1, "pos"
+          value = builder.insert_value value, expresion_result.input, 1, "pos"
           result.return_value = value
         elsif @recursive
-          result.return_value = @label_type.store_value builder, result.return_value
+          result.return_value = @label_type.store_value builder, expresion_result.return_value
+        else
+          result.return_value = expresion_result.return_value
         end
-        
         result
       end
     end
@@ -417,6 +427,12 @@ module JetPEG
       def initialize(data)
         super
         @children = data[:children] || [data[:head]] + data[:tail]
+        
+        previous_child = nil
+        @children.each do |child|
+          child.local_label_source = previous_child
+          previous_child = child
+        end
       end
 
       def create_return_type
@@ -436,12 +452,11 @@ module JetPEG
         end
       end
       
-      def build(builder, start_input, failed_block, local_values = {})
+      def build(builder, start_input, failed_block)
         result = MergingResult.new builder, start_input, return_type
-        local_values = {}
         previous_fail_cleanup_block = failed_block
         @children.each do |child|
-          current_result = child.build builder, result.input, previous_fail_cleanup_block, local_values
+          current_result = child.build builder, result.input, previous_fail_cleanup_block
           result.merge! current_result
           successful_block = builder.insert_block
           
@@ -454,8 +469,6 @@ module JetPEG
           end
           
           builder.position_at_end successful_block
-          local_values.each do |name, value|
-          end
         end
         result
       end
@@ -486,7 +499,7 @@ module JetPEG
         end
       end
       
-      def build(builder, start_input, failed_block, local_values = {})
+      def build(builder, start_input, failed_block)
         choice_successful_block = builder.create_block "choice_successful"
         result = BranchingResult.new builder, return_type
         
@@ -513,7 +526,7 @@ module JetPEG
         @expression.return_type
       end
       
-      def build(builder, start_input, failed_block, local_values = {})
+      def build(builder, start_input, failed_block)
         exit_block = builder.create_block "optional_exit"
         result = BranchingResult.new builder, return_type
         
@@ -540,7 +553,7 @@ module JetPEG
         @expression.return_type && ArrayValueType.new(@expression.return_type, "#{rule.name}_loop")
       end
       
-      def build(builder, start_input, failed_block, local_values = {}, start_return_value = nil)
+      def build(builder, start_input, failed_block = {}, start_return_value = nil)
         loop_block = builder.create_block "repetition_loop"
         exit_block = builder.create_block "repetition_exit"
 
@@ -566,10 +579,10 @@ module JetPEG
     end
     
     class OneOrMore < ZeroOrMore
-      def build(builder, start_input, failed_block, local_values = {})
+      def build(builder, start_input, failed_block)
         result = @expression.build builder, start_input, failed_block
         return_value = return_type.create_entry(builder, result.return_value, return_type.llvm_type.null) if return_type
-        super builder, result.input, failed_block, local_values, return_value
+        super builder, result.input, failed_block, return_value
       end
     end
     
@@ -594,7 +607,7 @@ module JetPEG
         entry_type && ArrayValueType.new(entry_type, "#{rule.name}_until")
       end
       
-      def build(builder, start_input, failed_block, local_values = {})
+      def build(builder, start_input, failed_block)
         loop1_block = builder.create_block "until_loop1"
         loop2_block = builder.create_block "until_loop2"
         until_failed_block = builder.create_block "until_failed"
@@ -634,7 +647,7 @@ module JetPEG
         @expression = data[:expression]
       end
 
-      def build(builder, start_input, failed_block, local_values = {})
+      def build(builder, start_input, failed_block)
         result = @expression.build builder, start_input, failed_block
         builder.build_free @expression.return_type, result.return_value if @expression.return_type
         Result.new start_input
@@ -647,7 +660,7 @@ module JetPEG
         @expression = data[:expression]
       end
 
-      def build(builder, start_input, failed_block, local_values = {})
+      def build(builder, start_input, failed_block)
         lookahead_failed_block = builder.create_block "lookahead_failed"
 
         result = @expression.build builder, start_input, lookahead_failed_block
@@ -667,7 +680,7 @@ module JetPEG
         @string = data[:string].gsub(/\\./) { |str| Compiler.translate_escaped_character str[1] }
       end
       
-      def build(builder, start_input, failed_block, local_values = {})
+      def build(builder, start_input, failed_block)
         end_input = @string.chars.inject(start_input) do |input, char|
           input_char = builder.load input, "char"
           failed = builder.icmp :ne, input_char, LLVM::Int8.from_i(char.ord), "failed"
@@ -689,7 +702,7 @@ module JetPEG
         @inverted = data[:inverted]
       end
 
-      def build(builder, start_input, failed_block, local_values = {})
+      def build(builder, start_input, failed_block)
         input_char = builder.load start_input, "char"
         successful_block = builder.create_block "character_class_successful" unless @inverted
         
@@ -779,7 +792,7 @@ module JetPEG
         @label_data_ptr = referenced.return_type && referenced.return_type.alloca(builder, "#{@referenced_name}_data_ptr")
       end
       
-      def build(builder, start_input, failed_block, local_values = {})
+      def build(builder, start_input, failed_block)
         args = []
         args << start_input
         args << @label_data_ptr if @label_data_ptr
@@ -809,8 +822,8 @@ module JetPEG
         @expression.return_type
       end
       
-      def build(builder, start_input, failed_block, local_values = {})
-        @expression.build builder, start_input, failed_block, local_values
+      def build(builder, start_input, failed_block)
+        @expression.build builder, start_input, failed_block
       end
     end
     
@@ -844,14 +857,19 @@ module JetPEG
         @name = data[:name].to_sym
       end
       
-      def create_return_type
-        InputRangeValueType::INSTANCE
+      def local_label
+        @local_label ||= get_local_label @name
+        raise CompilationError.new("Undefined local value \"%#{name}\".", rule) if @local_label.nil?
+        @local_label
       end
       
-      def build(builder, start_input, failed_block, local_values = {})
+      def create_return_type
+        local_label.value_type
+      end
+      
+      def build(builder, start_input, failed_block)
         result = Result.new start_input
-        raise CompilationError.new("Undefined local value \"%#{name}\".", rule) if not local_values.has_key? @name
-        result.return_value = local_values[@name]
+        result.return_value = local_label.value
         result
       end
     end
@@ -861,7 +879,7 @@ module JetPEG
         parser.scalar_value_type
       end
       
-      def build(builder, start_input, failed_block, local_values = {})
+      def build(builder, start_input, failed_block)
         Result.new start_input, parser.scalar_value_for(true)
       end
     end
@@ -871,7 +889,7 @@ module JetPEG
         parser.scalar_value_type
       end
       
-      def build(builder, start_input, failed_block, local_values = {})
+      def build(builder, start_input, failed_block)
         Result.new start_input, parser.scalar_value_for(false)
       end
     end
@@ -882,7 +900,7 @@ module JetPEG
         @message = data[:message].string
       end
       
-      def build(builder, start_input, failed_block, local_values = {})
+      def build(builder, start_input, failed_block)
         builder.add_failure_reason LLVM::TRUE, start_input, ParsingError.new([], [@message])
         builder.br failed_block
 
