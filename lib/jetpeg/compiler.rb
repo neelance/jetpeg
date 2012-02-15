@@ -296,6 +296,8 @@ module JetPEG
         builder.position_at_end failed_block
         builder.ret LLVM_STRING.null_pointer
         
+        builder.dispose
+        
         function
       end
       

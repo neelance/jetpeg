@@ -7,6 +7,12 @@ module JetPEG
       @ffi_type = ffi_type
     end
     
+    def load(pointer, input, input_address)
+      return nil if pointer.null?
+      data = ffi_type == :pointer ? pointer.get_pointer(0) : ffi_type.new(pointer)
+      read data, input, input_address
+    end
+    
     def alloca(builder, name)
       builder.alloca llvm_type, name
     end
@@ -68,8 +74,6 @@ module JetPEG
   end
   
   class HashValue < Hash
-    #attr_reader :type
-    
     def initialize(builder, hash_type, hash = nil)
       @builder = builder
       @hash_type = hash_type
@@ -202,8 +206,7 @@ module JetPEG
     def read(data, input, input_address)
       return nil if data.null?
       target_type = @target.return_type
-      target_data = target_type.ffi_type == :pointer ? data.get_pointer(0) : target_type.ffi_type.new(data)
-      target_type.read target_data, input, input_address
+      target_type.load data, input, input_address
     end
     
     def ==(other)

@@ -48,6 +48,7 @@ module JetPEG
       @rules = rules
       @rules.values.each { |rule| rule.parent = self }
       @mod = nil
+      @execution_engine = nil
       @root_rules = [@rules.values.first.name]
       @filename = "grammar"
       @scalar_values = [nil]
@@ -78,12 +79,20 @@ module JetPEG
     
     def build(options = {})
       options.merge!(@@default_options) { |key, oldval, newval| oldval }
+
+      if @execution_engine
+        @execution_engine.dispose # disposes module, too
+      end
       
       @possible_failure_reasons = []
       @mod = LLVM::Module.new "Parser"
       @malloc = @mod.functions.add "malloc", [LLVM::Int64], LLVM::Pointer(LLVM::Int8)
       @free = @mod.functions.add "free", [LLVM::Pointer(LLVM::Int8)], LLVM.Void()
-      @free_value_functions = Hash.new { |hash, llvm_type| hash[llvm_type] = @mod.functions.add("free_value", [LLVM::Pointer(llvm_type)], LLVM.Void()) }
+      @free_value_functions_to_create = []
+      @free_value_functions = Hash.new { |hash, llvm_type|
+        @free_value_functions_to_create << llvm_type
+        hash[llvm_type] = @mod.functions.add("free_value", [LLVM::Pointer(llvm_type)], LLVM.Void())
+      }
 
       if options[:track_malloc]
         @malloc_counter = @mod.globals.add LLVM::Int32, "malloc_counter"
@@ -116,7 +125,9 @@ module JetPEG
         rule.rule_function(true).linkage = linkage
       end
       
-      @free_value_functions.each do |llvm_type, function|
+      until @free_value_functions_to_create.empty?
+        llvm_type = @free_value_functions_to_create.pop
+        function = @free_value_functions[llvm_type]
         builder = Compiler::Builder.new
         builder.parser = self
         
@@ -126,6 +137,7 @@ module JetPEG
         builder.build_free llvm_type, value
         
         builder.ret nil
+        builder.dispose
       end
       
       @mod.verify!
@@ -155,7 +167,9 @@ module JetPEG
       input_ptr = FFI::MemoryPointer.from_string input
       value_pointer = root_rule.return_type && FFI::MemoryPointer.new(root_rule.return_type.ffi_type)
 
-      input_end_ptr = @execution_engine.run_function(root_rule.rule_function(false), input_ptr, *(value_pointer ? [value_pointer] : [])).to_value_ptr
+      input_end_value = @execution_engine.run_function root_rule.rule_function(false), input_ptr, *(value_pointer ? [value_pointer] : [])
+      input_end_ptr = input_end_value.to_value_ptr
+      input_end_value.dispose
       
       if input_end_ptr.null? or input_ptr.address + input.size != input_end_ptr.address
         free_value value_pointer, root_rule.return_type if value_pointer
@@ -165,7 +179,8 @@ module JetPEG
         @failure_reason_position = input_ptr
         @execution_engine.pointer_to_global(@llvm_add_failure_reason_callback).put_pointer 0, @ffi_add_failure_reason_callback
         
-        @execution_engine.run_function(root_rule.rule_function(true), input_ptr, *(value_pointer ? [value_pointer] : []))
+        input_end_value = @execution_engine.run_function root_rule.rule_function(true), input_ptr, *(value_pointer ? [value_pointer] : [])
+        input_end_value.dispose
         free_value value_pointer, root_rule.return_type if value_pointer
         check_malloc_counter
         
@@ -180,8 +195,7 @@ module JetPEG
       intermediate = {} 
       if value_pointer
         rule_return_type = root_rule.return_type
-        rule_data = rule_return_type.ffi_type == :pointer ? value_pointer.get_pointer(0) : rule_return_type.ffi_type.new(value_pointer)
-        intermediate = rule_return_type.read rule_data, input, input_ptr.address
+        intermediate = rule_return_type.load value_pointer, input, input_ptr.address
         free_value value_pointer, root_rule.return_type
       end
       check_malloc_counter
