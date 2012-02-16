@@ -1,10 +1,12 @@
 module JetPEG
   module Compiler
     class Label < ParsingExpression
-      attr_reader :label_name, :value
+      AT_SYMBOL = "@".to_sym
+      
+      attr_reader :label_name, :value_type, :value
       
       def initialize(data)
-        super
+        super()
         @label_name = data[:name] && data[:name].to_sym
         @expression = data[:expression]
         self.children = [@expression]
@@ -15,45 +17,49 @@ module JetPEG
         @value = nil
       end
       
-      def value_type
-        if @value_type.nil?
-          @value_type = begin
-            @expression.return_type
-          rescue Recursion
-            @recursive = true
-            rule.recursive_expressions << @expression
-            PointerValueType.new @expression
-          end
-          
-          if @value_type.nil?
-            @value_type = InputRangeValueType::INSTANCE
-            @capture_input = true
-          end
-        end
-        @value_type
-      end
-
       def create_return_type
-        return nil if @is_local
-        HashValueType.new({ label_name => value_type }, "#{rule.name}_label")
+         @value_type = begin
+          @expression.return_type
+        rescue Recursion
+          @recursive = true
+          rule.recursive_expressions << @expression
+          PointerValueType.new @expression
+        end
+        
+        if @value_type.nil?
+          @value_type = InputRangeValueType::INSTANCE
+          @capture_input = true
+        end
+        
+        if @is_local
+          nil
+        elsif @label_name == AT_SYMBOL
+          SingleValueType.new @value_type
+        else
+          HashValueType.new({ label_name => @value_type }, "#{rule.name}_label")
+        end
       end
       
       def build(builder, start_input, failed_block)
-        expresion_result = @expression.build builder, start_input, failed_block
+        expression_result = @expression.build builder, start_input, failed_block
         
         if @capture_input
-          builder.build_free @expression.return_type, expresion_result.return_value if @expression.return_type
-          @value = value_type.llvm_type.null
+          builder.build_free @expression.return_type, expression_result.return_value if @expression.return_type
+          @value = @value_type.llvm_type.null
           @value = builder.insert_value @value, start_input, 0, "pos"
-          @value = builder.insert_value @value, expresion_result.input, 1, "pos"
+          @value = builder.insert_value @value, expression_result.input, 1, "pos"
         elsif @recursive
-          @value = value_type.store_value builder, expresion_result.return_value
+          @value = @value_type.store_value builder, expression_result.return_value
         else
-          @value = expresion_result.return_value
+          @value = expression_result.return_value
         end
         
-        result = Result.new expresion_result.input
-        result.return_value = HashValue.new builder, return_type, { label_name => value } unless @is_local
+        result = Result.new expression_result.input
+        if @label_name == AT_SYMBOL
+          result.return_value = @value
+        else
+          result.return_value = HashValue.new builder, return_type, { label_name => value } unless @is_local
+        end
         result
       end
       
@@ -62,8 +68,29 @@ module JetPEG
         super
       end
       
+      def has_local_value?
+        @is_local
+      end
+      
       def free_local_value(builder)
         builder.build_free value_type, @value if @is_local
+      end
+      
+      def get_leftmost_primary
+        if @expression.is_a? Primary
+          @expression
+        else
+          @expression.get_leftmost_primary
+        end
+      end
+      
+      def replace_leftmost_primary(replacement)
+        if @expression.is_a? Primary
+          @expression = replacement
+          replacement.parent = self
+        else
+          @expression.replace_leftmost_primary replacement
+        end
       end
     end
     
@@ -73,54 +100,12 @@ module JetPEG
       end
     end
     
-    class AtLabel < ParsingExpression
-      def initialize(data)
-        super
-        @expression = data[:expression]
-        self.children = [@expression]
-        @capture_input = false
-        @recursive = false
-      end
-      
-      def create_return_type
-        @label_type = begin
-          @expression.return_type
-        rescue Recursion
-          @recursive = true
-          rule.recursive_expressions << @expression
-          PointerValueType.new @expression
-        end
-                
-        if @label_type.nil?
-          @label_type = InputRangeValueType::INSTANCE
-          @capture_input = true
-        end
-        
-        SingleValueType.new(@label_type)
-      end
-      
-      def build(builder, start_input, failed_block)
-        expresion_result = @expression.build builder, start_input, failed_block
-        
-        result = Result.new expresion_result.input
-        if @capture_input
-          value = @label_type.llvm_type.null
-          value = builder.insert_value value, start_input, 0, "pos"
-          value = builder.insert_value value, expresion_result.input, 1, "pos"
-          result.return_value = value
-        elsif @recursive
-          result.return_value = @label_type.store_value builder, expresion_result.return_value
-        else
-          result.return_value = expresion_result.return_value
-        end
-        result
-      end
-    end
-    
     class LocalValue < ParsingExpression
+      attr_writer :local_label
+      
       def initialize(data)
-        super
-        @name = data[:name].to_sym
+        super()
+        @name = data[:name] && data[:name].to_sym
       end
       
       def local_label
@@ -130,7 +115,7 @@ module JetPEG
       end
       
       def create_return_type
-        local_label.value_type
+        SingleValueType.new local_label.value_type
       end
       
       def build(builder, start_input, failed_block)
@@ -142,9 +127,10 @@ module JetPEG
       end
     end
     
-    class ObjectCreator < AtLabel
+    class ObjectCreator < Label
       def initialize(data)
         super
+        @label_name = AT_SYMBOL
         @class_name = data[:class_name].split("::").map(&:to_sym)
       end
 
@@ -153,9 +139,10 @@ module JetPEG
       end
     end
     
-    class ValueCreator < AtLabel
+    class ValueCreator < Label
       def initialize(data)
         super
+        @label_name = AT_SYMBOL
         @code = data[:code]
         input_range = data.intermediate[:code]
         @lineno = input_range[:input][0, input_range[:position].begin].count("\n") + 1

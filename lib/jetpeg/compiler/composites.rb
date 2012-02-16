@@ -2,7 +2,7 @@ module JetPEG
   module Compiler
     class Sequence < ParsingExpression
       def initialize(data)
-        super
+        super()
         self.children = data[:children] || [data[:head]] + data[:tail]
         
         previous_child = nil
@@ -37,10 +37,11 @@ module JetPEG
           result.merge! current_result
           successful_block = builder.insert_block
           
-          if child.return_type
+          if child.return_type or child.has_local_value?
             current_fail_cleanup_block = builder.create_block "sequence_fail_cleanup"
             builder.position_at_end current_fail_cleanup_block
-            builder.build_free child.return_type, current_result.return_value
+            builder.build_free child.return_type, current_result.return_value if child.return_type
+            child.free_local_value builder
             builder.br previous_fail_cleanup_block
             previous_fail_cleanup_block = current_fail_cleanup_block
           end
@@ -52,12 +53,47 @@ module JetPEG
         end
         result
       end
+      
+      def get_leftmost_primary
+        if @children.first.is_a? Primary
+          @children.first
+        else
+          @children.first.get_leftmost_primary
+        end
+      end
+      
+      def replace_leftmost_primary(replacement)
+        if @children.first.is_a? Primary
+          @children[0] = replacement
+          replacement.parent = self
+        else
+          @children.first.replace_leftmost_primary replacement
+        end
+      end
     end
     
     class Choice < ParsingExpression
-      def initialize(data)
-        super
-        self.children = [data[:head]] + data[:tail]
+      def self.new(data)
+        children = [data[:head]] + data[:tail]
+        leftmost_primaries = children.map(&:get_leftmost_primary).uniq
+        
+        if false #leftmost_primaries.size == 1 and not leftmost_primaries.first.nil?
+          #local_label = Label.new expression: leftmost_primaries.first, is_local: true
+          local_label = Label.new expression: Sequence.new(children: []), is_local: true
+          local_value = LocalValue.new({})
+          local_value.local_label = local_label
+          
+          local_value = leftmost_primaries.first
+          children.each { |child| child.replace_leftmost_primary local_value }
+          return Sequence.new children: [local_label, super(children)]
+        end
+        
+        super children
+      end
+      
+      def initialize(children)
+        super()
+        self.children = children
       end
       
       def create_return_type
@@ -98,7 +134,7 @@ module JetPEG
     
     class Optional < ParsingExpression
       def initialize(data)
-        super
+        super()
         @expression = data[:expression]
         self.children = [@expression]
       end
@@ -126,7 +162,7 @@ module JetPEG
     
     class ZeroOrMore < ParsingExpression
       def initialize(data)
-        super
+        super()
         @expression = data[:expression]
         self.children = [@expression]
       end
@@ -170,7 +206,7 @@ module JetPEG
     
     class Until < ParsingExpression
       def initialize(data)
-        super
+        super()
         @expression = data[:expression]
         @until_expression = data[:until_expression]
         self.children = [@expression, @until_expression]
@@ -226,7 +262,7 @@ module JetPEG
     
     class PositiveLookahead < ParsingExpression
       def initialize(data)
-        super
+        super()
         @expression = data[:expression]
         self.children = [@expression]
       end
@@ -240,7 +276,7 @@ module JetPEG
     
     class NegativeLookahead < ParsingExpression
       def initialize(data)
-        super
+        super()
         @expression = data[:expression]
         self.children = [@expression]
       end
@@ -256,12 +292,12 @@ module JetPEG
         Result.new start_input
       end
     end
-            
-    class RuleName < ParsingExpression
+    
+    class RuleName < Primary
       attr_reader :referenced_name
       
       def initialize(data)
-        super
+        super()
         @referenced_name = data[:name].to_sym
       end
       
@@ -295,11 +331,15 @@ module JetPEG
         end
         result
       end
+      
+      def ==(other)
+        other.is_a?(RuleName) && other.referenced_name == @referenced_name
+      end
     end
     
     class ParenthesizedExpression < ParsingExpression
       def initialize(data)
-        super
+        super()
         @expression = data[:expression]
         self.children = [@expression]
       end

@@ -1,10 +1,10 @@
 module JetPEG
   module Compiler
-    class StringTerminal < ParsingExpression
+    class StringTerminal < Primary
       attr_reader :string
       
       def initialize(data)
-        super
+        super()
         @string = data[:string].gsub(/\\./) { |str| Compiler.translate_escaped_character str[1] }
       end
       
@@ -21,11 +21,17 @@ module JetPEG
         end
         Result.new end_input
       end
+      
+      def ==(other)
+        other.is_a?(StringTerminal) && other.string == @string
+      end
     end
     
-    class CharacterClassTerminal < ParsingExpression
+    class CharacterClassTerminal < Primary
+      attr_reader :selections, :inverted
+      
       def initialize(data)
-        super
+        super()
         @selections = data[:selections]
         @inverted = data[:inverted]
       end
@@ -48,6 +54,10 @@ module JetPEG
         end_input = builder.gep start_input, LLVM::Int(1), "new_input"
         Result.new end_input
       end
+      
+      def ==(other)
+        other.is_a?(CharacterClassTerminal) && other.selections == @selections && other.inverted == @inverted
+      end
     end
     
     class CharacterClassSingleCharacter
@@ -62,6 +72,10 @@ module JetPEG
         builder.add_failure_reason failed, start_input, ParsingError.new([character])
         builder.cond failed, failed_block, successful_block
       end
+      
+      def ==(other)
+        other.is_a?(CharacterClassSingleCharacter) && other.character == @character
+      end
     end
     
     class CharacterClassEscapedCharacter < CharacterClassSingleCharacter
@@ -72,6 +86,8 @@ module JetPEG
     end
     
     class CharacterClassRange
+      attr_reader :begin_char, :end_char
+      
       def initialize(data)
         @begin_char = data[:begin_char].character
         @end_char = data[:end_char].character
@@ -87,6 +103,10 @@ module JetPEG
         failed = builder.icmp :ugt, input_char, LLVM::Int8.from_i(@end_char.ord), "end_matching"
         builder.add_failure_reason failed, start_input, error
         builder.cond failed, failed_block, successful_block
+      end
+      
+      def ==(other)
+        other.is_a?(CharacterClassRange) && other.begin_char == @begin_char && other.end_char == @end_char
       end
     end
     

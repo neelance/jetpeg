@@ -30,8 +30,7 @@ rule sequence
 end
 
 rule labeled
-  ('%' is_local:$true)? name:( alpha_char alphanumeric_char* ) ':' expression:lookahead <Label> /
-  '@:' expression:lookahead <AtLabel> /
+  ('%' is_local:$true)? name:( '@' / alpha_char alphanumeric_char* ) ':' expression:lookahead <Label> /
   lookahead
 end
 

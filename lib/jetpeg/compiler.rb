@@ -101,6 +101,7 @@ module JetPEG
       end
       
       def build_free(type, value)
+        raise if value.nil?
         llvm_type = type.is_a?(ValueType) ? type.llvm_type : type
         case llvm_type.kind
         when :struct
@@ -175,6 +176,11 @@ module JetPEG
     end
     
     class Recursion < RuntimeError
+      attr_reader :expression
+      
+      def initialize(expression)
+        @expression = expression
+      end
     end
     
     @@metagrammar_parser = nil

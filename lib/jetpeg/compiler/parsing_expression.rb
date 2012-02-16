@@ -4,7 +4,7 @@ module JetPEG
       attr_accessor :parent, :name, :local_label_source
       attr_reader :recursive_expressions
       
-      def initialize(data)
+      def initialize
         @name = nil
         @children = []
         @return_type = :pending
@@ -34,18 +34,16 @@ module JetPEG
       
       def return_type
         if @return_type == :pending
-          raise Recursion if @return_type_recursion
-          @return_type = if @name
-            begin
-              @return_type_recursion = true
-              create_return_type
-            rescue Recursion
-              nil
-            end
-          else
-            create_return_type
+          raise Recursion.new(self) if @return_type_recursion
+          begin
+            @return_type_recursion = true
+            @return_type = create_return_type
+          rescue Recursion => recursion
+            raise recursion if not recursion.expression.equal? self
+            @return_type = nil
+          ensure
+            @return_type_recursion = false
           end
-          @return_type_recursion = false
           raise CompilationError.new("Unlabeled recursion mixed with other labels.", rule) if @return_type.nil? and not create_return_type.nil?
         end
         @return_type
@@ -64,8 +62,20 @@ module JetPEG
         @local_label_source.get_local_label name
       end
       
+      def has_local_value?
+        false
+      end
+      
       def free_local_value(builder)
         # nothing to do
+      end
+      
+      def get_leftmost_primary
+        nil
+      end
+      
+      def replace_leftmost_primary(replacement)
+        raise
       end
       
       def build_allocas(builder)
@@ -118,6 +128,17 @@ module JetPEG
       def match(input, options = {})
         parser.match_rule self, input, options
       end
+          
+      def eql?(other)
+        self == other
+      end
+      
+      def hash
+        0 # no hash used for Array.uniq, always eql?
+      end
+    end
+    
+    class Primary < ParsingExpression
     end
   end
 end

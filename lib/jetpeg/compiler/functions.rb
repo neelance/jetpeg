@@ -1,6 +1,10 @@
 module JetPEG
   module Compiler
     class TrueFunction < ParsingExpression
+      def initialize(data)
+        super()
+      end
+      
       def create_return_type
         parser.scalar_value_type
       end
@@ -11,6 +15,10 @@ module JetPEG
     end
     
     class FalseFunction < ParsingExpression
+      def initialize(data)
+        super()
+      end
+      
       def create_return_type
         parser.scalar_value_type
       end
@@ -22,7 +30,7 @@ module JetPEG
     
     class ErrorFunction < ParsingExpression
       def initialize(data)
-        super
+        super()
         @message = data[:message].string
       end
       
