@@ -139,8 +139,11 @@ class LabelsTests < Test::Unit::TestCase
   end
   
   def test_local_label
-    rule = JetPEG::Compiler.compile_rule "'a' %temp:(char:.) 'c' (result:%temp)"
+    rule = JetPEG::Compiler.compile_rule "'a' %temp:( char:. ) 'c' ( result:%temp )"
     assert rule.match("abc") == { result: { char: "b" } }
+    
+    rule = JetPEG::Compiler.compile_rule "'a' %temp:( char:'b' )* 'c' result1:%temp result2:%temp"
+    assert rule.match("abc") == { result1: [{ char: "b" }], result2: [{ char: "b" }] }
   end
   
   def test_undefined_local_label_error

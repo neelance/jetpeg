@@ -109,26 +109,71 @@ module JetPEG
         case llvm_type.kind
         when :struct
           llvm_type.element_types.each_with_index do |element_type, i|
-            if [:struct, :pointer].include? element_type.kind
-              element = self.extract_value value, i
-              build_free element_type, element
-            end
+            next if not [:struct, :pointer].include? element_type.kind
+
+            element = self.extract_value value, i
+            build_free element_type, element
           end
+          
         when :pointer
-          if [:struct, :pointer].include? llvm_type.element_type.kind
-            follow_pointer_block = self.create_block "follow_pointer"
-            continue_block = self.create_block "continue"
-            
-            not_null = self.icmp :ne, value, llvm_type.null, "not_null"
-            self.cond not_null, follow_pointer_block, continue_block
-            
-            self.position_at_end follow_pointer_block
-            self.call @parser.free_value_functions[llvm_type.element_type], value
-            self.free value
-            self.br continue_block
-            
-            self.position_at_end continue_block
+          return if llvm_type.element_type.kind != :struct or llvm_type.element_type.element_types.empty?
+          
+          check_counter_block = self.create_block "check_counter"
+          follow_pointer_block = self.create_block "follow_pointer"
+          decrement_counter_block = self.create_block "decrement_counter"
+          continue_block = self.create_block "continue"
+          
+          not_null = self.icmp :ne, value, llvm_type.null, "not_null"
+          self.cond not_null, check_counter_block, continue_block
+          
+          self.position_at_end check_counter_block
+          additional_use_counter = self.struct_gep value, 1, "additional_use_counter"
+          old_counter_value = self.load additional_use_counter
+          no_additional_use = self.icmp :eq, old_counter_value, LLVM::Int(0), "no_additional_use"
+          self.cond no_additional_use, follow_pointer_block, decrement_counter_block
+          
+          self.position_at_end follow_pointer_block
+          self.call @parser.free_value_functions[llvm_type.element_type], value
+          self.free value
+          self.br continue_block
+          
+          self.position_at_end decrement_counter_block
+          new_counter_value = self.sub old_counter_value, LLVM::Int(1)
+          self.store new_counter_value, additional_use_counter
+          self.br continue_block
+
+          self.position_at_end continue_block
+        end
+      end
+      
+      def build_use_counter_increment(type, value)
+        llvm_type = type.is_a?(ValueType) ? type.llvm_type : type
+        case llvm_type.kind
+        when :struct
+          llvm_type.element_types.each_with_index do |element_type, i|
+            next if not [:struct, :pointer].include? element_type.kind
+
+            element = self.extract_value value, i
+            build_free element_type, element
           end
+          
+        when :pointer
+          return if llvm_type.element_type.kind != :struct or llvm_type.element_type.element_types.empty?
+          
+          increment_counter_block = self.create_block "increment_counter"
+          continue_block = self.create_block "continue"
+          
+          not_null = self.icmp :ne, value, llvm_type.null, "not_null"
+          self.cond not_null, increment_counter_block, continue_block
+          
+          self.position_at_end increment_counter_block
+          additional_use_counter = self.struct_gep value, 1, "additional_use_counter"
+          old_counter_value = self.load additional_use_counter
+          new_counter_value = self.add old_counter_value, LLVM::Int(1)
+          self.store new_counter_value, additional_use_counter
+          self.br continue_block
+
+          self.position_at_end continue_block
         end
       end
     end
@@ -260,6 +305,10 @@ module JetPEG
         @local_label_source.get_local_label name
       end
       
+      def free_local_value(builder)
+        # nothing to do
+      end
+      
       def build_allocas(builder)
         @children.each { |child| child.build_allocas builder }
       end
@@ -372,6 +421,10 @@ module JetPEG
         return self if @is_local and @label_name == name
         super
       end
+      
+      def free_local_value(builder)
+        builder.build_free value_type, @value if @is_local
+      end
     end
     
     class RuleNameLabel < Label
@@ -469,6 +522,9 @@ module JetPEG
           end
           
           builder.position_at_end successful_block
+        end
+        @children.each do |child|
+          child.free_local_value builder
         end
         result
       end
@@ -868,6 +924,8 @@ module JetPEG
       end
       
       def build(builder, start_input, failed_block)
+        builder.build_use_counter_increment local_label.value_type, local_label.value
+        
         result = Result.new start_input
         result.return_value = local_label.value
         result

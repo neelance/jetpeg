@@ -189,7 +189,7 @@ module JetPEG
     
     def realize_target_struct
       return if @target_struct_realized
-      @target_struct.element_types = [@target.return_type.llvm_type]
+      @target_struct.element_types = [@target.return_type.llvm_type, LLVM::Int] # [value, additional_use_counter]
       @target_struct_realized = true
     end
     
@@ -206,7 +206,7 @@ module JetPEG
     def read(data, input, input_address)
       return nil if data.null?
       target_type = @target.return_type
-      target_type.load data, input, input_address
+      target_type.load data, input, input_address # we can read directly, since the value is at the beginning of @target_struct
     end
     
     def ==(other)

@@ -131,6 +131,7 @@ module JetPEG
       
       until @free_value_functions_to_create.empty?
         llvm_type = @free_value_functions_to_create.pop
+        
         function = @free_value_functions[llvm_type]
         builder = Compiler::Builder.new
         builder.parser = self
