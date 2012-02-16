@@ -1,0 +1,123 @@
+module JetPEG
+  module Compiler
+    class ParsingExpression
+      attr_accessor :parent, :name, :local_label_source
+      attr_reader :recursive_expressions
+      
+      def initialize(data)
+        @name = nil
+        @children = []
+        @return_type = :pending
+        @return_type_recursion = false
+        @bare_rule_function = nil
+        @traced_rule_function = nil
+        @recursive_expressions = []
+        @local_label_source = nil
+      end
+      
+      def children=(array)
+        @children = array
+        @children.each { |child| child.parent = self }
+      end
+      
+      def parser
+        @parent.parser
+      end
+      
+      def metagrammar?
+        parser == JetPEG::Compiler.metagrammar_parser
+      end
+      
+      def rule
+        @name ? self : parent.rule
+      end
+      
+      def return_type
+        if @return_type == :pending
+          raise Recursion if @return_type_recursion
+          @return_type = if @name
+            begin
+              @return_type_recursion = true
+              create_return_type
+            rescue Recursion
+              nil
+            end
+          else
+            create_return_type
+          end
+          @return_type_recursion = false
+          raise CompilationError.new("Unlabeled recursion mixed with other labels.", rule) if @return_type.nil? and not create_return_type.nil?
+        end
+        @return_type
+      end
+      
+      def create_return_type
+        nil
+      end
+      
+      def realize_recursive_return_types
+        @recursive_expressions.each(&:return_type)
+      end
+      
+      def get_local_label(name)
+        @local_label_source ||= parent
+        @local_label_source.get_local_label name
+      end
+      
+      def free_local_value(builder)
+        # nothing to do
+      end
+      
+      def build_allocas(builder)
+        @children.each { |child| child.build_allocas builder }
+      end
+      
+      def mod=(mod)
+        @mod = mod
+        @bare_rule_function = nil
+        @traced_rule_function = nil
+      end
+      
+      def rule_function(traced)
+        return @bare_rule_function if not traced and @bare_rule_function
+        return @traced_rule_function if traced and @traced_rule_function
+        
+        params = []
+        params << LLVM_STRING
+        params << LLVM::Pointer(return_type.llvm_type) unless return_type.nil?
+        function = @mod.functions.add @name, params, LLVM_STRING
+        
+        if traced
+          @traced_rule_function = function
+        else
+          @bare_rule_function = function
+        end
+        
+        builder = Builder.new
+        builder.parser = parser
+        builder.traced = traced
+        
+        entry = function.basic_blocks.append "entry"
+        builder.position_at_end entry
+        build_allocas builder
+        
+        failed_block = builder.create_block "failed"
+        end_result = build builder, function.params[0], failed_block
+        
+        builder.store end_result.return_value, function.params[1] if return_type
+        builder.ret end_result.input
+        
+        builder.position_at_end failed_block
+        builder.ret LLVM_STRING.null_pointer
+        
+        builder.dispose
+        
+        function
+      end
+      
+      def match(input, options = {})
+        parser.match_rule self, input, options
+      end
+    end
+  end
+end
