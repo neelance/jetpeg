@@ -246,19 +246,18 @@ module JetPEG
       
       def initialize(data)
         @name = nil
+        @children = []
         @return_type = :pending
         @return_type_recursion = false
         @bare_rule_function = nil
         @traced_rule_function = nil
         @recursive_expressions = []
         @local_label_source = nil
-        
-        if data.is_a?(Hash)
-          @children = data.values.flatten.select(&ParsingExpression)
-          @children.each { |child| child.parent = self }
-        else
-          @children = []
-        end
+      end
+      
+      def children=(array)
+        @children = array
+        @children.each { |child| child.parent = self }
       end
       
       def parser
@@ -368,6 +367,7 @@ module JetPEG
         super
         @label_name = data[:name] && data[:name].to_sym
         @expression = data[:expression]
+        self.children = [@expression]
         @is_local = data[:is_local]
         @capture_input = false
         @recursive = false
@@ -437,6 +437,7 @@ module JetPEG
       def initialize(data)
         super
         @expression = data[:expression]
+        self.children = [@expression]
         @capture_input = false
         @recursive = false
       end
@@ -479,7 +480,7 @@ module JetPEG
     class Sequence < ParsingExpression
       def initialize(data)
         super
-        @children = data[:children] || [data[:head]] + data[:tail]
+        self.children = data[:children] || [data[:head]] + data[:tail]
         
         previous_child = nil
         @children.each do |child|
@@ -533,7 +534,7 @@ module JetPEG
     class Choice < ParsingExpression
       def initialize(data)
         super
-        @children = [data[:head]] + data[:tail]
+        self.children = [data[:head]] + data[:tail]
       end
       
       def create_return_type
@@ -576,6 +577,7 @@ module JetPEG
       def initialize(data)
         super
         @expression = data[:expression]
+        self.children = [@expression]
       end
       
       def create_return_type
@@ -603,6 +605,7 @@ module JetPEG
       def initialize(data)
         super
         @expression = data[:expression]
+        self.children = [@expression]
       end
       
       def create_return_type
@@ -647,6 +650,7 @@ module JetPEG
         super
         @expression = data[:expression]
         @until_expression = data[:until_expression]
+        self.children = [@expression, @until_expression]
       end
       
       def create_return_type
@@ -701,6 +705,7 @@ module JetPEG
       def initialize(data)
         super
         @expression = data[:expression]
+        self.children = [@expression]
       end
 
       def build(builder, start_input, failed_block)
@@ -714,6 +719,7 @@ module JetPEG
       def initialize(data)
         super
         @expression = data[:expression]
+        self.children = [@expression]
       end
 
       def build(builder, start_input, failed_block)
@@ -872,6 +878,7 @@ module JetPEG
       def initialize(data)
         super
         @expression = data[:expression]
+        self.children = [@expression]
       end
       
       def create_return_type
