@@ -125,7 +125,6 @@ module JetPEG
         when :struct
           llvm_type.element_types.each_with_index do |element_type, i|
             next if not [:struct, :pointer].include? element_type.kind
-
             element = self.extract_value value, i
             build_free element_type, element
           end
@@ -167,9 +166,8 @@ module JetPEG
         when :struct
           llvm_type.element_types.each_with_index do |element_type, i|
             next if not [:struct, :pointer].include? element_type.kind
-
             element = self.extract_value value, i
-            build_free element_type, element
+            build_use_counter_increment element_type, element
           end
           
         when :pointer

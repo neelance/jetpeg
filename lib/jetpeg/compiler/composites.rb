@@ -77,13 +77,11 @@ module JetPEG
         children = [data[:head]] + data[:tail]
         leftmost_primaries = children.map(&:get_leftmost_primary).uniq
         
-        if false #leftmost_primaries.size == 1 and not leftmost_primaries.first.nil?
-          #local_label = Label.new expression: leftmost_primaries.first, is_local: true
-          local_label = Label.new expression: Sequence.new(children: []), is_local: true
+        if leftmost_primaries.size == 1 and not leftmost_primaries.first.nil?
+          local_label = Label.new expression: leftmost_primaries.first, is_local: true
           local_value = LocalValue.new({})
           local_value.local_label = local_label
           
-          local_value = leftmost_primaries.first
           children.each { |child| child.replace_leftmost_primary local_value }
           return Sequence.new children: [local_label, super(children)]
         end
