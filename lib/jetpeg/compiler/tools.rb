@@ -15,6 +15,7 @@ module JetPEG
       def <<(value)
         return if @type.nil?
         value = @type.create_choice_value @builder, @index, value if @type.is_a?(ChoiceValueType)
+        value = value.build @builder if value.is_a? HashValue
         value ||= LLVM::Constant.null @llvm_type
         @values[@builder.insert_block] = value
         @phi.add_incoming @builder.insert_block => value if @phi
@@ -40,7 +41,7 @@ module JetPEG
     class DynamicPhiHash
       def initialize(builder, hash_value_type)
         @phis = hash_value_type.types.map_hash { |name, type| DynamicPhi.new(builder, type, name.to_s) }
-        @hash_value = HashValue.new builder, hash_value_type
+        @hash_value = HashValue.new hash_value_type
       end
       
       def <<(value)
@@ -67,7 +68,7 @@ module JetPEG
       def initialize(builder, input, return_type)
         super input
         @hash_mode = return_type.is_a? HashValueType
-        @return_value = @hash_mode ? HashValue.new(builder, return_type) : nil
+        @return_value = @hash_mode ? HashValue.new(return_type) : nil
       end
       
       def merge!(result)

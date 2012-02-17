@@ -100,6 +100,24 @@ module JetPEG
         self.call callback, failed, position, LLVM::Int(@parser.possible_failure_reasons.size - 1)
       end
       
+      def insert_value(aggregate, elem, index, name = "")
+        elem = elem.build self if elem.is_a? HashValue
+        super aggregate, elem, index, name
+      end
+      
+      def store(val, pointer)
+        val = val.build self if val.is_a? HashValue
+        super val, pointer
+      end
+      
+      def extract_value(aggregate, index, name = "")
+        if aggregate.is_a? HashValue
+          aggregate[aggregate.hash_type.struct_keys[index]]
+        else
+          super
+        end
+      end
+      
       def build_free(type, value)
         raise if value.nil?
         llvm_type = type.is_a?(ValueType) ? type.llvm_type : type

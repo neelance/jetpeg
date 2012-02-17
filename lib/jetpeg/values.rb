@@ -74,26 +74,26 @@ module JetPEG
   end
   
   class HashValue < Hash
-    def initialize(builder, hash_type, hash = nil)
-      @builder = builder
+    attr_reader :hash_type
+    
+    def initialize(hash_type, hash = nil)
       @hash_type = hash_type
-      @ptr = nil
       self.merge! hash if hash
     end
     
-    def to_ptr
+    def build(builder)
       data = @hash_type.llvm_type.null
       self.each do |name, entry|
-        data = @builder.insert_value data, entry, @hash_type.struct_keys.index(name), "hash_data_with_#{name}" if entry
+        data = builder.insert_value data, entry, @hash_type.struct_keys.index(name), "hash_data_with_#{name}" if entry
       end
-      data.to_ptr
+      data
     end
     
     def type
       @hash_type.llvm_type
     end
   end
-
+  
   class HashValueType < ValueType
     attr_reader :types, :struct_keys
     
@@ -110,7 +110,7 @@ module JetPEG
     end
     
     def read_value(builder, data)
-      value = HashValue.new builder, self
+      value = HashValue.new self
       @types_with_data.keys.each_with_index do |name, index|
          value[name] = builder.extract_value(data, index, name.to_s)
       end
@@ -225,8 +225,8 @@ module JetPEG
     end
     
     def create_entry(builder, value, previous_entry)
-      value = HashValue.new builder, @entry_type, value if @entry_type.is_a? HashValueType
-      @pointer_type.store_value builder, HashValue.new(builder, @return_type, { value: value, previous: previous_entry })
+      value = HashValue.new @entry_type, value if @entry_type.is_a? HashValueType
+      @pointer_type.store_value builder, HashValue.new(@return_type, { value: value, previous: previous_entry })
     end
     
     def read(data, input, input_address)

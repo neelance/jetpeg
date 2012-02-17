@@ -141,7 +141,7 @@ module JetPEG
         value = builder.load function.params[0], "value"
         builder.build_free llvm_type, value
         
-        builder.ret nil
+        builder.ret_void
         builder.dispose
       end
       

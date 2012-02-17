@@ -58,7 +58,7 @@ module JetPEG
         if @label_name == AT_SYMBOL
           result.return_value = @value
         else
-          result.return_value = HashValue.new builder, return_type, { label_name => value } unless @is_local
+          result.return_value = HashValue.new return_type, { label_name => value } unless @is_local
         end
         result
       end
