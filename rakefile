@@ -77,6 +77,47 @@ task :memory_leak_test do
   puts "Memory leak!"
 end
 
+task :benchmark do
+  require "benchmark"
+  require "jetpeg"
+
+  JetPEG::Parser.default_options[:track_malloc] = true
+  code = IO.read "lib/jetpeg/compiler/metagrammar.jetpeg"
+  parser = data_pointer = input_address = data = result = nil
+  
+  Benchmark.bm(17) do |bm|
+    bm.report("loading grammar:") do
+      parser = JetPEG.load File.join(File.dirname(__FILE__), "lib/jetpeg/compiler/metagrammar.jetpeg")
+    end
+
+    bm.report("building:") do
+      parser.root_rules << :grammar
+      parser.build
+      #JetPEG.write_typegraph "graph.dot", parser[:grammar].return_type.llvm_type
+      #exit
+    end
+    
+    bm.report("compiling:") do
+      parser[:grammar].match "" # compile
+    end
+    
+    bm.report("parsing:") do
+      data_pointer, input_address = parser.match_rule parser[:grammar], code, :output => :pointer
+    end
+    
+    bm.report("loading data:") do
+      data = parser[:grammar].return_type.load data_pointer, code, input_address
+      parser[:grammar].free_value data_pointer
+    end
+    
+    bm.report("realizing data:") do
+      JetPEG.realize_data data, JetPEG::Compiler
+    end
+  end
+  
+  puts "\nparser stats:\n#{parser.stats}\n\n"
+end
+
 task :generate_metagrammar_data do
   require "jetpeg"
   

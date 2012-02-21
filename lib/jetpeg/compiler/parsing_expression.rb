@@ -128,6 +128,11 @@ module JetPEG
       def match(input, options = {})
         parser.match_rule self, input, options
       end
+      
+      def free_value(value)
+        return if return_type.nil?
+        parser.execution_engine.run_function parser.free_value_functions[return_type.llvm_type], value
+      end
           
       def eql?(other)
         self == other

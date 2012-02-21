@@ -41,7 +41,8 @@ module JetPEG
       @@default_options
     end
     
-    attr_reader :mod, :malloc, :free, :free_value_functions, :malloc_counter, :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_value_type
+    attr_reader :mod, :execution_engine, :malloc, :free, :free_value_functions, :malloc_counter, :free_counter,
+                :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_value_type
     attr_accessor :root_rules, :failure_reason, :filename
     
     def initialize(rules)
@@ -101,8 +102,11 @@ module JetPEG
       if options[:track_malloc]
         @malloc_counter = @mod.globals.add LLVM::Int32, "malloc_counter"
         @malloc_counter.initializer = LLVM::Int(0)
+        @free_counter = @mod.globals.add LLVM::Int32, "free_counter"
+        @free_counter.initializer = LLVM::Int(0)
       else
         @malloc_counter = nil
+        @free_counter = nil
       end
       
       add_failure_reason_callback_type = LLVM::Pointer(LLVM::Function([LLVM::Int1, LLVM_STRING, LLVM::Int], LLVM::Void()))
@@ -171,13 +175,13 @@ module JetPEG
       
       input_ptr = FFI::MemoryPointer.from_string input
       value_pointer = root_rule.return_type && FFI::MemoryPointer.new(root_rule.return_type.ffi_type)
-
+      
       input_end_value = @execution_engine.run_function root_rule.rule_function(false), input_ptr, *(value_pointer ? [value_pointer] : [])
       input_end_ptr = input_end_value.to_value_ptr
       input_end_value.dispose
       
       if input_end_ptr.null? or input_ptr.address + input.size != input_end_ptr.address
-        free_value value_pointer, root_rule.return_type if value_pointer
+        root_rule.free_value value_pointer if value_pointer
         check_malloc_counter
         
         @failure_reason = ParsingError.new([])
@@ -186,7 +190,7 @@ module JetPEG
         
         input_end_value = @execution_engine.run_function root_rule.rule_function(true), input_ptr, *(value_pointer ? [value_pointer] : [])
         input_end_value.dispose
-        free_value value_pointer, root_rule.return_type if value_pointer
+        root_rule.free_value value_pointer if value_pointer
         check_malloc_counter
         
         @failure_reason.input = input
@@ -201,7 +205,7 @@ module JetPEG
       if value_pointer
         rule_return_type = root_rule.return_type
         intermediate = rule_return_type.load value_pointer, input, input_ptr.address
-        free_value value_pointer, root_rule.return_type
+        root_rule.free_value value_pointer if value_pointer
       end
       check_malloc_counter
       return intermediate if options[:output] == :intermediate
@@ -216,20 +220,23 @@ module JetPEG
       match_rule @rules.values.first, input
     end
     
-    def free_value(value, value_type)
-      @execution_engine.run_function @free_value_functions[value_type.llvm_type], value
-    end
-    
     def stats
       block_counts = @mod.functions.map { |f| f.basic_blocks.size }
       instruction_counts = @mod.functions.map { |f| f.basic_blocks.map { |b| b.instructions.to_a.size } }
-      "#{@mod.functions.to_a.size} functions / #{block_counts.reduce(:+)} blocks / #{instruction_counts.flatten.reduce(:+)} instructions"
+      info = "#{@mod.functions.to_a.size} functions / #{block_counts.reduce(:+)} blocks / #{instruction_counts.flatten.reduce(:+)} instructions"
+      if @malloc_counter
+        malloc_count = @execution_engine.pointer_to_global(@malloc_counter).read_int32
+        free_count = @execution_engine.pointer_to_global(@free_counter).read_int32
+        info << "\n#{malloc_count} calls of malloc / #{free_count} calls of free"
+      end
+      info
     end
     
     def check_malloc_counter
       return if @malloc_counter.nil?
-      value = @execution_engine.pointer_to_global(@malloc_counter).read_int32
-      raise "Internal error: Memory leak (#{value})." if value != 0
+      malloc_count = @execution_engine.pointer_to_global(@malloc_counter).read_int32
+      free_count = @execution_engine.pointer_to_global(@free_counter).read_int32
+      raise "Internal error: Memory leak (#{malloc_count - free_count})." if malloc_count != free_count
     end
   end
 end

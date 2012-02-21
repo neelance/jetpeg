@@ -74,9 +74,9 @@ module JetPEG
     
     class Choice < ParsingExpression
       def self.new(data)
+        # leftmost primary optimization
         children = [data[:head]] + data[:tail]
         leftmost_primaries = children.map(&:get_leftmost_primary).uniq
-        
         if leftmost_primaries.size == 1 and not leftmost_primaries.first.nil?
           local_label = Label.new expression: leftmost_primaries.first, is_local: true
           local_value = LocalValue.new({})

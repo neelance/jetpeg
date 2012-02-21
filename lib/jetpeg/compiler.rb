@@ -79,10 +79,10 @@ module JetPEG
       end
       
       def free(ptr)
-        if @parser.malloc_counter
-          old_value = self.load @parser.malloc_counter
-          new_value = self.sub old_value, LLVM::Int(1)
-          self.store new_value, @parser.malloc_counter
+        if @parser.free_counter
+          old_value = self.load @parser.free_counter
+          new_value = self.add old_value, LLVM::Int(1)
+          self.store new_value, @parser.free_counter
         end
         
         casted_ptr = self.bit_cast ptr, LLVM::Pointer(LLVM::Int8)

@@ -109,4 +109,41 @@ module JetPEG
       end
     end
   end
+    
+  def self.write_typegraph(filename, llvm_type, all_types = false)
+    File.open(filename, "w") do |out|
+      out.puts "digraph {"
+      
+      queue = [[llvm_type.to_ptr.address, llvm_type]]
+      seen = [llvm_type.to_ptr.address]
+      
+      until queue.empty?
+        id, type = queue.shift
+        
+        label = type.kind.to_s
+        label << " \\\"#{type.name}\\\"" if type.kind == :struct
+        out.puts "#{id} [label=\"#{label}\"];"
+        
+        if type.kind == :struct
+          type.element_types.each do |element_type|
+            attributes = ""
+            if element_type.kind == :pointer
+              attributes = "style=dashed,arrowhead=empty"
+              element_type = element_type.element_type
+            end
+            if all_types or element_type.kind == :struct or element_type.kind == :pointer
+              element_id = element_type.to_ptr.address
+              out.puts "#{id} -> #{element_id} [#{attributes}];"
+              if not seen.include? element_id
+                queue << [element_id, element_type]
+                seen << element_id
+              end
+            end
+          end
+        end
+      end
+      
+      out.puts "}"
+    end
+  end
 end
