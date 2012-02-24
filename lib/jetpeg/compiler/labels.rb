@@ -36,7 +36,7 @@ module JetPEG
         elsif @label_name == AT_SYMBOL
           SingleValueType.new @value_type
         else
-          HashValueType.new({ label_name => @value_type }, "#{rule.name}_label")
+          StructValueType.new({ label_name => @value_type }, "#{rule.name}_label")
         end
       end
       
@@ -54,13 +54,14 @@ module JetPEG
           @value = expression_result.return_value
         end
         
-        result = Result.new expression_result.input
-        if @label_name == AT_SYMBOL
-          result.return_value = @value
+        return_value = if @is_local
+          nil
+        elsif @label_name == AT_SYMBOL
+          @value
         else
-          result.return_value = HashValue.new return_type, { label_name => value } unless @is_local
+          return_type.create_value builder, label_name => value
         end
-        result
+        Result.new expression_result.input, return_type, return_value
       end
       
       def get_local_label(name)
@@ -121,9 +122,7 @@ module JetPEG
       def build(builder, start_input, failed_block)
         builder.build_use_counter_increment local_label.value_type, local_label.value
         
-        result = Result.new start_input
-        result.return_value = local_label.value
-        result
+        Result.new start_input, return_type, local_label.value
       end
     end
     

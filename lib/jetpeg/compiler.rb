@@ -67,6 +67,10 @@ module JetPEG
         LazyBlock.new self.insert_block.parent, name
       end
       
+      def create_struct(llvm_type)
+        llvm_type.null
+      end
+      
       def malloc(llvm_type)
         if @parser.malloc_counter
           old_value = self.load @parser.malloc_counter
@@ -98,24 +102,6 @@ module JetPEG
         @parser.possible_failure_reasons << reason
         callback = self.load @parser.llvm_add_failure_reason_callback, "callback"
         self.call callback, failed, position, LLVM::Int(@parser.possible_failure_reasons.size - 1)
-      end
-      
-      def insert_value(aggregate, elem, index, name = "")
-        elem = elem.build self if elem.is_a? HashValue
-        super aggregate, elem, index, name
-      end
-      
-      def store(val, pointer)
-        val = val.build self if val.is_a? HashValue
-        super val, pointer
-      end
-      
-      def extract_value(aggregate, index, name = "")
-        if aggregate.is_a? HashValue
-          aggregate[aggregate.hash_type.struct_keys[index]]
-        else
-          super
-        end
       end
       
       def build_free(type, value)
@@ -262,9 +248,13 @@ end
 
 require "jetpeg/parser"
 require "jetpeg/values"
+
 require "jetpeg/compiler/tools"
 require "jetpeg/compiler/parsing_expression"
 require "jetpeg/compiler/terminals"
 require "jetpeg/compiler/composites"
 require "jetpeg/compiler/labels"
 require "jetpeg/compiler/functions"
+
+require "jetpeg/compiler/optimizations/ruby_side_struct"
+require "jetpeg/compiler/optimizations/leftmost_primary_rewrite"

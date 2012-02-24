@@ -14,16 +14,16 @@ module JetPEG
   
       def create_return_type
         child_types = @children.map(&:return_type).compact
-        if not child_types.empty? and child_types.all?(&HashValueType)
+        if not child_types.empty? and child_types.all?(&StructValueType)
           merged = {}
           child_types.each { |type|
             merged.merge!(type.types) { |key, oldval, newval|
               raise CompilationError.new("Duplicate label \"#{key}\".", rule)
             }
           }
-          HashValueType.new merged, "#{rule.name}_sequence"
+          StructValueType.new merged, "#{rule.name}_sequence"
         else
-          raise CompilationError.new("Specific return value mixed with labels.", rule) if child_types.any?(&HashValueType)
+          raise CompilationError.new("Specific return value mixed with labels.", rule) if child_types.any?(&StructValueType)
           raise CompilationError.new("Multiple specific return values.", rule) if child_types.size > 1
           child_types.first
         end
@@ -73,25 +73,9 @@ module JetPEG
     end
     
     class Choice < ParsingExpression
-      def self.new(data)
-        # leftmost primary optimization
-        children = [data[:head]] + data[:tail]
-        leftmost_primaries = children.map(&:get_leftmost_primary).uniq
-        if leftmost_primaries.size == 1 and not leftmost_primaries.first.nil?
-          local_label = Label.new expression: leftmost_primaries.first, is_local: true
-          local_value = LocalValue.new({})
-          local_value.local_label = local_label
-          
-          children.each { |child| child.replace_leftmost_primary local_value }
-          return Sequence.new children: [local_label, super(children)]
-        end
-        
-        super children
-      end
-      
-      def initialize(children)
+      def initialize(data)
         super()
-        self.children = children
+        self.children = data[:children] || [data[:head]] + data[:tail]
       end
       
       def create_return_type
@@ -99,16 +83,16 @@ module JetPEG
         child_types = @children.map(&:return_type)
         if not child_types.any?
           nil
-        elsif child_types.compact.all?(&HashValueType)
+        elsif child_types.compact.all?(&StructValueType)
           keys = child_types.compact.map(&:types).map(&:keys).flatten.uniq
           return_hash_types = {}
           keys.each do |key|
             all_types = child_types.map { |t| t && t.types[key] }
             return_hash_types[key] = ChoiceValueType.new(all_types, "#{rule.name}_#{key}")
           end
-          HashValueType.new return_hash_types, "#{rule.name}_choice_return_value"
+          StructValueType.new return_hash_types, "#{rule.name}_choice_return_value"
         else
-          raise CompilationError.new("Specific return value mixed with labels.", rule) if child_types.any?(&HashValueType)
+          raise CompilationError.new("Specific return value mixed with labels.", rule) if child_types.any?(&StructValueType)
           ChoiceValueType.new child_types, "#{rule.name}_choice_return_value"
         end
       end
@@ -183,21 +167,19 @@ module JetPEG
         
         next_result = @expression.build builder, input, exit_block
         input << next_result.input
-        return_value << return_type.create_entry(builder, next_result.return_value, return_value) if return_type
+        return_value << return_type.create_entry(builder, next_result, return_value) if return_type
         
         builder.br loop_block
         
         builder.position_at_end exit_block
-        result = Result.new input
-        result.return_value = return_value if return_type
-        result
+        Result.new input, return_type, return_value
       end
     end
     
     class OneOrMore < ZeroOrMore
       def build(builder, start_input, failed_block)
         result = @expression.build builder, start_input, failed_block
-        return_value = return_type.create_entry(builder, result.return_value, return_type.llvm_type.null) if return_type
+        return_value = return_type.create_entry(builder, result, return_type.llvm_type.null) if return_type
         super builder, result.input, failed_block, return_value
       end
     end
@@ -214,10 +196,9 @@ module JetPEG
         loop_type = @expression.return_type
         until_type = @until_expression.return_type
         entry_type = if loop_type && until_type
-          raise CompilationError.new("Incompatible return values in until expression.", rule) if not loop_type.is_a?(HashValueType) or not until_type.is_a?(HashValueType)
-          types = loop_type.types
-          types.merge!(until_type.types) { |key, oldval, newval| raise CompilationError.new("Overlapping value in until-expression.", rule) }
-          HashValueType.new types, "#{rule.name}_until_entry"
+          raise CompilationError.new("Incompatible return values in until expression.", rule) if not loop_type.is_a?(StructValueType) or not until_type.is_a?(StructValueType)
+          types = loop_type.types.merge(until_type.types) { |key, oldval, newval| raise CompilationError.new("Overlapping value in until-expression.", rule) }
+          StructValueType.new types, "#{rule.name}_until_entry"
         else
           loop_type || until_type
         end
@@ -244,7 +225,7 @@ module JetPEG
         builder.position_at_end loop2_block
         next_result = @expression.build builder, input, until_failed_block
         input << next_result.input
-        return_value << return_type.create_entry(builder, next_result.return_value, return_value) if return_type
+        return_value << return_type.create_entry(builder, next_result, return_value) if return_type
         builder.br loop1_block
         
         builder.position_at_end until_failed_block
@@ -252,9 +233,7 @@ module JetPEG
         builder.br failed_block
         
         builder.position_at_end exit_block
-        result = Result.new until_result.input
-        result.return_value = return_type.create_entry(builder, until_result.return_value, return_value) if return_type
-        result
+        Result.new until_result.input, return_type, (return_type && return_type.create_entry(builder, until_result, return_value))
       end
     end
     
@@ -308,13 +287,13 @@ module JetPEG
       end
       
       def build_allocas(builder)
-        @label_data_ptr = referenced.return_type && referenced.return_type.alloca(builder, "#{@referenced_name}_data_ptr")
+        @label_data_ptr = return_type && return_type.alloca(builder, "#{@referenced_name}_data_ptr")
       end
       
       def build(builder, start_input, failed_block)
         args = []
         args << start_input
-        args << @label_data_ptr if @label_data_ptr
+        args << @label_data_ptr if return_type
         rule_end_input = builder.call_rule referenced, *args, "rule_end_input"
         
         rule_successful = builder.icmp :ne, rule_end_input, LLVM_STRING.null_pointer, "rule_successful"
@@ -322,12 +301,10 @@ module JetPEG
         builder.cond rule_successful, successful_block, failed_block
         
         builder.position_at_end successful_block
-        result = Result.new rule_end_input
-        if @label_data_ptr
-          label_data = builder.load @label_data_ptr, "#{@referenced_name}_data"
-          result.return_value = referenced.return_type.read_value builder, label_data
+        return_value = return_type && begin
+          builder.load @label_data_ptr, "#{@referenced_name}_data"
         end
-        result
+        Result.new rule_end_input, return_type, return_value
       end
       
       def ==(other)

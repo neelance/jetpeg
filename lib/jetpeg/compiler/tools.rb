@@ -14,8 +14,8 @@ module JetPEG
       
       def <<(value)
         return if @type.nil?
-        value = @type.create_choice_value @builder, @index, value if @type.is_a?(ChoiceValueType)
-        value = value.build @builder if value.is_a? HashValue
+        value = value.return_value if value.is_a? Result
+        value = @type.create_choice_value @builder, @index, value if @type.is_a? ChoiceValueType
         value ||= LLVM::Constant.null @llvm_type
         @values[@builder.insert_block] = value
         @phi.add_incoming @builder.insert_block => value if @phi
@@ -39,42 +39,61 @@ module JetPEG
     end
     
     class DynamicPhiHash
-      def initialize(builder, hash_value_type)
-        @phis = hash_value_type.types.map_hash { |name, type| DynamicPhi.new(builder, type, name.to_s) }
-        @hash_value = HashValue.new hash_value_type
+      def initialize(builder, struct_value_type)
+        @builder = builder
+        @struct_value_type = struct_value_type
+        @phis = struct_value_type.types.map { |name, type| DynamicPhi.new(builder, type, name.to_s) }
+        @struct_value = struct_value_type.create_value builder
       end
       
-      def <<(value)
-        @phis.each { |name, phi| phi << (value && value[name]) }
+      def <<(result)
+        @phis.each_with_index do |phi, index|
+          phi << if result.return_type
+            key = @struct_value_type.types.keys[index]
+            index_in_result = result.return_type.types.keys.index key
+            index_in_result && @builder.extract_value(result.return_value, index_in_result)
+          else
+            nil
+          end
+        end
       end
       
       def build
-        hash = @phis.map_hash { |name, phi| phi.build }
-        @hash_value.merge! hash
-        @hash_value
+        phi_values = @phis.map(&:build) # all phis need to be at the beginning of the basic block
+        phi_values.each_with_index do |phi_value, index|
+          @struct_value = @builder.insert_value @struct_value, phi_value, index
+        end 
+        @struct_value
       end
     end
     
     class Result
-      attr_accessor :input, :return_value
+      attr_reader :input, :return_type, :return_value
       
-      def initialize(input, return_value = nil)
+      def initialize(input, return_type = nil, return_value = nil)
         @input = input
+        @return_type = return_type
         @return_value = return_value
       end
     end
     
     class MergingResult < Result
       def initialize(builder, input, return_type)
-        super input
-        @hash_mode = return_type.is_a? HashValueType
-        @return_value = @hash_mode ? HashValue.new(return_type) : nil
+        super input, return_type
+        @builder = builder
+        @hash_mode = return_type.is_a? StructValueType
+        @return_value = @hash_mode ? return_type.create_value(builder) : nil
       end
       
       def merge!(result)
         @input = result.input
+        return self if not result.return_value
+        
         if @hash_mode
-          @return_value.merge! result.return_value if result.return_value
+          result.return_type.types.keys.each_with_index do |key, index|
+            elem = @builder.extract_value result.return_value, index
+            @return_value = @builder.insert_value @return_value, elem, @return_type.types.keys.index(key)
+          end
         elsif result.return_value
           raise "Internal error." if not @return_value.nil?
           @return_value = result.return_value
@@ -85,10 +104,10 @@ module JetPEG
     
     class BranchingResult < Result
       def initialize(builder, return_type)
-        super nil
+        super nil, return_type
         @builder = builder
         @input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
-        hash_mode = return_type.is_a? HashValueType
+        hash_mode = return_type.is_a? StructValueType
         @return_value_phi = if hash_mode
           DynamicPhiHash.new builder, return_type
         else
@@ -99,7 +118,7 @@ module JetPEG
       
       def <<(result)
         @input_phi << result.input
-        @return_value_phi << result.return_value if @return_value_phi
+        @return_value_phi << result if @return_value_phi
       end
       
       def build

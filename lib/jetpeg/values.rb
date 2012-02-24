@@ -17,10 +17,6 @@ module JetPEG
       builder.alloca llvm_type, name
     end
     
-    def read_value(builder, data)
-      data
-    end
-    
     def eql?(other)
       self == other
     end
@@ -72,49 +68,26 @@ module JetPEG
       other.is_a?(SingleValueType) && other.type == @type
     end
   end
-  
-  class HashValue < Hash
-    attr_reader :hash_type
     
-    def initialize(hash_type, hash = nil)
-      @hash_type = hash_type
-      self.merge! hash if hash
-    end
-    
-    def build(builder)
-      data = @hash_type.llvm_type.null
-      self.each do |name, entry|
-        data = builder.insert_value data, entry, @hash_type.struct_keys.index(name), "hash_data_with_#{name}" if entry
-      end
-      data
-    end
-    
-    def type
-      @hash_type.llvm_type
-    end
-  end
-  
-  class HashValueType < ValueType
-    attr_reader :types, :struct_keys
+  class StructValueType < ValueType
+    attr_reader :types
     
     def initialize(types, value_name)
-      @types = types
-      @types_with_data = @types.select { |key, value| value.llvm_type }
-      @struct_keys = @types_with_data.keys
+      @types = types.select { |key, value| value.llvm_type }
       
-      llvm_type = LLVM::Struct(*@types_with_data.values.map(&:llvm_type), "#{value_name}_struct")
+      llvm_type = LLVM::Struct(*@types.values.map(&:llvm_type), "#{value_name}_struct")
       ffi_type = Class.new FFI::Struct
-      ffi_type.layout(*@types_with_data.map{ |name, type| [name, type.ffi_type] }.flatten)
+      ffi_type.layout(*@types.map{ |name, type| [name, type.ffi_type] }.flatten)
       
       super llvm_type, ffi_type
     end
     
-    def read_value(builder, data)
-      value = HashValue.new self
-      @types_with_data.keys.each_with_index do |name, index|
-         value[name] = builder.extract_value(data, index, name.to_s)
+    def create_value(builder, data = {})
+      struct_value = builder.create_struct llvm_type
+      data.each do |key, value|
+        struct_value = builder.insert_value struct_value, value, @types.keys.index(key)
       end
-      value
+      struct_value
     end
     
     def read(data, input, input_address)
@@ -126,7 +99,7 @@ module JetPEG
     end
 
     def ==(other)
-      other.is_a?(HashValueType) && other.types == @types
+      other.is_a?(StructValueType) && other.types == @types
     end
   end
   
@@ -220,13 +193,21 @@ module JetPEG
     def initialize(entry_type, name)
       @entry_type = entry_type
       @pointer_type = PointerValueType.new self
-      @return_type = HashValueType.new({ value: entry_type, previous: @pointer_type }, name)
+      @return_type = StructValueType.new({ value: entry_type, previous: @pointer_type }, name)
       super @pointer_type.llvm_type, @pointer_type.ffi_type
     end
     
-    def create_entry(builder, value, previous_entry)
-      value = HashValue.new @entry_type, value if @entry_type.is_a? HashValueType
-      @pointer_type.store_value builder, HashValue.new(@return_type, { value: value, previous: previous_entry })
+    def create_entry(builder, result, previous_entry)
+      if @entry_type.is_a? StructValueType # remap
+        value = @entry_type.create_value builder
+        result.return_type.types.keys.each_with_index do |key, index|
+          elem = builder.extract_value result.return_value, index
+          value = builder.insert_value value, elem, @entry_type.types.keys.index(key)
+        end
+      else
+        value = result.return_value
+      end
+      @pointer_type.store_value builder, @return_type.create_value(builder, value: value, previous: previous_entry)
     end
     
     def read(data, input, input_address)
