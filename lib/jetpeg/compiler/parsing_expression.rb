@@ -70,14 +70,6 @@ module JetPEG
         # nothing to do
       end
       
-      def get_leftmost_primary
-        nil
-      end
-      
-      def replace_leftmost_primary(replacement)
-        raise
-      end
-      
       def build_allocas(builder)
         @children.each { |child| child.build_allocas builder }
       end

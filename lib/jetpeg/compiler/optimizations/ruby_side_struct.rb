@@ -18,6 +18,7 @@ module JetPEG
     end
     
     class Builder
+      remove_method :create_struct
       def create_struct(llvm_type)
         RubySideStruct.new llvm_type
       end

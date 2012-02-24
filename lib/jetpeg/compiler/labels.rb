@@ -76,23 +76,6 @@ module JetPEG
       def free_local_value(builder)
         builder.build_free value_type, @value if @is_local
       end
-      
-      def get_leftmost_primary
-        if @expression.is_a? Primary
-          @expression
-        else
-          @expression.get_leftmost_primary
-        end
-      end
-      
-      def replace_leftmost_primary(replacement)
-        if @expression.is_a? Primary
-          @expression = replacement
-          replacement.parent = self
-        else
-          @expression.replace_leftmost_primary replacement
-        end
-      end
     end
     
     class RuleNameLabel < Label

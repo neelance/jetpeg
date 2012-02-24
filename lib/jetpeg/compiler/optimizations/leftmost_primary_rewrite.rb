@@ -16,5 +16,53 @@ module JetPEG
         super
       end
     end
+    
+    class ParsingExpression
+      def get_leftmost_primary
+        nil
+      end
+      
+      def replace_leftmost_primary(replacement)
+        raise
+      end
+    end
+    
+    class Sequence
+      def get_leftmost_primary
+        if @children.first.is_a? Primary
+          @children.first
+        else
+          @children.first.get_leftmost_primary
+        end
+      end
+      
+      def replace_leftmost_primary(replacement)
+        if @children.first.is_a? Primary
+          @children[0] = replacement
+          replacement.parent = self
+        else
+          @children.first.replace_leftmost_primary replacement
+        end
+      end
+    end
+    
+    class Label
+      def get_leftmost_primary
+        if @expression.is_a? Primary
+          @expression
+        else
+          @expression.get_leftmost_primary
+        end
+      end
+      
+      def replace_leftmost_primary(replacement)
+        if @expression.is_a? Primary
+          @expression = replacement
+          replacement.parent = self
+        else
+          @expression.replace_leftmost_primary replacement
+        end
+      end
+    end
   end
 end

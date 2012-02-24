@@ -53,23 +53,6 @@ module JetPEG
         end
         result
       end
-      
-      def get_leftmost_primary
-        if @children.first.is_a? Primary
-          @children.first
-        else
-          @children.first.get_leftmost_primary
-        end
-      end
-      
-      def replace_leftmost_primary(replacement)
-        if @children.first.is_a? Primary
-          @children[0] = replacement
-          replacement.parent = self
-        else
-          @children.first.replace_leftmost_primary replacement
-        end
-      end
     end
     
     class Choice < ParsingExpression
