@@ -41,7 +41,7 @@ module JetPEG
       @@default_options
     end
     
-    attr_reader :mod, :execution_engine, :malloc, :free, :free_value_functions, :malloc_counter, :free_counter,
+    attr_reader :mod, :execution_engine, :free_value_functions, :malloc_counter, :free_counter,
                 :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_value_type
     attr_accessor :root_rules, :failure_reason, :filename
     
@@ -91,8 +91,6 @@ module JetPEG
       
       @possible_failure_reasons = []
       @mod = LLVM::Module.new "Parser"
-      @malloc = @mod.functions.add "malloc", [LLVM::Int64], LLVM::Pointer(LLVM::Int8)
-      @free = @mod.functions.add "free", [LLVM::Pointer(LLVM::Int8)], LLVM.Void()
       @free_value_functions_to_create = []
       @free_value_functions = Hash.new { |hash, llvm_type|
         @free_value_functions_to_create << llvm_type

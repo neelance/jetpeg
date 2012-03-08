@@ -71,26 +71,22 @@ module JetPEG
         llvm_type.null
       end
       
-      def malloc(llvm_type)
+      def malloc(type, name = "")
         if @parser.malloc_counter
           old_value = self.load @parser.malloc_counter
           new_value = self.add old_value, LLVM::Int(1)
           self.store new_value, @parser.malloc_counter
         end
-        
-        ptr = self.call @parser.malloc, llvm_type.size
-        self.bit_cast ptr, LLVM::Pointer(llvm_type)
+        super
       end
       
-      def free(ptr)
+      def free(pointer)
         if @parser.free_counter
           old_value = self.load @parser.free_counter
           new_value = self.add old_value, LLVM::Int(1)
           self.store new_value, @parser.free_counter
         end
-        
-        casted_ptr = self.bit_cast ptr, LLVM::Pointer(LLVM::Int8)
-        self.call @parser.free, casted_ptr
+        super
       end
       
       def call_rule(rule, *args)
