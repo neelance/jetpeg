@@ -107,10 +107,6 @@ module JetPEG
         @free_counter = nil
       end
       
-      add_failure_reason_callback_type = LLVM::Pointer(LLVM::Function([LLVM::Int1, LLVM_STRING, LLVM::Int], LLVM::Void()))
-      @llvm_add_failure_reason_callback = @mod.globals.add add_failure_reason_callback_type, "add_failure_reason_callback"
-      @llvm_add_failure_reason_callback.initializer = add_failure_reason_callback_type.null
-      
       @ffi_add_failure_reason_callback = FFI::Function.new(:void, [:bool, :pointer, :long]) do |failure, pos, reason_index|
         reason = @possible_failure_reasons[reason_index]
         if @failure_reason_position.address < pos.address
@@ -120,6 +116,9 @@ module JetPEG
           @failure_reason = @failure_reason.merge reason
         end
       end
+      
+      add_failure_reason_callback_type = LLVM::Pointer(LLVM::Function([LLVM::Int1, LLVM_STRING, LLVM::Int], LLVM::Void()))
+      @llvm_add_failure_reason_callback = LLVM::C.const_int_to_ptr LLVM::Int64.from_i(@ffi_add_failure_reason_callback.address), add_failure_reason_callback_type
       
       @rules.values.each { |rule| rule.mod = @mod }
       
@@ -184,7 +183,6 @@ module JetPEG
         
         @failure_reason = ParsingError.new([])
         @failure_reason_position = input_ptr
-        @execution_engine.pointer_to_global(@llvm_add_failure_reason_callback).put_pointer 0, @ffi_add_failure_reason_callback
         
         input_end_value = @execution_engine.run_function root_rule.rule_function(true), input_ptr, *(value_pointer ? [value_pointer] : [])
         input_end_value.dispose
