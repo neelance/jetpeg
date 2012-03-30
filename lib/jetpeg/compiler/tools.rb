@@ -38,35 +38,6 @@ module JetPEG
       end
     end
     
-    class DynamicPhiHash
-      def initialize(builder, struct_value_type)
-        @builder = builder
-        @struct_value_type = struct_value_type
-        @phis = struct_value_type.types.map { |name, type| DynamicPhi.new(builder, type, name.to_s) }
-        @struct_value = struct_value_type.create_value builder
-      end
-      
-      def <<(result)
-        @phis.each_with_index do |phi, index|
-          phi << if result.return_type
-            key = @struct_value_type.types.keys[index]
-            index_in_result = result.return_type.types.keys.index key
-            index_in_result && @builder.extract_value(result.return_value, index_in_result)
-          else
-            nil
-          end
-        end
-      end
-      
-      def build
-        phi_values = @phis.map(&:build) # all phis need to be at the beginning of the basic block
-        phi_values.each_with_index do |phi_value, index|
-          @struct_value = @builder.insert_value @struct_value, phi_value, index
-        end 
-        @struct_value
-      end
-    end
-    
     class Result
       attr_reader :input, :return_type, :return_value
       
@@ -78,11 +49,12 @@ module JetPEG
     end
     
     class MergingResult < Result
-      def initialize(builder, input, return_type)
+      def initialize(builder, input, return_type, hash_mode)
         super input, return_type
         @builder = builder
-        @hash_mode = return_type.is_a? StructValueType
+        @hash_mode = hash_mode
         @return_value = @hash_mode ? return_type.create_value(builder) : nil
+        @insert_index = 0
       end
       
       def merge!(result)
@@ -90,10 +62,8 @@ module JetPEG
         return self if not result.return_value
         
         if @hash_mode
-          result.return_type.types.keys.each_with_index do |key, index|
-            elem = @builder.extract_value result.return_value, index
-            @return_value = @builder.insert_value @return_value, elem, @return_type.types.keys.index(key)
-          end
+          @return_value = @builder.insert_value @return_value, result.return_value, @insert_index
+          @insert_index += 1
         elsif result.return_value
           raise "Internal error." if not @return_value.nil?
           @return_value = result.return_value
@@ -107,12 +77,7 @@ module JetPEG
         super nil, return_type
         @builder = builder
         @input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
-        hash_mode = return_type.is_a? StructValueType
-        @return_value_phi = if hash_mode
-          DynamicPhiHash.new builder, return_type
-        else
-          return_type && DynamicPhi.new(builder, return_type, "return_value")
-        end
+        @return_value_phi = return_type && DynamicPhi.new(builder, return_type, "return_value")
         @local_values = []
       end
       

@@ -34,9 +34,9 @@ module JetPEG
         if @is_local
           nil
         elsif @label_name == AT_SYMBOL
-          SingleValueType.new @value_type
+          @value_type
         else
-          StructValueType.new({ label_name => @value_type }, "#{rule.name}_label")
+          StructValueType.new([LabeledValueType.new(@value_type, label_name)], "#{rule.name}_label")
         end
       end
       
@@ -59,7 +59,7 @@ module JetPEG
         elsif @label_name == AT_SYMBOL
           @value
         else
-          return_type.create_value builder, label_name => value
+          return_type.create_value builder, [value]
         end
         Result.new expression_result.input, return_type, return_value
       end
@@ -99,7 +99,7 @@ module JetPEG
       end
       
       def create_return_type
-        SingleValueType.new local_label.value_type
+        local_label.value_type
       end
       
       def build(builder, start_input, failed_block)

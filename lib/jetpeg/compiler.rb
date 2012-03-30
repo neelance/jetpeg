@@ -251,5 +251,5 @@ require "jetpeg/compiler/composites"
 require "jetpeg/compiler/labels"
 require "jetpeg/compiler/functions"
 
-require "jetpeg/compiler/optimizations/ruby_side_struct"
+#require "jetpeg/compiler/optimizations/ruby_side_struct"
 require "jetpeg/compiler/optimizations/leftmost_primary_rewrite"

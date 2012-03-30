@@ -60,10 +60,6 @@ class MiscTests < Test::Unit::TestCase
     end
     
     assert_raise JetPEG::CompilationError do
-      JetPEG::Compiler.compile_rule "@:'a' 'b' / char:'c'"
-    end
-    
-    assert_raise JetPEG::CompilationError do
       JetPEG::Compiler.compile_grammar "
         rule test
           '(' test ')' / char:'a'

@@ -10,27 +10,28 @@ module JetPEG
           child.local_label_source = previous_child
           previous_child = child
         end
+
+        @hash_mode = false
       end
   
       def create_return_type
         child_types = @children.map(&:return_type).compact
-        if not child_types.empty? and child_types.all?(&StructValueType)
-          merged = {}
-          child_types.each { |type|
-            merged.merge!(type.types) { |key, oldval, newval|
-              raise CompilationError.new("Duplicate label \"#{key}\".", rule)
-            }
-          }
-          StructValueType.new merged, "#{rule.name}_sequence"
-        else
-          raise CompilationError.new("Specific return value mixed with labels.", rule) if child_types.any?(&StructValueType)
-          raise CompilationError.new("Multiple specific return values.", rule) if child_types.size > 1
+        if child_types.empty?
+          nil
+        elsif child_types.size == 1
           child_types.first
+        else
+          @hash_mode = true
+          type = StructValueType.new child_types, "#{rule.name}_sequence"
+          labels = type.all_labels
+          raise CompilationError.new("Multiple return values (#{child_types.map(&:class).join(', ')}).", rule) if labels.include?(nil) and labels.size != 1
+          labels.uniq.each { |name| raise CompilationError.new("Duplicate label \"#{name}\".", rule) if labels.count(name) > 1 }
+          type
         end
       end
       
       def build(builder, start_input, failed_block)
-        result = MergingResult.new builder, start_input, return_type
+        result = MergingResult.new builder, start_input, return_type, @hash_mode
         previous_fail_cleanup_block = failed_block
         @children.each do |child|
           current_result = child.build builder, result.input, previous_fail_cleanup_block
@@ -66,16 +67,16 @@ module JetPEG
         child_types = @children.map(&:return_type)
         if not child_types.any?
           nil
-        elsif child_types.compact.all?(&StructValueType)
-          keys = child_types.compact.map(&:types).map(&:keys).flatten.uniq
-          return_hash_types = {}
-          keys.each do |key|
-            all_types = child_types.map { |t| t && t.types[key] }
-            return_hash_types[key] = ChoiceValueType.new(all_types, "#{rule.name}_#{key}")
-          end
-          StructValueType.new return_hash_types, "#{rule.name}_choice_return_value"
+        #elsif child_types.compact.all?(&StructValueType)
+        #  keys = child_types.compact.map{ |t| t.types.map(&:first) }.flatten.uniq
+        #  return_hash_types = []
+        #  keys.each do |key|
+        #    all_types = child_types.map { |t| t && t.types[key] }
+        #    return_hash_types << [key, ChoiceValueType.new(all_types, "#{rule.name}_#{key}")]
+        #  end
+        #  StructValueType.new return_hash_types, "#{rule.name}_choice_return_value"
         else
-          raise CompilationError.new("Specific return value mixed with labels.", rule) if child_types.any?(&StructValueType)
+          #raise CompilationError.new("Specific return value mixed with labels.", rule) if child_types.any?(&StructValueType)
           ChoiceValueType.new child_types, "#{rule.name}_choice_return_value"
         end
       end

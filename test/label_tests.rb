@@ -46,7 +46,7 @@ class LabelsTests < Test::Unit::TestCase
   def test_label_merge
     rule = JetPEG::Compiler.compile_rule "( char:'a' x:'x' / 'b' x:'x' / char:( inner:'c' ) x:'x' ) / 'y'"
     assert rule.match("ax") == { char: "a", x: "x" }
-    assert rule.match("bx") == { char: nil, x: "x" }
+    assert rule.match("bx") == { x: "x" }
     assert rule.match("cx") == { char: { inner: "c" }, x: "x" }
     
     rule = JetPEG::Compiler.compile_rule "( @:'a' / @:( b:'b' ) )"
@@ -63,7 +63,7 @@ class LabelsTests < Test::Unit::TestCase
         d:'d' / char:.
       end
     "
-    assert grammar[:test].match("abcd") == { d: nil, char: "a", word: { d: nil, char: "c" }, a: { d: "d" , char: nil} }
+    assert grammar[:test].match("abcd") == { char: "a", word: { char: "c" }, a: { d: "d" } }
   end
   
   def test_recursive_rule_with_label
@@ -72,7 +72,7 @@ class LabelsTests < Test::Unit::TestCase
         '(' inner:( test ( other:'b' )? ) ')' / char:'a'
       end
     "
-    assert grammar[:test].match("((a)b)") == { inner: { inner: { inner: nil, char: "a", other: nil }, char: nil, other: "b"}, char: nil }
+    assert grammar[:test].match("((a)b)") == { inner: { inner: { char: "a", other: nil }, other: "b"} }
     
     grammar = JetPEG::Compiler.compile_grammar "
       rule test
@@ -95,8 +95,8 @@ class LabelsTests < Test::Unit::TestCase
     rule = JetPEG::Compiler.compile_rule "( 'a' / 'b' / 'c' )+"
     assert rule.match("abc") == {}
     
-    rule = JetPEG::Compiler.compile_rule "list:('a' char:.)*['ada' final:.]"
-    assert rule.match("abacadae") == { list: [{ char: "b", final: nil }, { char: "c", final: nil }, { char: nil, final: "e" }] }
+    #rule = JetPEG::Compiler.compile_rule "list:('a' char:.)*['ada' final:.]"
+    #assert rule.match("abacadae") == { list: [{ char: "b", final: nil }, { char: "c", final: nil }, { char: nil, final: "e" }] }
     
     grammar = JetPEG::Compiler.compile_grammar "
       rule test
