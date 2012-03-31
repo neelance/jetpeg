@@ -65,18 +65,9 @@ module JetPEG
       def create_return_type
         @slots = {}
         child_types = @children.map(&:return_type)
-        if not child_types.any?
+        if child_types.compact.empty?
           nil
-        #elsif child_types.compact.all?(&StructValueType)
-        #  keys = child_types.compact.map{ |t| t.types.map(&:first) }.flatten.uniq
-        #  return_hash_types = []
-        #  keys.each do |key|
-        #    all_types = child_types.map { |t| t && t.types[key] }
-        #    return_hash_types << [key, ChoiceValueType.new(all_types, "#{rule.name}_#{key}")]
-        #  end
-        #  StructValueType.new return_hash_types, "#{rule.name}_choice_return_value"
         else
-          #raise CompilationError.new("Specific return value mixed with labels.", rule) if child_types.any?(&StructValueType)
           ChoiceValueType.new child_types, "#{rule.name}_choice_return_value"
         end
       end

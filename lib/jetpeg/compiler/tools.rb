@@ -13,9 +13,15 @@ module JetPEG
       end
       
       def <<(value)
-        return if @type.nil?
         value = value.return_value if value.is_a? Result
-        value = @type.create_choice_value @builder, @index, value if @type.is_a? ChoiceValueType
+        
+        if @type.is_a? ChoiceValueType
+          data = @type.llvm_type.null
+          data = @builder.insert_value data, LLVM::Int(@index), 0, "choice_data_with_index"
+          data = @builder.insert_value data, value, @index + 1, "choice_data_with_#{@type.name}" if value
+          value = data
+        end
+        
         value ||= LLVM::Constant.null @llvm_type
         @values[@builder.insert_block] = value
         @phi.add_incoming @builder.insert_block => value if @phi
@@ -23,7 +29,6 @@ module JetPEG
       end
       
       def build
-        return if @type.nil?
         raise if @phi
         @phi = @builder.phi @llvm_type, @values, @name
         @phi

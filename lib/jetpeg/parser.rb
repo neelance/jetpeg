@@ -200,7 +200,7 @@ module JetPEG
       intermediate = {} 
       if value_pointer
         rule_return_type = root_rule.return_type
-        intermediate = rule_return_type.load value_pointer, input, input_ptr.address
+        intermediate = rule_return_type.load value_pointer, input, input_ptr.address, {}
         root_rule.free_value value_pointer if value_pointer
       end
       check_malloc_counter
