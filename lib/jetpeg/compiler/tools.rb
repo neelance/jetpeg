@@ -44,36 +44,12 @@ module JetPEG
     end
     
     class Result
-      attr_reader :input, :return_type, :return_value
+      attr_reader :input, :return_type, :return_value # TODO may remove return_type
       
       def initialize(input, return_type = nil, return_value = nil)
         @input = input
         @return_type = return_type
         @return_value = return_value
-      end
-    end
-    
-    class MergingResult < Result
-      def initialize(builder, input, return_type, hash_mode)
-        super input, return_type
-        @builder = builder
-        @hash_mode = hash_mode
-        @return_value = @hash_mode ? return_type.create_value(builder) : nil
-        @insert_index = 0
-      end
-      
-      def merge!(result)
-        @input = result.input
-        return self if not result.return_value
-        
-        if @hash_mode
-          @return_value = @builder.insert_value @return_value, result.return_value, @insert_index
-          @insert_index += 1
-        elsif result.return_value
-          raise "Internal error." if not @return_value.nil?
-          @return_value = result.return_value
-        end
-        self
       end
     end
     

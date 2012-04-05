@@ -48,10 +48,6 @@ class LabelsTests < Test::Unit::TestCase
     assert rule.match("ax") == { char: "a", x: "x" }
     assert rule.match("bx") == { x: "x" }
     assert rule.match("cx") == { char: { inner: "c" }, x: "x" }
-    
-    rule = JetPEG::Compiler.compile_rule "( @:'a' / @:( b:'b' ) )"
-    assert rule.match("a") == 'a'
-    assert rule.match("b") == { b: "b" }
   end
   
   def test_rule_with_label

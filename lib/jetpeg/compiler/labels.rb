@@ -18,7 +18,7 @@ module JetPEG
       end
       
       def create_return_type
-         @value_type = begin
+        @value_type = begin
           @expression.return_type
         rescue Recursion
           @recursive = true
@@ -54,12 +54,13 @@ module JetPEG
           @value = expression_result.return_value
         end
         
-        return_value = if @is_local
-          nil
+        if @is_local
+          return_value = nil
         elsif @label_name == AT_SYMBOL
-          @value
+          return_value = @value
         else
-          return_type.create_value builder, [value]
+          return_value = builder.create_struct return_type.llvm_type
+          return_value = builder.insert_value return_value, value, 0
         end
         Result.new expression_result.input, return_type, return_value
       end

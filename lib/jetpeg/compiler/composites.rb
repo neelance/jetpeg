@@ -10,34 +10,35 @@ module JetPEG
           child.local_label_source = previous_child
           previous_child = child
         end
-
-        @hash_mode = false
       end
   
       def create_return_type
         child_types = @children.map(&:return_type).compact
-        if child_types.empty?
-          nil
-        elsif child_types.size == 1
-          child_types.first
-        else
-          @hash_mode = true
-          type = StructValueType.new child_types, "#{rule.name}_sequence"
-          labels = type.all_labels
-          raise CompilationError.new("Multiple return values (#{child_types.map(&:class).join(', ')}).", rule) if labels.include?(nil) and labels.size != 1
-          labels.uniq.each { |name| raise CompilationError.new("Duplicate label \"#{name}\".", rule) if labels.count(name) > 1 }
-          type
-        end
+        return nil if child_types.empty?
+
+        type = StructValueType.new child_types, "#{rule.name}_sequence"
+        labels = type.all_labels
+        raise CompilationError.new("Invalid mix of return values (#{labels.map(&:inspect).join(', ')}).", rule) if labels.include?(nil) and labels.size != 1
+        labels.uniq.each { |name| raise CompilationError.new("Duplicate label \"#{name}\".", rule) if labels.count(name) > 1 }
+        type
       end
       
       def build(builder, start_input, failed_block)
-        result = MergingResult.new builder, start_input, return_type, @hash_mode
+        return_value = return_type && builder.create_struct(return_type.llvm_type)
+        insert_index = 0
+        input = start_input
+        
         previous_fail_cleanup_block = failed_block
         @children.each do |child|
-          current_result = child.build builder, result.input, previous_fail_cleanup_block
-          result.merge! current_result
-          successful_block = builder.insert_block
+          current_result = child.build builder, input, previous_fail_cleanup_block
+          input = current_result.input
           
+          if child.return_type
+            return_value = builder.insert_value return_value, current_result.return_value, insert_index
+            insert_index += 1
+          end
+        
+          successful_block = builder.insert_block
           if child.return_type or child.has_local_value?
             current_fail_cleanup_block = builder.create_block "sequence_fail_cleanup"
             builder.position_at_end current_fail_cleanup_block
@@ -49,10 +50,12 @@ module JetPEG
           
           builder.position_at_end successful_block
         end
+        
         @children.each do |child|
           child.free_local_value builder
         end
-        result
+        
+        Result.new input, return_type, return_value
       end
     end
     

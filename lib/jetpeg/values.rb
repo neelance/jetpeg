@@ -1,6 +1,6 @@
 module JetPEG
   class ValueType
-    attr_reader :llvm_type, :ffi_type
+    attr_reader :llvm_type, :ffi_type, :child_types
     
     def initialize(llvm_type, ffi_type)
       @llvm_type = llvm_type
@@ -27,6 +27,15 @@ module JetPEG
     
     def hash
       0 # no hash used for Array.uniq, always eql?
+    end
+    
+    def print_tree(indentation = 0)
+      puts "#{'  ' * indentation} #{to_s}"
+      child_types && child_types.each { |child| child.print_tree indentation + 1 }
+    end
+    
+    def to_s
+      self.class.to_s
     end
   end
   
@@ -62,6 +71,7 @@ module JetPEG
     def initialize(type, name)
       super type.llvm_type, type.ffi_type
       @type = type
+      @child_types = [@type]
       @name = name
     end
     
@@ -77,57 +87,51 @@ module JetPEG
     def ==(other)
       other.is_a?(LabeledValueType) && other.type == @type && other.name == @name
     end
+    
+    def to_s
+      "#{self.class.to_s}(#{@name})"
+    end
   end
     
   class StructValueType < ValueType
-    attr_reader :types
-    
-    def initialize(types, name)
-      @types = types
+    def initialize(child_types, name)
+      @child_types = child_types
       
-      llvm_type = LLVM::Struct(*@types.map(&:llvm_type), "#{name}_struct")
+      llvm_type = LLVM::Struct(*@child_types.map(&:llvm_type), "#{name}_struct")
       ffi_type = Class.new FFI::Struct
       ffi_layout = []
-      types.each_with_index { |type, index| ffi_layout.push index.to_s.to_sym, type.ffi_type }
+      child_types.each_with_index { |type, index| ffi_layout.push index.to_s.to_sym, type.ffi_type }
       ffi_type.layout(*ffi_layout)
       
       super llvm_type, ffi_type
     end
     
     def all_labels
-      @types.map(&:all_labels).flatten
+      @child_types.map(&:all_labels).flatten
     end
     
-    def create_value(builder, data = [])
-      struct_value = builder.create_struct llvm_type
-      data.each_with_index do |value, index|
-        struct_value = builder.insert_value struct_value, value, index
-      end
-      struct_value
-    end
-
     def read(data, input, input_address, values)
-      @types.each_with_index do |type, index|
-        type.read data[index.to_s.to_sym], input, input_address, values
+      @child_types.each_with_index do |type, index|
+        values = type.read data[index.to_s.to_sym], input, input_address, values
       end
       values
     end
 
     def ==(other)
-      other.is_a?(StructValueType) && other.types == @types
+      other.is_a?(StructValueType) && other.child_types == @child_types
     end
   end
   
   class ChoiceValueType < ValueType
-    attr_reader :types, :name
+    attr_reader :name
 
-    def initialize(types, name)
-      @types = types
+    def initialize(child_types, name)
+      @child_types = child_types
       @name = name
       
       llvm_layout = []
       ffi_layout = []
-      @types.each_with_index do |type, index|
+      @child_types.each_with_index do |type, index|
         next if type.nil?
         llvm_layout.push type.llvm_type
         ffi_layout.push index.to_s.to_sym, type.ffi_type
@@ -139,16 +143,16 @@ module JetPEG
     end
     
     def all_labels
-      @types.map(&:all_labels).reduce(&:|)
+      @child_types.map(&:all_labels).reduce(&:|)
     end
     
     def read(data, input, input_address, values)
-      type = @types[data[:selection]]
+      type = @child_types[data[:selection]]
       type && type.read(data[data[:selection].to_s.to_sym], input, input_address, values)
     end
     
     def ==(other)
-      other.is_a?(ChoiceValueType) && other.types == @types
+      other.is_a?(ChoiceValueType) && other.types == @child_types
     end
   end
   
@@ -194,13 +198,17 @@ module JetPEG
     
     def initialize(entry_type, name)
       @entry_type = entry_type
+      @child_types = [entry_type]
       @pointer_type = PointerValueType.new self
       @return_type = StructValueType.new([LabeledValueType.new(entry_type, :value), LabeledValueType.new(@pointer_type, :previous)], name)
       super @pointer_type.llvm_type, @pointer_type.ffi_type
     end
     
     def create_entry(builder, result, previous_entry)
-      @pointer_type.store_value builder, @return_type.create_value(builder, [result.return_value, previous_entry])
+      value = builder.create_struct @return_type.llvm_type
+      value = builder.insert_value value, result.return_value, 0
+      value = builder.insert_value value, previous_entry, 1
+      @pointer_type.store_value builder, value
     end
     
     def read(data, input, input_address, values)
@@ -223,6 +231,7 @@ module JetPEG
     
     def initialize(data_type, creator_data = {})
       @data_type = data_type
+      @child_types = [data_type]
       @creator_data = creator_data
       super @data_type.llvm_type, @data_type.ffi_type
     end
