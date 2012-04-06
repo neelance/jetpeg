@@ -16,7 +16,7 @@ module JetPEG
         child_types = @children.map(&:return_type)
         return nil if not child_types.any?
 
-        type = StructValueType.new child_types, "#{rule.name}_sequence"
+        type = SequenceValueType.new child_types, "#{rule.name}_sequence"
         labels = type.all_labels
         raise CompilationError.new("Invalid mix of return values (#{labels.map(&:inspect).join(', ')}).", rule) if labels.include?(nil) and labels.size != 1
         labels.uniq.each { |name| raise CompilationError.new("Duplicate label \"#{name}\".", rule) if labels.count(name) > 1 }
@@ -72,18 +72,27 @@ module JetPEG
       
       def build(builder, start_input, failed_block)
         choice_successful_block = builder.create_block "choice_successful"
-        result = BranchingResult.new builder, return_type
-        
+        input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
+        return_value_phi = return_type && DynamicPhi.new(builder, return_type, "return_value")
+
         @children.each_with_index do |child, index|
           next_child_block = index < @children.size - 1 ? builder.create_block("next_choice_child") : failed_block
+          
           child_result = child.build(builder, start_input, next_child_block)
-          result << child_result
+          input_phi << child_result.input
+          if return_type
+            struct = return_type.llvm_type.null
+            struct = builder.insert_value struct, LLVM::Int(index), 0
+            struct = return_type.insert_value builder, struct, child_result.return_value, index if child_result.return_value
+            return_value_phi << struct
+          end
+
           builder.br choice_successful_block
           builder.position_at_end next_child_block
         end
         
         builder.position_at_end choice_successful_block
-        result.build
+        Result.new input_phi.build, return_type, (return_value_phi && return_value_phi.build)
       end
     end
     
@@ -100,18 +109,22 @@ module JetPEG
       
       def build(builder, start_input, failed_block)
         exit_block = builder.create_block "optional_exit"
-        result = BranchingResult.new builder, return_type
-        
+        input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
+        return_value_phi = DynamicPhi.new(builder, return_type, "return_value") if return_type
+
         optional_failed_block = builder.create_block "optional_failed"
-        result << @expression.build(builder, start_input, optional_failed_block)
+        child_result = @expression.build builder, start_input, optional_failed_block
+        input_phi << child_result.input
+        return_value_phi << child_result.return_value if return_type
         builder.br exit_block
         
         builder.position_at_end optional_failed_block
-        result << Result.new(start_input)
+        input_phi << start_input
+        return_value_phi << nil if return_type
         builder.br exit_block
         
         builder.position_at_end exit_block
-        result.build
+        Result.new input_phi.build, return_type, (return_value_phi && return_value_phi.build)
       end
     end
     
@@ -169,9 +182,9 @@ module JetPEG
         loop_type = @expression.return_type
         until_type = @until_expression.return_type
         entry_type = if loop_type && until_type
-          raise CompilationError.new("Incompatible return values in until expression.", rule) if not loop_type.is_a?(StructValueType) or not until_type.is_a?(StructValueType)
+          raise CompilationError.new("Incompatible return values in until expression.", rule) if not loop_type.is_a?(SequenceValueType) or not until_type.is_a?(SequenceValueType)
           types = loop_type.types.merge(until_type.types) { |key, oldval, newval| raise CompilationError.new("Overlapping value in until-expression.", rule) }
-          StructValueType.new types, "#{rule.name}_until_entry"
+          SequenceValueType.new types, "#{rule.name}_until_entry"
         else
           loop_type || until_type
         end

@@ -13,15 +13,6 @@ module JetPEG
       end
       
       def <<(value)
-        value = value.return_value if value.is_a? Result
-        
-        if @type.is_a? ChoiceValueType
-          data = @type.llvm_type.null
-          data = @builder.insert_value data, LLVM::Int(@index), 0, "choice_data_with_index"
-          data = @builder.insert_value data, value, @index + 1, "choice_data_with_#{@type.name}" if value
-          value = data
-        end
-        
         value ||= LLVM::Constant.null @llvm_type
         @values[@builder.insert_block] = value
         @phi.add_incoming @builder.insert_block => value if @phi
@@ -50,27 +41,6 @@ module JetPEG
         @input = input
         @return_type = return_type
         @return_value = return_value
-      end
-    end
-    
-    class BranchingResult < Result
-      def initialize(builder, return_type)
-        super nil, return_type
-        @builder = builder
-        @input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
-        @return_value_phi = return_type && DynamicPhi.new(builder, return_type, "return_value")
-        @local_values = []
-      end
-      
-      def <<(result)
-        @input_phi << result.input
-        @return_value_phi << result if @return_value_phi
-      end
-      
-      def build
-        @input = @input_phi.build
-        @return_value = @return_value_phi.build if @return_value_phi
-        self
       end
     end
   end

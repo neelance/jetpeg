@@ -146,7 +146,6 @@ module JetPEG
         builder.dispose
       end
       
-      @mod.write_bitcode "parser.bc"
       @mod.verify!
       @execution_engine = LLVM::JITCompiler.new @mod, options[:machine_code_optimization]
       

@@ -40,7 +40,7 @@ module JetPEG
   end
   
   class InputRangeValueType < ValueType
-    INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING, "InputRange"), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }
+    INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING, self.name), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }
     
     def read(data, input, input_address, values)
       return nil if data[:begin].null?
@@ -58,10 +58,6 @@ module JetPEG
     
     def read(data, input, input_address, values)
       @scalar_values[data]
-    end
-    
-    def ==(other)
-      other.is_a?(ScalarValueType) && other.scalar_values.equal?(@scalar_values)
     end
   end
   
@@ -84,36 +80,22 @@ module JetPEG
       values
     end
     
-    def ==(other)
-      other.is_a?(LabeledValueType) && other.inner_type == @inner_type && other.name == @name
-    end
-    
     def to_s
-      "#{self.class.to_s}(#{@name})"
+      "#{self.class.name}(#{@name})"
     end
   end
-    
+  
   class StructValueType < ValueType
     attr_reader :layout_types
-    
+
     def initialize(child_types, name)
       @child_types = child_types
       
       @type_indices = []
       @layout_types = []
-      @child_types.each_with_index do |type, index|
-        next if type.nil?
-        type = type.inner_type while type.is_a? CreatorType or type.is_a? LabeledValueType
-        if type.is_a? StructValueType
-          @type_indices[index] = (@layout_types.size...(@layout_types.size + type.layout_types.size)).to_a
-          @layout_types.concat type.layout_types
-        else
-          @type_indices[index] = @layout_types.size
-          @layout_types << type
-        end
-      end
+      process_types
       
-      llvm_type = LLVM::Struct(*@layout_types.map(&:llvm_type), "StructValue_#{name}")
+      llvm_type = LLVM::Struct(*@layout_types.map(&:llvm_type), "#{self.class.name}_#{name}")
       ffi_type = Class.new FFI::Struct
       ffi_layout = []
       @layout_types.each_with_index { |type, index| ffi_layout.push index.to_s.to_sym, type.ffi_type }
@@ -121,69 +103,92 @@ module JetPEG
       super llvm_type, ffi_type
     end
     
-    def all_labels
-      @child_types.compact.map(&:all_labels).flatten
-    end
-    
     def insert_value(builder, struct, value, index)
-      type_indices = @type_indices[index]
-      if type_indices.is_a? Array
-        type_indices.each_with_index do |target_index, source_index|
+      type_index = @type_indices[index]
+      if type_index.is_a? Array
+        type_index.each_with_index do |target_index, source_index|
           struct = builder.insert_value struct, builder.extract_value(value, source_index), target_index
         end
       else
-        struct = builder.insert_value struct, value, type_indices
+        struct = builder.insert_value struct, value, type_index
       end
       struct
     end
     
+    def read_entry(data, index, input, input_address, values)
+      type = @child_types[index]
+      return nil if type.nil?
+      type_index = @type_indices[index]
+      child_data = type_index.is_a?(Array) ? data.values_at(*type_index) : data[type_index]
+      type.read(child_data, input, input_address, values)
+    end
+  end
+    
+  class SequenceValueType < StructValueType
+    def process_types
+      @child_types.each_with_index do |child_type, child_index|
+        next if child_type.nil?
+        child_type = child_type.inner_type while child_type.is_a? CreatorType or child_type.is_a? LabeledValueType
+        if child_type.is_a? StructValueType
+          @type_indices[child_index] = (@layout_types.size...(@layout_types.size + child_type.layout_types.size)).to_a
+          @layout_types.concat child_type.layout_types
+        else
+          @type_indices[child_index] = @layout_types.size
+          @layout_types << child_type
+        end
+      end
+    end
+    
     def read(data, input, input_address, values)
       data = data.values if data.is_a? FFI::Struct
-      @child_types.each_with_index do |type, index|
-        next if type.nil?
-        type_indices = @type_indices[index]
-        child_data = type_indices.is_a?(Array) ? data.values_at(*type_indices) : data[type_indices]
-        values = type.read(child_data, input, input_address, values)
+      @child_types.each_index do |child_index|
+        values = read_entry(data, child_index, input, input_address, values) || values
       end
       values
     end
-
-    def ==(other)
-      other.is_a?(StructValueType) && other.child_types == @child_types
+    
+    def all_labels
+      @child_types.compact.map(&:all_labels).flatten
     end
   end
   
-  class ChoiceValueType < ValueType
+  class ChoiceValueType < StructValueType
     attr_reader :name
+    
+    SelectionFieldType = Struct.new(:llvm_type, :ffi_type).new(LLVM::Int32, :int32)
 
-    def initialize(child_types, name)
-      @child_types = child_types
-      @name = name
-      
-      llvm_layout = []
-      ffi_layout = []
-      @child_types.each_with_index do |type, index|
-        next if type.nil?
-        llvm_layout.push type.llvm_type
-        ffi_layout.push index.to_s.to_sym, type.ffi_type
+    def process_types
+      @layout_types << SelectionFieldType
+      @child_types.each_with_index do |child_type, child_index|
+        next if child_type.nil?
+        child_type = child_type.inner_type while child_type.is_a? CreatorType or child_type.is_a? LabeledValueType
+        if child_type.is_a? StructValueType
+          index_array = []
+          available_layout_types = @layout_types.dup
+          available_layout_types[0] = nil
+          child_type.layout_types.each do |child_layout_type|
+            layout_index = available_layout_types.index child_layout_type
+            index_array << (layout_index || @layout_types.size)
+            @layout_types << child_layout_type unless layout_index
+            available_layout_types[layout_index] = nil if layout_index
+          end
+          @type_indices[child_index] = index_array
+        else
+          layout_index = @layout_types.index child_type
+          @type_indices[child_index] = layout_index || @layout_types.size
+          @layout_types << child_type unless layout_index
+        end
       end
-      llvm_type = LLVM::Struct(LLVM::Int32, *llvm_layout, "ChoiceValue_#{name}") # TODO memory optimization with "union" structure and bitcasts
-      ffi_type = Class.new FFI::Struct
-      ffi_type.layout(:selection, :int32, *ffi_layout)
-      super llvm_type, ffi_type
+    end
+    
+    def read(data, input, input_address, values)
+      data = data.values if data.is_a? FFI::Struct
+      child_index = data.first
+      read_entry data, child_index, input, input_address, values
     end
     
     def all_labels
       @child_types.map(&:all_labels).reduce(&:|)
-    end
-    
-    def read(data, input, input_address, values)
-      type = @child_types[data[:selection]]
-      type && type.read(data[data[:selection].to_s.to_sym], input, input_address, values)
-    end
-    
-    def ==(other)
-      other.is_a?(ChoiceValueType) && other.child_types == @child_types
     end
   end
   
@@ -192,7 +197,7 @@ module JetPEG
     
     def initialize(target)
       @target = target
-      @target_struct = LLVM::Struct("PointerValue")
+      @target_struct = LLVM::Struct(self.class.name)
       @target_struct_realized = false
       super LLVM::Pointer(@target_struct), :pointer
     end
@@ -218,10 +223,6 @@ module JetPEG
       target_type = @target.return_type
       target_type.load data, input, input_address, values # we can read directly, since the value is at the beginning of @target_struct
     end
-    
-    def ==(other)
-      other.is_a?(PointerValueType) && other.target == @target
-    end
   end
   
   class ArrayValueType < ValueType
@@ -231,7 +232,7 @@ module JetPEG
       @entry_type = entry_type
       @child_types = [entry_type]
       @pointer_type = PointerValueType.new self
-      @return_type = StructValueType.new([LabeledValueType.new(entry_type, :value), LabeledValueType.new(@pointer_type, :previous)], name)
+      @return_type = SequenceValueType.new([LabeledValueType.new(entry_type, :value), LabeledValueType.new(@pointer_type, :previous)], name)
       super @pointer_type.llvm_type, @pointer_type.ffi_type
     end
     
@@ -251,10 +252,6 @@ module JetPEG
       end
       array
     end
-    
-    def ==(other)
-      other.is_a?(ArrayValueType) && other.entry_type == @entry_type
-    end
   end
     
   class CreatorType < ValueType
@@ -271,10 +268,6 @@ module JetPEG
       result = @creator_data.clone
       result[:data] = @inner_type.read data, input, input_address, {}
       result
-    end
-    
-    def ==(other)
-      other.is_a?(CreatorType) && other.creator_data == @creator_data && other.inner_type == @inner_type
     end
   end
 end
