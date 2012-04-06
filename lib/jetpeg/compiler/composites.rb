@@ -13,8 +13,8 @@ module JetPEG
       end
   
       def create_return_type
-        child_types = @children.map(&:return_type).compact
-        return nil if child_types.empty?
+        child_types = @children.map(&:return_type)
+        return nil if not child_types.any?
 
         type = StructValueType.new child_types, "#{rule.name}_sequence"
         labels = type.all_labels
@@ -25,18 +25,13 @@ module JetPEG
       
       def build(builder, start_input, failed_block)
         return_value = return_type && builder.create_struct(return_type.llvm_type)
-        insert_index = 0
         input = start_input
         
         previous_fail_cleanup_block = failed_block
-        @children.each do |child|
+        @children.each_with_index do |child, index|
           current_result = child.build builder, input, previous_fail_cleanup_block
           input = current_result.input
-          
-          if child.return_type
-            return_value = builder.insert_value return_value, current_result.return_value, insert_index
-            insert_index += 1
-          end
+          return_value = return_type.insert_value builder, return_value, current_result.return_value, index if child.return_type
         
           successful_block = builder.insert_block
           if child.return_type or child.has_local_value?
@@ -279,9 +274,7 @@ module JetPEG
         builder.cond rule_successful, successful_block, failed_block
         
         builder.position_at_end successful_block
-        return_value = return_type && begin
-          builder.load @label_data_ptr, "#{@referenced_name}_data"
-        end
+        return_value = return_type && builder.load(@label_data_ptr, "#{@referenced_name}_data")
         Result.new rule_end_input, return_type, return_value
       end
       

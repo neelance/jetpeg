@@ -40,7 +40,7 @@ module JetPEG
   end
   
   class InputRangeValueType < ValueType
-    INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING, "input_range"), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }
+    INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING, "InputRange"), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }
     
     def read(data, input, input_address, values)
       return nil if data[:begin].null?
@@ -52,7 +52,7 @@ module JetPEG
     attr_reader :scalar_values
     
     def initialize(scalar_values)
-      super LLVM::Int32, :int32
+      super LLVM::Int32.type, :int32
       @scalar_values = scalar_values
     end
     
@@ -66,12 +66,12 @@ module JetPEG
   end
   
   class LabeledValueType < ValueType
-    attr_reader :type, :name
+    attr_reader :inner_type, :name
     
-    def initialize(type, name)
-      super type.llvm_type, type.ffi_type
-      @type = type
-      @child_types = [@type]
+    def initialize(inner_type, name)
+      super inner_type.llvm_type, inner_type.ffi_type
+      @inner_type = inner_type
+      @child_types = [inner_type]
       @name = name
     end
     
@@ -80,12 +80,12 @@ module JetPEG
     end
     
     def read(data, input, input_address, values)
-      values[@name] = @type.read data, input, input_address, {}
+      values[@name] = @inner_type.read data, input, input_address, {}
       values
     end
     
     def ==(other)
-      other.is_a?(LabeledValueType) && other.type == @type && other.name == @name
+      other.is_a?(LabeledValueType) && other.inner_type == @inner_type && other.name == @name
     end
     
     def to_s
@@ -94,25 +94,56 @@ module JetPEG
   end
     
   class StructValueType < ValueType
+    attr_reader :layout_types
+    
     def initialize(child_types, name)
       @child_types = child_types
       
-      llvm_type = LLVM::Struct(*@child_types.map(&:llvm_type), "#{name}_struct")
+      @type_indices = []
+      @layout_types = []
+      @child_types.each_with_index do |type, index|
+        next if type.nil?
+        type = type.inner_type while type.is_a? CreatorType or type.is_a? LabeledValueType
+        if type.is_a? StructValueType
+          @type_indices[index] = (@layout_types.size...(@layout_types.size + type.layout_types.size)).to_a
+          @layout_types.concat type.layout_types
+        else
+          @type_indices[index] = @layout_types.size
+          @layout_types << type
+        end
+      end
+      
+      llvm_type = LLVM::Struct(*@layout_types.map(&:llvm_type), "StructValue_#{name}")
       ffi_type = Class.new FFI::Struct
       ffi_layout = []
-      child_types.each_with_index { |type, index| ffi_layout.push index.to_s.to_sym, type.ffi_type }
+      @layout_types.each_with_index { |type, index| ffi_layout.push index.to_s.to_sym, type.ffi_type }
       ffi_type.layout(*ffi_layout)
-      
       super llvm_type, ffi_type
     end
     
     def all_labels
-      @child_types.map(&:all_labels).flatten
+      @child_types.compact.map(&:all_labels).flatten
+    end
+    
+    def insert_value(builder, struct, value, index)
+      type_indices = @type_indices[index]
+      if type_indices.is_a? Array
+        type_indices.each_with_index do |target_index, source_index|
+          struct = builder.insert_value struct, builder.extract_value(value, source_index), target_index
+        end
+      else
+        struct = builder.insert_value struct, value, type_indices
+      end
+      struct
     end
     
     def read(data, input, input_address, values)
+      data = data.values if data.is_a? FFI::Struct
       @child_types.each_with_index do |type, index|
-        values = type.read data[index.to_s.to_sym], input, input_address, values
+        next if type.nil?
+        type_indices = @type_indices[index]
+        child_data = type_indices.is_a?(Array) ? data.values_at(*type_indices) : data[type_indices]
+        values = type.read(child_data, input, input_address, values)
       end
       values
     end
@@ -136,7 +167,7 @@ module JetPEG
         llvm_layout.push type.llvm_type
         ffi_layout.push index.to_s.to_sym, type.ffi_type
       end
-      llvm_type = LLVM::Struct(LLVM::Int32, *llvm_layout, "#{name}_struct") # TODO memory optimization with "union" structure and bitcasts
+      llvm_type = LLVM::Struct(LLVM::Int32, *llvm_layout, "ChoiceValue_#{name}") # TODO memory optimization with "union" structure and bitcasts
       ffi_type = Class.new FFI::Struct
       ffi_type.layout(:selection, :int32, *ffi_layout)
       super llvm_type, ffi_type
@@ -152,7 +183,7 @@ module JetPEG
     end
     
     def ==(other)
-      other.is_a?(ChoiceValueType) && other.types == @child_types
+      other.is_a?(ChoiceValueType) && other.child_types == @child_types
     end
   end
   
@@ -161,7 +192,7 @@ module JetPEG
     
     def initialize(target)
       @target = target
-      @target_struct = LLVM::Struct("pointer_target")
+      @target_struct = LLVM::Struct("PointerValue")
       @target_struct_realized = false
       super LLVM::Pointer(@target_struct), :pointer
     end
@@ -206,8 +237,8 @@ module JetPEG
     
     def create_entry(builder, result, previous_entry)
       value = builder.create_struct @return_type.llvm_type
-      value = builder.insert_value value, result.return_value, 0
-      value = builder.insert_value value, previous_entry, 1
+      value = @return_type.insert_value builder, value, result.return_value, 0
+      value = @return_type.insert_value builder, value, previous_entry, 1
       @pointer_type.store_value builder, value
     end
     
@@ -227,23 +258,23 @@ module JetPEG
   end
     
   class CreatorType < ValueType
-    attr_reader :creator_data, :data_type
+    attr_reader :creator_data, :inner_type
     
-    def initialize(data_type, creator_data = {})
-      @data_type = data_type
-      @child_types = [data_type]
+    def initialize(inner_type, creator_data = {})
+      @inner_type = inner_type
+      @child_types = [inner_type]
       @creator_data = creator_data
-      super @data_type.llvm_type, @data_type.ffi_type
+      super @inner_type.llvm_type, @inner_type.ffi_type
     end
     
     def read(data, input, input_address, values)
       result = @creator_data.clone
-      result[:data] = @data_type.read data, input, input_address, {}
+      result[:data] = @inner_type.read data, input, input_address, {}
       result
     end
     
     def ==(other)
-      other.is_a?(CreatorType) && other.creator_data == @creator_data && other.data_type == @data_type
+      other.is_a?(CreatorType) && other.creator_data == @creator_data && other.inner_type == @inner_type
     end
   end
 end

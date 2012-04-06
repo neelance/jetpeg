@@ -36,7 +36,7 @@ module JetPEG
         elsif @label_name == AT_SYMBOL
           @value_type
         else
-          StructValueType.new([LabeledValueType.new(@value_type, label_name)], "#{rule.name}_label")
+          LabeledValueType.new @value_type, label_name
         end
       end
       
@@ -54,15 +54,7 @@ module JetPEG
           @value = expression_result.return_value
         end
         
-        if @is_local
-          return_value = nil
-        elsif @label_name == AT_SYMBOL
-          return_value = @value
-        else
-          return_value = builder.create_struct return_type.llvm_type
-          return_value = builder.insert_value return_value, value, 0
-        end
-        Result.new expression_result.input, return_type, return_value
+        Result.new expression_result.input, return_type, (@is_local ? nil : @value)
       end
       
       def get_local_label(name)
