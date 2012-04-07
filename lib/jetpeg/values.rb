@@ -61,30 +61,6 @@ module JetPEG
     end
   end
   
-  class LabeledValueType < ValueType
-    attr_reader :inner_type, :name
-    
-    def initialize(inner_type, name)
-      super inner_type.llvm_type, inner_type.ffi_type
-      @inner_type = inner_type
-      @child_types = [inner_type]
-      @name = name
-    end
-    
-    def all_labels
-      [@name]
-    end
-    
-    def read(data, input, input_address, values)
-      values[@name] = @inner_type.read data, input, input_address, {}
-      values
-    end
-    
-    def to_s
-      "#{self.class.name}(#{@name})"
-    end
-  end
-  
   class StructValueType < ValueType
     attr_reader :layout_types
 
@@ -128,7 +104,7 @@ module JetPEG
     def process_types
       @child_types.each_with_index do |child_type, child_index|
         next if child_type.nil?
-        child_type = child_type.inner_type while child_type.is_a? CreatorType or child_type.is_a? LabeledValueType
+        child_type = child_type.inner_type while child_type.is_a? WrappingValueType
         if child_type.is_a? StructValueType
           @type_indices[child_index] = (@layout_types.size...(@layout_types.size + child_type.layout_types.size)).to_a
           @layout_types.concat child_type.layout_types
@@ -161,7 +137,7 @@ module JetPEG
       @layout_types << SelectionFieldType
       @child_types.each_with_index do |child_type, child_index|
         next if child_type.nil?
-        child_type = child_type.inner_type while child_type.is_a? CreatorType or child_type.is_a? LabeledValueType
+        child_type = child_type.inner_type while child_type.is_a? WrappingValueType
         if child_type.is_a? StructValueType
           index_array = []
           available_layout_types = @layout_types.dup
@@ -253,15 +229,45 @@ module JetPEG
       array
     end
   end
-    
-  class CreatorType < ValueType
-    attr_reader :creator_data, :inner_type
-    
-    def initialize(inner_type, creator_data = {})
+  
+  class WrappingValueType < ValueType
+    attr_reader :inner_type
+        
+    def initialize(inner_type)
+      super inner_type.llvm_type, inner_type.ffi_type
       @inner_type = inner_type
       @child_types = [inner_type]
+    end
+  end
+  
+  class LabeledValueType < WrappingValueType
+    attr_reader :name
+    
+    def initialize(inner_type, name)
+      super inner_type
+      @name = name
+    end
+    
+    def all_labels
+      [@name]
+    end
+    
+    def read(data, input, input_address, values)
+      values[@name] = @inner_type.read data, input, input_address, {}
+      values
+    end
+    
+    def to_s
+      "#{self.class.name}(#{@name})"
+    end
+  end
+    
+  class CreatorType < WrappingValueType
+    attr_reader :creator_data
+    
+    def initialize(inner_type, creator_data = {})
+      super inner_type
       @creator_data = creator_data
-      super @inner_type.llvm_type, @inner_type.ffi_type
     end
     
     def read(data, input, input_address, values)

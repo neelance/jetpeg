@@ -54,7 +54,7 @@ module JetPEG
           @value = expression_result.return_value
         end
         
-        Result.new expression_result.input, return_type, (@is_local ? nil : @value)
+        Result.new expression_result.input, (@is_local ? nil : @value)
       end
       
       def get_local_label(name)
@@ -98,7 +98,7 @@ module JetPEG
       def build(builder, start_input, failed_block)
         builder.build_use_counter_increment local_label.value_type, local_label.value
         
-        Result.new start_input, return_type, local_label.value
+        Result.new start_input, local_label.value
       end
     end
     

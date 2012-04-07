@@ -180,6 +180,8 @@ module JetPEG
       end
     end
     
+    Result = Struct.new :input, :return_value
+    
     @@metagrammar_parser = nil
     
     def self.metagrammar_parser

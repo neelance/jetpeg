@@ -3,12 +3,10 @@ module JetPEG
     class DynamicPhi
       def initialize(builder, type, name = "", first_value = nil)
         @builder = builder
-        @type = type
         @llvm_type = type.is_a?(ValueType) ? type.llvm_type : type
         @name = name
         @values = {}
         @phi = nil
-        @index = 0
         self << first_value if first_value
       end
       
@@ -16,7 +14,6 @@ module JetPEG
         value ||= LLVM::Constant.null @llvm_type
         @values[@builder.insert_block] = value
         @phi.add_incoming @builder.insert_block => value if @phi
-        @index += 1
       end
       
       def build
@@ -31,16 +28,6 @@ module JetPEG
       
       def type
         @llvm_type
-      end
-    end
-    
-    class Result
-      attr_reader :input, :return_type, :return_value # TODO may remove return_type
-      
-      def initialize(input, return_type = nil, return_value = nil)
-        @input = input
-        @return_type = return_type
-        @return_value = return_value
       end
     end
   end

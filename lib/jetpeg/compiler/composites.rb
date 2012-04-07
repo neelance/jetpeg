@@ -50,7 +50,7 @@ module JetPEG
           child.free_local_value builder
         end
         
-        Result.new input, return_type, return_value
+        Result.new input, return_value
       end
     end
     
@@ -92,7 +92,7 @@ module JetPEG
         end
         
         builder.position_at_end choice_successful_block
-        Result.new input_phi.build, return_type, (return_value_phi && return_value_phi.build)
+        Result.new input_phi.build, (return_value_phi && return_value_phi.build)
       end
     end
     
@@ -124,7 +124,7 @@ module JetPEG
         builder.br exit_block
         
         builder.position_at_end exit_block
-        Result.new input_phi.build, return_type, (return_value_phi && return_value_phi.build)
+        Result.new input_phi.build, (return_value_phi && return_value_phi.build)
       end
     end
     
@@ -158,7 +158,7 @@ module JetPEG
         builder.br loop_block
         
         builder.position_at_end exit_block
-        Result.new input, return_type, return_value
+        Result.new input, return_value
       end
     end
     
@@ -219,7 +219,7 @@ module JetPEG
         builder.br failed_block
         
         builder.position_at_end exit_block
-        Result.new until_result.input, return_type, (return_type && return_type.create_entry(builder, until_result, return_value))
+        Result.new until_result.input, (return_type && return_type.create_entry(builder, until_result, return_value))
       end
     end
     
@@ -288,7 +288,7 @@ module JetPEG
         
         builder.position_at_end successful_block
         return_value = return_type && builder.load(@label_data_ptr, "#{@referenced_name}_data")
-        Result.new rule_end_input, return_type, return_value
+        Result.new rule_end_input, return_value
       end
       
       def ==(other)

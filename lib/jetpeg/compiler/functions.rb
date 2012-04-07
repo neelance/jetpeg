@@ -10,7 +10,7 @@ module JetPEG
       end
       
       def build(builder, start_input, failed_block)
-        Result.new start_input, return_type, parser.scalar_value_for(true)
+        Result.new start_input, parser.scalar_value_for(true)
       end
     end
     
@@ -24,7 +24,7 @@ module JetPEG
       end
       
       def build(builder, start_input, failed_block)
-        Result.new start_input, return_type, parser.scalar_value_for(false)
+        Result.new start_input, parser.scalar_value_for(false)
       end
     end
     
