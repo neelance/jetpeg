@@ -80,13 +80,8 @@ module JetPEG
           
           child_result = child.build(builder, start_input, next_child_block)
           input_phi << child_result.input
-          if return_type
-            struct = return_type.llvm_type.null
-            struct = builder.insert_value struct, LLVM::Int(index), 0
-            struct = return_type.insert_value builder, struct, child_result.return_value, index if child_result.return_value
-            return_value_phi << struct
-          end
-
+          return_value_phi << (return_type && return_type.create_choice_value(builder, index, child_result))
+          
           builder.br choice_successful_block
           builder.position_at_end next_child_block
         end
@@ -153,7 +148,7 @@ module JetPEG
         
         next_result = @expression.build builder, input, exit_block
         input << next_result.input
-        return_value << (return_type && return_type.create_entry(builder, next_result, return_value))
+        return_value << (return_type && return_type.create_array_value(builder, next_result.return_value, return_value))
         
         builder.br loop_block
         
@@ -165,7 +160,7 @@ module JetPEG
     class OneOrMore < ZeroOrMore
       def build(builder, start_input, failed_block)
         result = @expression.build builder, start_input, failed_block
-        return_value = return_type && return_type.create_entry(builder, result, return_type.llvm_type.null)
+        return_value = return_type && return_type.create_array_value(builder, result.return_value, return_type.llvm_type.null)
         super builder, result.input, failed_block, return_value
       end
     end
@@ -181,14 +176,9 @@ module JetPEG
       def create_return_type
         loop_type = @expression.return_type
         until_type = @until_expression.return_type
-        entry_type = if loop_type && until_type
-          raise CompilationError.new("Incompatible return values in until expression.", rule) if not loop_type.is_a?(SequenceValueType) or not until_type.is_a?(SequenceValueType)
-          types = loop_type.types.merge(until_type.types) { |key, oldval, newval| raise CompilationError.new("Overlapping value in until-expression.", rule) }
-          SequenceValueType.new types, "#{rule.name}_until_entry"
-        else
-          loop_type || until_type
-        end
-        entry_type && ArrayValueType.new(entry_type, "#{rule.name}_until")
+        return nil if loop_type.nil? and until_type.nil?
+        @choice_type = ChoiceValueType.new([loop_type, until_type], "#{rule.name}_until_choice")
+        ArrayValueType.new(@choice_type, "#{rule.name}_until_array")
       end
       
       def build(builder, start_input, failed_block)
@@ -211,7 +201,7 @@ module JetPEG
         builder.position_at_end loop2_block
         next_result = @expression.build builder, input, until_failed_block
         input << next_result.input
-        return_value << (return_type && return_type.create_entry(builder, next_result, return_value))
+        return_value << (return_type && return_type.create_array_value(builder, @choice_type.create_choice_value(builder, 0, next_result), return_value))
         builder.br loop1_block
         
         builder.position_at_end until_failed_block
@@ -219,7 +209,7 @@ module JetPEG
         builder.br failed_block
         
         builder.position_at_end exit_block
-        Result.new until_result.input, (return_type && return_type.create_entry(builder, until_result, return_value))
+        Result.new until_result.input, (return_type && return_type.create_array_value(builder, @choice_type.create_choice_value(builder, 1, until_result), return_value))
       end
     end
     

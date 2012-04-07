@@ -157,6 +157,13 @@ module JetPEG
       end
     end
     
+    def create_choice_value(builder, index, entry_result)
+      struct = llvm_type.null
+      struct = builder.insert_value struct, LLVM::Int(index), 0
+      struct = insert_value builder, struct, entry_result.return_value, index if entry_result.return_value
+      struct
+    end
+    
     def read(data, input, input_address, values)
       data = data.values if data.is_a? FFI::Struct
       child_index = data.first
@@ -212,9 +219,9 @@ module JetPEG
       super @pointer_type.llvm_type, @pointer_type.ffi_type
     end
     
-    def create_entry(builder, result, previous_entry)
+    def create_array_value(builder, entry_value, previous_entry)
       value = builder.create_struct @return_type.llvm_type
-      value = @return_type.insert_value builder, value, result.return_value, 0
+      value = @return_type.insert_value builder, value, entry_value, 0
       value = @return_type.insert_value builder, value, previous_entry, 1
       @pointer_type.store_value builder, value
     end
