@@ -42,5 +42,13 @@ module JetPEG
         super val, pointer
       end
     end
+    
+    class DynamicPhi
+      alias_method :push_orig, :<<
+      def <<(value)
+        value = value.build @builder if value.is_a? RubySideStruct
+        push_orig value
+      end
+    end
   end
 end
