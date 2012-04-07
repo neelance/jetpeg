@@ -1,9 +1,9 @@
 module JetPEG
   module Compiler
     class DynamicPhi
-      def initialize(builder, type, name = "", first_value = nil)
+      def initialize(builder, llvm_type, name = "", first_value = nil)
         @builder = builder
-        @llvm_type = type.is_a?(ValueType) ? type.llvm_type : type
+        @llvm_type = llvm_type
         @name = name
         @values = {}
         @phi = nil
@@ -11,12 +11,14 @@ module JetPEG
       end
       
       def <<(value)
+        return if @llvm_type.nil?
         value ||= LLVM::Constant.null @llvm_type
         @values[@builder.insert_block] = value
         @phi.add_incoming @builder.insert_block => value if @phi
       end
       
       def build
+        return nil if @llvm_type.nil?
         raise if @phi
         @phi = @builder.phi @llvm_type, @values, @name
         @phi

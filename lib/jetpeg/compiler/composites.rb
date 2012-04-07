@@ -73,7 +73,7 @@ module JetPEG
       def build(builder, start_input, failed_block)
         choice_successful_block = builder.create_block "choice_successful"
         input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
-        return_value_phi = return_type && DynamicPhi.new(builder, return_type, "return_value")
+        return_value_phi = DynamicPhi.new(builder, return_type && return_type.llvm_type, "return_value")
 
         @children.each_with_index do |child, index|
           next_child_block = index < @children.size - 1 ? builder.create_block("next_choice_child") : failed_block
@@ -92,7 +92,7 @@ module JetPEG
         end
         
         builder.position_at_end choice_successful_block
-        Result.new input_phi.build, (return_value_phi && return_value_phi.build)
+        Result.new input_phi.build, return_value_phi.build
       end
     end
     
@@ -110,21 +110,21 @@ module JetPEG
       def build(builder, start_input, failed_block)
         exit_block = builder.create_block "optional_exit"
         input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
-        return_value_phi = DynamicPhi.new(builder, return_type, "return_value") if return_type
+        return_value_phi = DynamicPhi.new builder, return_type && return_type.llvm_type, "return_value"
 
         optional_failed_block = builder.create_block "optional_failed"
         child_result = @expression.build builder, start_input, optional_failed_block
         input_phi << child_result.input
-        return_value_phi << child_result.return_value if return_type
+        return_value_phi << child_result.return_value
         builder.br exit_block
         
         builder.position_at_end optional_failed_block
         input_phi << start_input
-        return_value_phi << nil if return_type
+        return_value_phi << nil
         builder.br exit_block
         
         builder.position_at_end exit_block
-        Result.new input_phi.build, (return_value_phi && return_value_phi.build)
+        Result.new input_phi.build, return_value_phi.build
       end
     end
     
@@ -144,16 +144,16 @@ module JetPEG
         exit_block = builder.create_block "repetition_exit"
   
         input = DynamicPhi.new builder, LLVM_STRING, "loop_input", start_input
-        return_value = DynamicPhi.new builder, return_type, "loop_return_value", start_return_value || return_type.llvm_type.null if return_type
+        return_value = DynamicPhi.new builder, return_type && return_type.llvm_type, "loop_return_value", start_return_value || (return_type && return_type.llvm_type.null)
         builder.br loop_block
         
         builder.position_at_end loop_block
         input.build
-        return_value.build if return_type
+        return_value.build
         
         next_result = @expression.build builder, input, exit_block
         input << next_result.input
-        return_value << return_type.create_entry(builder, next_result, return_value) if return_type
+        return_value << (return_type && return_type.create_entry(builder, next_result, return_value))
         
         builder.br loop_block
         
@@ -165,7 +165,7 @@ module JetPEG
     class OneOrMore < ZeroOrMore
       def build(builder, start_input, failed_block)
         result = @expression.build builder, start_input, failed_block
-        return_value = return_type.create_entry(builder, result, return_type.llvm_type.null) if return_type
+        return_value = return_type && return_type.create_entry(builder, result, return_type.llvm_type.null)
         super builder, result.input, failed_block, return_value
       end
     end
@@ -198,12 +198,12 @@ module JetPEG
         exit_block = builder.create_block "until_exit"
         
         input = DynamicPhi.new builder, LLVM_STRING, "loop_input", start_input
-        return_value = DynamicPhi.new builder, return_type.llvm_type, "loop_return_value", return_type.llvm_type.null if return_type
+        return_value = DynamicPhi.new builder, return_type && return_type.llvm_type, "loop_return_value", return_type && return_type.llvm_type.null
         builder.br loop1_block
         
         builder.position_at_end loop1_block
         input.build
-        return_value.build if return_type
+        return_value.build
         
         until_result = @until_expression.build builder, input, loop2_block
         builder.br exit_block
@@ -211,7 +211,7 @@ module JetPEG
         builder.position_at_end loop2_block
         next_result = @expression.build builder, input, until_failed_block
         input << next_result.input
-        return_value << return_type.create_entry(builder, next_result, return_value) if return_type
+        return_value << (return_type && return_type.create_entry(builder, next_result, return_value))
         builder.br loop1_block
         
         builder.position_at_end until_failed_block
