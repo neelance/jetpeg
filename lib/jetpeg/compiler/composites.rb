@@ -135,17 +135,16 @@ module JetPEG
       end
       
       def build(builder, start_input, failed_block = {}, start_return_value = nil)
-        loop_block = builder.create_block "repetition_loop"
-        exit_block = builder.create_block "repetition_exit"
-  
         input = DynamicPhi.new builder, LLVM_STRING, "loop_input", start_input
         return_value = DynamicPhi.new builder, return_type && return_type.llvm_type, "loop_return_value", start_return_value || (return_type && return_type.llvm_type.null)
+
+        loop_block = builder.create_block "repetition_loop"
+        exit_block = builder.create_block "repetition_exit"
         builder.br loop_block
         
         builder.position_at_end loop_block
         input.build
         return_value.build
-        
         next_result = @expression.build builder, input, exit_block
         input << next_result.input
         return_value << (return_type && return_type.create_array_value(builder, next_result.return_value, return_value))

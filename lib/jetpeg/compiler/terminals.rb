@@ -10,8 +10,7 @@ module JetPEG
       
       def build(builder, start_input, failed_block)
         end_input = @string.chars.inject(start_input) do |input, char|
-          input_char = builder.load input, "char"
-          failed = builder.icmp :ne, input_char, LLVM::Int8.from_i(char.ord), "failed"
+          failed = builder.icmp :ne, builder.load(input), LLVM::Int8.from_i(char.ord), "failed"
           builder.add_failure_reason failed, start_input, ParsingError.new([@string])
           next_char_block = builder.create_block "string_terminal_next_char"
           builder.cond failed, failed_block, next_char_block

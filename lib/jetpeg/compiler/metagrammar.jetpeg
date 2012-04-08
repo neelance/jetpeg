@@ -80,6 +80,7 @@ end
 rule function
   '$true' ws <TrueFunction> /
   '$false' ws <FalseFunction> /
+  '$match' '[' ws string:local_value ws ']' ws <MatchFunction> /
   '$error' '[' ws message:quoted_string ws ']' ws <ErrorFunction>
 end
 

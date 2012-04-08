@@ -22,11 +22,13 @@ class FunctionTests < Test::Unit::TestCase
     assert rule.parser.failure_reason.other_reasons == ["test"]
   end
   
-  #def test_match_function
-  #  rule = JetPEG::Compiler.compile_rule "%char:. $match[%char]"
-  #  assert rule.match("aa")
-  #  assert rule.match("bb")
-  #  assert !rule.match("a")
-  #  assert !rule.match("ab")
-  #end
+  def test_match_function
+    rule = JetPEG::Compiler.compile_rule "%a:(..) $match[%a]"
+    assert rule.match("abab")
+    assert rule.match("cdcd")
+    assert !rule.match("a")
+    assert !rule.match("ab")
+    assert !rule.match("aba")
+    assert !rule.match("abaX")
+  end
 end

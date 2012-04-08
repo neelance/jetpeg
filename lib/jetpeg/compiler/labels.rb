@@ -95,10 +95,14 @@ module JetPEG
         local_label.value_type
       end
       
+      def value
+        local_label.value
+      end
+      
       def build(builder, start_input, failed_block)
         builder.build_use_counter_increment local_label.value_type, local_label.value
         
-        Result.new start_input, local_label.value
+        Result.new start_input, value
       end
     end
     

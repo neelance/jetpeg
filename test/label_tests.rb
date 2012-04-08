@@ -146,6 +146,18 @@ class LabelsTests < Test::Unit::TestCase
     assert rule.match("abc") == { result1: [{ char: "b" }], result2: [{ char: "b" }] }
   end
   
+  def xtest_parameters
+    grammar = JetPEG::Compiler.compile_grammar "
+      rule test
+        test2['a'] %b:. test2[%b]
+      end
+      rule test2[%c]
+        
+      end
+    "
+    assert grammar[:test].match("((aa)(aa))")
+  end
+  
   def test_undefined_local_label_error
     assert_raise JetPEG::CompilationError do
       rule = JetPEG::Compiler.compile_rule "char:%missing"
