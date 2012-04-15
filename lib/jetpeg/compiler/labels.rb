@@ -71,13 +71,14 @@ module JetPEG
       end
     end
     
-    class RuleNameLabel < Label
+    class RuleCallLabel < Label
       def label_name
         @expression.referenced_name
       end
     end
     
     class LocalValue < ParsingExpression
+      attr_reader :name
       attr_writer :local_label
       
       def initialize(data)

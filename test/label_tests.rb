@@ -147,7 +147,7 @@ class LabelsTests < Test::Unit::TestCase
     assert rule.match("abc") == { result1: [{ char: "b" }], result2: [{ char: "b" }] }
   end
   
-  def xtest_parameters
+  def test_parameters
     grammar = JetPEG::Compiler.compile_grammar "
       rule test
         %a:. test2[%a]

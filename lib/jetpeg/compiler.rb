@@ -214,7 +214,7 @@ module JetPEG
     end
     
     def self.compile_grammar(code, filename = nil)
-      data = metagrammar_parser[:grammar].match code, output: :realized, class_scope: self
+      data = metagrammar_parser[:grammar].match code, output: :realized, class_scope: self, raise_on_failure: true
       parser = load_parser data
       parser.filename = filename if filename
       parser.verify!
@@ -226,7 +226,8 @@ module JetPEG
     def self.load_parser(data)
       rules = data[:rules].each_with_object({}) do |element, h|
         expression = element[:expression]
-        expression.name = element[:rule_name].referenced_name
+        expression.name = element[:rule_name].to_sym
+        expression.parameters = element[:parameters] ? ([element[:parameters][:head]] + element[:parameters][:tail]).map{ |p| Parameter.new p.name } : []
         h[expression.name] = expression
       end
       Parser.new rules

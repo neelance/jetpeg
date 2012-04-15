@@ -216,16 +216,18 @@ module JetPEG
       end
     end
     
-    class RuleName < Primary
+    class RuleCall < Primary
       attr_reader :referenced_name
       
       def initialize(data)
         super()
         @referenced_name = data[:name].to_sym
+        @arguments = data[:arguments] ? ([data[:arguments][:head]] + data[:arguments][:tail]) : []
+        self.children = @arguments
       end
       
       def referenced
-        @referenced ||= parser[@referenced_name] || raise(CompilationError.new("Undefined rule \"#{name}\".", rule))
+        @referenced ||= parser[@referenced_name] || raise(CompilationError.new("Undefined rule \"#{@referenced_name}\".", rule))
       end
       
       def create_return_type
@@ -240,6 +242,7 @@ module JetPEG
         args = []
         args << start_input
         args << @label_data_ptr if return_type
+        args.concat @arguments.map(&:value)
         rule_end_input = builder.call_rule referenced, *args, "rule_end_input"
         
         rule_successful = builder.icmp :ne, rule_end_input, LLVM_STRING.null_pointer, "rule_successful"
@@ -252,7 +255,7 @@ module JetPEG
       end
       
       def ==(other)
-        other.is_a?(RuleName) && other.referenced_name == @referenced_name
+        other.is_a?(RuleCall) && other.referenced_name == @referenced_name
       end
     end
     

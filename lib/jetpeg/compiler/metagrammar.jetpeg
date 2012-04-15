@@ -3,7 +3,7 @@ rule grammar
 end
 
 rule parsing_rule
-  'rule' ws :rule_name expression:rule_expression 'end' ws
+  'rule' ws :rule_name parameters:( '[' head:local_value tail:( ',' @:local_value )* ']' )? ws expression:rule_expression 'end' ws
 end
 
 rule rule_expression
@@ -51,7 +51,7 @@ end
 rule primary
   (
     terminal /
-    rule_name_label /
+    rule_call_label /
     parenthesized_expression /
     local_value /
     function
@@ -66,13 +66,17 @@ rule local_value
   '%' name:( alpha_char alphanumeric_char* ) <LocalValue>
 end
 
-rule rule_name_label
-  ":" expression:rule_name <RuleNameLabel> /
-  rule_name
+rule rule_call_label
+  ":" expression:rule_call <RuleCallLabel> /
+  rule_call
+end
+
+rule rule_call
+  name:rule_name arguments:( '[' head:local_value tail:( ',' @:local_value )* ']' )? <RuleCall>
 end
 
 rule rule_name
-  !keyword name:( alpha_char alphanumeric_char* ) <RuleName>
+  !keyword @:( alpha_char alphanumeric_char* )
 end
 
 rule terminal

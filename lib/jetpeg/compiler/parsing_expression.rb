@@ -1,11 +1,12 @@
 module JetPEG
   module Compiler
     class ParsingExpression
-      attr_accessor :parent, :name, :local_label_source
+      attr_accessor :parent, :name, :parameters, :local_label_source
       attr_reader :recursive_expressions
       
       def initialize
         @name = nil
+        @parameters = []
         @children = []
         @return_type = :pending
         @return_type_recursion = false
@@ -58,6 +59,9 @@ module JetPEG
       end
       
       def get_local_label(name)
+        @parameters.each do |parameter|
+          return parameter if parameter.name == name
+        end
         @local_label_source ||= parent
         @local_label_source.get_local_label name
       end
@@ -84,10 +88,13 @@ module JetPEG
         return @bare_rule_function if not traced and @bare_rule_function
         return @traced_rule_function if traced and @traced_rule_function
         
-        params = []
-        params << LLVM_STRING
-        params << LLVM::Pointer(return_type.llvm_type) unless return_type.nil?
-        function = @mod.functions.add @name, params, LLVM_STRING
+        llvm_params = []
+        llvm_params << LLVM_STRING
+        llvm_params << LLVM::Pointer(return_type.llvm_type) unless return_type.nil?
+        @parameters.each do |parameter|
+          llvm_params << parameter.value_type.llvm_type
+        end
+        function = @mod.functions.add @name, llvm_params, LLVM_STRING
         
         if traced
           @traced_rule_function = function
@@ -104,6 +111,9 @@ module JetPEG
         build_allocas builder
         
         failed_block = builder.create_block "failed"
+        @parameters.each_with_index do |parameter, index|
+          parameter.value = function.params[index + 2]
+        end
         end_result = build builder, function.params[0], failed_block
         
         builder.store end_result.return_value, function.params[1] if return_type
@@ -132,6 +142,19 @@ module JetPEG
       
       def hash
         0 # no hash used for Array.uniq, always eql?
+      end
+    end
+    
+    class Parameter
+      attr_reader :name
+      attr_accessor :value
+      
+      def initialize(name)
+        @name = name
+      end
+      
+      def value_type
+        InputRangeValueType::INSTANCE
       end
     end
     
