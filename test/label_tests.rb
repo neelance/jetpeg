@@ -92,12 +92,12 @@ class LabelsTests < Test::Unit::TestCase
     rule = JetPEG::Compiler.compile_rule "( 'a' / 'b' / 'c' )+"
     assert rule.match("abc") == {}
     
-    rule = JetPEG::Compiler.compile_rule "list:('a' char:.)*['ada' final:.]"
+    rule = JetPEG::Compiler.compile_rule "list:( 'a' char:. )*[ 'ada' final:. ]"
     assert rule.match("abacadae") == { list: [{ char: "b" }, { char: "c" }, { final: "e" }] }
     
     grammar = JetPEG::Compiler.compile_grammar "
       rule test
-        (char1:'a' inner:test / 'b')*
+        ( char1:'a' inner:test / 'b' )*
       end
     "
     assert grammar[:test].match("ab")

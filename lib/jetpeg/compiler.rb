@@ -237,6 +237,7 @@ module JetPEG
       when "r" then "\r"
       when "n" then "\n"
       when "t" then "\t"
+      when "0" then "\0"
       else char
       end
     end

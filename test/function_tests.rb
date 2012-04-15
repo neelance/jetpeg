@@ -9,7 +9,7 @@ class FunctionTests < Test::Unit::TestCase
     assert rule.match("abc") == { v: true }
     assert rule.match("def") == { v: false }
     
-    rule = JetPEG::Compiler.compile_rule "'a' ('b' v:$true)? 'c'"
+    rule = JetPEG::Compiler.compile_rule "'a' ( 'b' v:$true )? 'c'"
     assert rule.match("abc") == { v: true }
     assert rule.match("ac") == {}
   end
@@ -23,7 +23,7 @@ class FunctionTests < Test::Unit::TestCase
   end
   
   def test_match_function
-    rule = JetPEG::Compiler.compile_rule "%a:(..) $match[%a]"
+    rule = JetPEG::Compiler.compile_rule "%a:( . . ) $match[%a]"
     assert rule.match("abab")
     assert rule.match("cdcd")
     assert !rule.match("a")

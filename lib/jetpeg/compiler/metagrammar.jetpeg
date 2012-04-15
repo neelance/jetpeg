@@ -1,13 +1,13 @@
 rule grammar
-  ws rules:parsing_rule*
+  ws? rules:parsing_rule*
 end
 
 rule parsing_rule
-  'rule' ws :rule_name expression:rule_expression ws 'end' ws
+  'rule' ws :rule_name expression:rule_expression 'end' ws
 end
 
 rule rule_expression
-  ws @:choice
+  ws? @:choice
 end
 
 rule choice
@@ -30,7 +30,7 @@ rule sequence
 end
 
 rule labeled
-  ('%' is_local:$true)? name:( '@' / alpha_char alphanumeric_char* ) ':' expression:lookahead <Label> /
+  ( '%' is_local:$true )? name:( '@' / alpha_char alphanumeric_char* ) ':' expression:lookahead <Label> /
   lookahead
 end
 
@@ -42,26 +42,28 @@ end
 
 rule repetition
   expression:primary '?' ws <Optional> /
-  expression:primary '*' '[' until_expression:choice ']' ws <Until> /
+  expression:primary '*' '[' ws until_expression:choice ']' ws <Until> /
   expression:primary '*' ws <ZeroOrMore> /
   expression:primary '+' ws <OneOrMore> /
-  primary
+  primary ws
 end
 
 rule primary
-  terminal /
-  rule_name_label /
-  parenthesized_expression /
-  local_value /
-  function
+  (
+    terminal /
+    rule_name_label /
+    parenthesized_expression /
+    local_value /
+    function
+  )
 end
 
 rule parenthesized_expression
-  '(' ws expression:choice ')' ws <ParenthesizedExpression>
+  '(' ws expression:choice ')' <ParenthesizedExpression>
 end
 
 rule local_value
-  '%' name:( alpha_char alphanumeric_char* ) ws <LocalValue>
+  '%' name:( alpha_char alphanumeric_char* ) <LocalValue>
 end
 
 rule rule_name_label
@@ -70,7 +72,7 @@ rule rule_name_label
 end
 
 rule rule_name
-  !keyword name:( alpha_char alphanumeric_char* ) ws <RuleName>
+  !keyword name:( alpha_char alphanumeric_char* ) <RuleName>
 end
 
 rule terminal
@@ -78,14 +80,14 @@ rule terminal
 end
 
 rule function
-  '$true' ws <TrueFunction> /
-  '$false' ws <FalseFunction> /
-  '$match' '[' ws string:local_value ws ']' ws <MatchFunction> /
-  '$error' '[' ws message:quoted_string ws ']' ws <ErrorFunction>
+  '$true' <TrueFunction> /
+  '$false' <FalseFunction> /
+  '$match' '[' string:local_value ']' <MatchFunction> /
+  '$error' '[' message:quoted_string ']' <ErrorFunction>
 end
 
 rule value_list
-  head:value ws tail:(',' ws @:value ws)*
+  head:value ws tail:( ',' ws @:value ws )*
 end
 
 rule value
@@ -94,13 +96,13 @@ end
 
 rule quoted_string
   (
-    '"' string:( !'"' ( "\\\\" / '\"' / . ) )* '"' ws /
-    "'" string:( !"'" ( "\\\\" / "\\'" / . ) )* "'" ws
+    '"' string:( !'"' ( "\\\\" / '\"' / . ) )* '"' /
+    "'" string:( !"'" ( "\\\\" / "\\'" / . ) )* "'" 
   ) <StringTerminal>
 end
 
 rule character_class
-  '[' ('^' inverted:$true)? selections:( character_class_range / character_class_single_character )+ ']' ws <CharacterClassTerminal>
+  '[' ( '^' inverted:$true )? selections:( character_class_range / character_class_single_character )+ ']' <CharacterClassTerminal>
 end
 
 rule character_class_single_character
@@ -113,7 +115,7 @@ rule character_class_range
 end
 
 rule anything_symbol
-  '.' ws <AnyCharacterTerminal>
+  '.' <AnyCharacterTerminal>
 end
 
 rule keyword
@@ -129,7 +131,7 @@ rule alphanumeric_char
 end
 
 rule ws
-  single_ws*
+  single_ws+ / &'\0'
 end
 
 rule single_ws
