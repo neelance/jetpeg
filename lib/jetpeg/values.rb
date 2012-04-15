@@ -49,8 +49,6 @@ module JetPEG
   end
   
   class ScalarValueType < ValueType
-    attr_reader :scalar_values
-    
     def initialize(scalar_values)
       super LLVM::Int32.type, :int32
       @scalar_values = scalar_values
@@ -63,7 +61,7 @@ module JetPEG
   
   class StructValueType < ValueType
     attr_reader :layout_types
-
+    
     def initialize(child_types, name)
       @child_types = child_types
       
@@ -129,8 +127,6 @@ module JetPEG
   end
   
   class ChoiceValueType < StructValueType
-    attr_reader :name
-    
     SelectionFieldType = Struct.new(:llvm_type, :ffi_type).new(LLVM::Int32, :int32)
 
     def process_types
@@ -171,13 +167,11 @@ module JetPEG
     end
     
     def all_labels
-      @child_types.map(&:all_labels).reduce(&:|)
+      @child_types.compact.map(&:all_labels).reduce(&:|)
     end
   end
   
   class PointerValueType < ValueType
-    attr_reader :target
-    
     def initialize(target)
       @target = target
       @target_struct = LLVM::Struct(self.class.name)
@@ -209,7 +203,7 @@ module JetPEG
   end
   
   class ArrayValueType < ValueType
-    attr_reader :entry_type, :return_type
+    attr_reader :return_type
     
     def initialize(entry_type, name)
       @entry_type = entry_type
@@ -239,7 +233,7 @@ module JetPEG
   
   class WrappingValueType < ValueType
     attr_reader :inner_type
-        
+    
     def initialize(inner_type)
       super inner_type.llvm_type, inner_type.ffi_type
       @inner_type = inner_type
@@ -248,8 +242,6 @@ module JetPEG
   end
   
   class LabeledValueType < WrappingValueType
-    attr_reader :name
-    
     def initialize(inner_type, name)
       super inner_type
       @name = name
@@ -270,8 +262,6 @@ module JetPEG
   end
     
   class CreatorType < WrappingValueType
-    attr_reader :creator_data
-    
     def initialize(inner_type, creator_data = {})
       super inner_type
       @creator_data = creator_data
