@@ -42,7 +42,7 @@ end
 
 rule repetition
   expression:primary '?' ws <Optional> /
-  expression:primary '*' '[' ws until_expression:choice ']' ws <Until> /
+  expression:primary '*->' until_expression:choice <Until> /
   expression:primary '*' ws <ZeroOrMore> /
   expression:primary '+' ws <OneOrMore> /
   primary ws

@@ -92,7 +92,7 @@ class ExpressionsTests < Test::Unit::TestCase
   end
   
   def test_until
-    rule = JetPEG::Compiler.compile_rule "( 'a' . )*[ 'ac' ]"
+    rule = JetPEG::Compiler.compile_rule "( 'a' . )*->'ac'"
     assert rule.match("ac")
     assert rule.match("ababac")
     assert !rule.match("")
