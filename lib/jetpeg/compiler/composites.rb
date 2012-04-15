@@ -3,7 +3,7 @@ module JetPEG
     class Sequence < ParsingExpression
       def initialize(data)
         super()
-        self.children = data[:children] || [data[:head]] + data[:tail]
+        self.children = data[:children] || ([data[:head]] + data[:tail])
         
         previous_child = nil
         @children.each do |child|
@@ -57,17 +57,14 @@ module JetPEG
     class Choice < ParsingExpression
       def initialize(data)
         super()
-        self.children = data[:children] || [data[:head]] + data[:tail]
+        self.children = data[:children] || ([data[:head]] + data[:tail])
       end
       
       def create_return_type
         @slots = {}
         child_types = @children.map(&:return_type)
-        if child_types.compact.empty?
-          nil
-        else
-          ChoiceValueType.new child_types, "#{rule.name}_choice_return_value"
-        end
+        return nil if not child_types.any?
+        ChoiceValueType.new child_types, "#{rule.name}_choice_return_value"
       end
       
       def build(builder, start_input, failed_block)
@@ -91,35 +88,9 @@ module JetPEG
       end
     end
     
-    class Optional < ParsingExpression
+    class Optional < Choice
       def initialize(data)
-        super()
-        @expression = data[:expression]
-        self.children = [@expression]
-      end
-      
-      def create_return_type
-        @expression.return_type
-      end
-      
-      def build(builder, start_input, failed_block)
-        exit_block = builder.create_block "optional_exit"
-        input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
-        return_value_phi = DynamicPhi.new builder, return_type && return_type.llvm_type, "return_value"
-
-        optional_failed_block = builder.create_block "optional_failed"
-        child_result = @expression.build builder, start_input, optional_failed_block
-        input_phi << child_result.input
-        return_value_phi << child_result.return_value
-        builder.br exit_block
-        
-        builder.position_at_end optional_failed_block
-        input_phi << start_input
-        return_value_phi << nil
-        builder.br exit_block
-        
-        builder.position_at_end exit_block
-        Result.new input_phi.build, return_value_phi.build
+        super(children: [data[:expression], Sequence.new(children: [])])
       end
     end
     

@@ -2,6 +2,8 @@ module JetPEG
   module Compiler
     class Choice
       def self.new(data)
+        return super if self != Choice # skip subclasses
+        
         children = [data[:head]] + data[:tail]
         leftmost_primaries = children.map(&:get_leftmost_primary).uniq
         if leftmost_primaries.size == 1 and not leftmost_primaries.first.nil?

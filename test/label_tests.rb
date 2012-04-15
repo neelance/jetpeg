@@ -18,6 +18,7 @@ class LabelsTests < Test::Unit::TestCase
     
     rule = JetPEG::Compiler.compile_rule "( word:[abc]+ )?"
     assert rule.match("abc") == { word: "abc" }
+    assert rule.match("") == {}
     
     rule = JetPEG::Compiler.compile_rule "'a' outer:( inner:. ) 'c' / 'def'"
     assert rule.match("abc") == { outer: { inner: "b" } }
@@ -68,7 +69,7 @@ class LabelsTests < Test::Unit::TestCase
         '(' inner:( test ( other:'b' )? ) ')' / char:'a'
       end
     "
-    assert grammar[:test].match("((a)b)") == { inner: { inner: { char: "a", other: nil }, other: "b"} }
+    assert grammar[:test].match("((a)b)") == { inner: { inner: { char: "a" }, other: "b"} }
     
     grammar = JetPEG::Compiler.compile_grammar "
       rule test
@@ -149,13 +150,13 @@ class LabelsTests < Test::Unit::TestCase
   def xtest_parameters
     grammar = JetPEG::Compiler.compile_grammar "
       rule test
-        test2['a'] %b:. test2[%b]
+        %a:. test2[%a]
       end
-      rule test2[%c]
-        
+      rule test2[%v]
+        result:%v
       end
     "
-    assert grammar[:test].match("((aa)(aa))")
+    assert grammar[:test].match("a") == { result: "a" }
   end
   
   def test_undefined_local_label_error
