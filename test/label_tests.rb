@@ -129,8 +129,8 @@ class LabelsTests < Test::Unit::TestCase
   
   def test_value_creator
     rule = JetPEG::Compiler.compile_rule "
-      'a' char:. 'c' { char.upcase } /
-      word:'def' { word.chars.map { |c| c.ord } } /
+      'a' char:. 'c' { @char.upcase } /
+      word:'def' { @word.chars.map { |c| c.ord } } /
       'ghi' { [__FILE__, __LINE__] }
     ", "test.jetpeg"
     assert rule.match("abc") == "B"

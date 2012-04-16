@@ -8,11 +8,11 @@ module JetPEG
   class EvaluationScope
     def initialize(data)
       @data = data
-    end
-    
-    def method_missing(name, *args)
-      return @data[name] if @data.has_key? name
-      super 
+      if data.is_a? Hash
+        data.each do |key, value|
+          instance_variable_set "@#{key}", value
+        end
+      end
     end
   end
   
