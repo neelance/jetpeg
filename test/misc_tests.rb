@@ -70,6 +70,14 @@ class MiscTests < Test::Unit::TestCase
         end
       "
     end
+    
+    assert_raise JetPEG::CompilationError do
+      JetPEG::Compiler.compile_grammar "
+        rule test[%a, %b]
+          test[%a]
+        end
+      "
+    end
   end
   
   def test_metagrammar

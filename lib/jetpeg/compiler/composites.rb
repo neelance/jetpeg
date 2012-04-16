@@ -227,7 +227,12 @@ module JetPEG
       end
       
       def referenced
-        @referenced ||= parser[@referenced_name] || raise(CompilationError.new("Undefined rule \"#{@referenced_name}\".", rule))
+        @referenced ||= begin
+          referenced = parser[@referenced_name]
+          raise CompilationError.new("Undefined rule \"#{@referenced_name}\".", rule) if referenced.nil?
+          raise CompilationError.new("Wrong argument count for rule \"#{@referenced_name}\".", rule) if referenced.parameters.size != @arguments.size
+          referenced
+        end
       end
       
       def create_return_type
