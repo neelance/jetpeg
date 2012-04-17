@@ -122,17 +122,12 @@ module JetPEG
       
       @rules.values.each do |rule|
         rule.mod = @mod
-        rule.create_rule_functions
+        rule.create_rule_functions @root_rules.include?(rule.name)
         @free_value_functions[rule.return_type.llvm_type] if rule.return_type
       end
       
       @rules.values.each do |rule|
-        rule.build_rule_function false
-        rule.build_rule_function true
-        
-        #linkage = @root_rules.include?(rule.name) ? :external : :private
-        #rule.rule_function(false).linkage = linkage
-        #rule.rule_function(true).linkage = linkage
+        rule.build_rule_functions @root_rules.include?(rule.name)
       end
       
       until @free_value_functions_to_create.empty?
@@ -175,38 +170,30 @@ module JetPEG
         build options
       end
       
-      input_ptr = FFI::MemoryPointer.from_string input
-      value_pointer = root_rule.return_type && FFI::MemoryPointer.new(root_rule.return_type.ffi_type)
+      start_ptr = FFI::MemoryPointer.from_string input
+      end_ptr = start_ptr + input.size
+      value_ptr = root_rule.return_type && FFI::MemoryPointer.new(root_rule.return_type.ffi_type)
       
-      input_end_value = @execution_engine.run_function root_rule.fast_rule_function, input_ptr, *(value_pointer ? [value_pointer] : [])
-      input_end_ptr = input_end_value.to_value_ptr
-      input_end_value.dispose
+      @failure_reason = ParsingError.new([])
+      @failure_reason_position = start_ptr
       
-      if input_end_ptr.null? or input_ptr.address + input.size != input_end_ptr.address
-        root_rule.free_value value_pointer if value_pointer
+      success_value = @execution_engine.run_function root_rule.root_rule_function, start_ptr, end_ptr, value_ptr
+      if not success_value.to_b
+        success_value.dispose
         check_malloc_counter
-        
-        @failure_reason = ParsingError.new([])
-        @failure_reason_position = input_ptr
-        
-        input_end_value = @execution_engine.run_function root_rule.traced_rule_function, input_ptr, *(value_pointer ? [value_pointer] : [])
-        input_end_value.dispose
-        root_rule.free_value value_pointer if value_pointer
-        check_malloc_counter
-        
         @failure_reason.input = input
-        @failure_reason.position = @failure_reason_position.address - input_ptr.address
+        @failure_reason.position = @failure_reason_position.address - start_ptr.address
         raise @failure_reason if options[:raise_on_failure]
         return nil
       end
+      success_value.dispose
       
-      return [value_pointer, input_ptr.address] if options[:output] == :pointer
+      return [value_ptr, start_ptr.address] if options[:output] == :pointer
       
       intermediate = {} 
-      if value_pointer
-        rule_return_type = root_rule.return_type
-        intermediate = rule_return_type.load value_pointer, input, input_ptr.address, {}
-        root_rule.free_value value_pointer if value_pointer
+      if value_ptr
+        intermediate = root_rule.return_type.load value_ptr, input, start_ptr.address, {}
+        root_rule.free_value value_ptr if value_ptr
       end
       check_malloc_counter
       return intermediate if options[:output] == :intermediate

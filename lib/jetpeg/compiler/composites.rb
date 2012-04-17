@@ -240,15 +240,11 @@ module JetPEG
       end
       
       def build_allocas(builder)
-        @label_data_ptr = return_type && return_type.alloca(builder, "#{@referenced_name}_data_ptr")
+        @label_data_ptr = return_type ? return_type.alloca(builder, "#{@referenced_name}_data_ptr") : LLVM::Pointer(LLVM.Void).null
       end
       
       def build(builder, start_input, failed_block)
-        args = []
-        args << start_input
-        args << @label_data_ptr if return_type
-        args.concat @arguments.map(&:value)
-        rule_end_input = builder.call_rule referenced, *args, "rule_end_input"
+        rule_end_input = builder.call_rule referenced, start_input, @label_data_ptr, *@arguments.map(&:value), "rule_end_input"
         
         rule_successful = builder.icmp :ne, rule_end_input, LLVM_STRING.null_pointer, "rule_successful"
         successful_block = builder.create_block "rule_call_successful"
