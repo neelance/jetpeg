@@ -2,7 +2,7 @@ module JetPEG
   module Compiler
     class ParsingExpression
       attr_accessor :parent, :name, :parameters, :local_label_source
-      attr_reader :recursive_expressions
+      attr_reader :recursive_expressions, :fast_rule_function, :traced_rule_function
       
       def initialize
         @name = nil
@@ -10,7 +10,7 @@ module JetPEG
         @children = []
         @return_type = :pending
         @return_type_recursion = false
-        @bare_rule_function = nil
+        @fast_rule_function = nil
         @traced_rule_function = nil
         @recursive_expressions = []
         @local_label_source = nil
@@ -80,27 +80,24 @@ module JetPEG
       
       def mod=(mod)
         @mod = mod
-        @bare_rule_function = nil
+        @fast_rule_function = nil
         @traced_rule_function = nil
       end
       
-      def rule_function(traced)
-        return @bare_rule_function if not traced and @bare_rule_function
-        return @traced_rule_function if traced and @traced_rule_function
-        
+      def create_rule_functions
         llvm_params = []
         llvm_params << LLVM_STRING
         llvm_params << LLVM::Pointer(return_type.llvm_type) unless return_type.nil?
         @parameters.each do |parameter|
           llvm_params << parameter.value_type.llvm_type
         end
-        function = @mod.functions.add @name, llvm_params, LLVM_STRING
         
-        if traced
-          @traced_rule_function = function
-        else
-          @bare_rule_function = function
-        end
+        @fast_rule_function = @mod.functions.add "#{@name}_fast", llvm_params, LLVM_STRING
+        @traced_rule_function = @mod.functions.add "#{@name}_traced", llvm_params, LLVM_STRING
+      end
+      
+      def build_rule_function(traced)
+        function = traced ? @traced_rule_function : @fast_rule_function
         
         builder = Builder.new
         builder.parser = parser
@@ -123,8 +120,6 @@ module JetPEG
         builder.ret LLVM_STRING.null_pointer
         
         builder.dispose
-        
-        function
       end
       
       def match(input, options = {})

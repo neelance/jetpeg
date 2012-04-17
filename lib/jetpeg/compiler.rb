@@ -90,7 +90,7 @@ module JetPEG
       end
       
       def call_rule(rule, *args)
-        self.call rule.rule_function(@traced), *args
+        self.call(@traced ? rule.traced_rule_function : rule.fast_rule_function, *args)
       end
       
       def add_failure_reason(failed, position, reason)

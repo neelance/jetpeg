@@ -120,14 +120,19 @@ module JetPEG
       add_failure_reason_callback_type = LLVM::Pointer(LLVM::Function([LLVM::Int1, LLVM_STRING, LLVM::Int], LLVM::Void()))
       @llvm_add_failure_reason_callback = LLVM::C.const_int_to_ptr LLVM::Int64.from_i(@ffi_add_failure_reason_callback.address), add_failure_reason_callback_type
       
-      @rules.values.each { |rule| rule.mod = @mod }
+      @rules.values.each do |rule|
+        rule.mod = @mod
+        rule.create_rule_functions
+        @free_value_functions[rule.return_type.llvm_type] if rule.return_type
+      end
       
       @rules.values.each do |rule|
-        @free_value_functions[rule.return_type.llvm_type] if rule.return_type
+        rule.build_rule_function false
+        rule.build_rule_function true
         
-        linkage = @root_rules.include?(rule.name) ? :external : :private
-        rule.rule_function(false).linkage = linkage
-        rule.rule_function(true).linkage = linkage
+        #linkage = @root_rules.include?(rule.name) ? :external : :private
+        #rule.rule_function(false).linkage = linkage
+        #rule.rule_function(true).linkage = linkage
       end
       
       until @free_value_functions_to_create.empty?
@@ -173,7 +178,7 @@ module JetPEG
       input_ptr = FFI::MemoryPointer.from_string input
       value_pointer = root_rule.return_type && FFI::MemoryPointer.new(root_rule.return_type.ffi_type)
       
-      input_end_value = @execution_engine.run_function root_rule.rule_function(false), input_ptr, *(value_pointer ? [value_pointer] : [])
+      input_end_value = @execution_engine.run_function root_rule.fast_rule_function, input_ptr, *(value_pointer ? [value_pointer] : [])
       input_end_ptr = input_end_value.to_value_ptr
       input_end_value.dispose
       
@@ -184,7 +189,7 @@ module JetPEG
         @failure_reason = ParsingError.new([])
         @failure_reason_position = input_ptr
         
-        input_end_value = @execution_engine.run_function root_rule.rule_function(true), input_ptr, *(value_pointer ? [value_pointer] : [])
+        input_end_value = @execution_engine.run_function root_rule.traced_rule_function, input_ptr, *(value_pointer ? [value_pointer] : [])
         input_end_value.dispose
         root_rule.free_value value_pointer if value_pointer
         check_malloc_counter
