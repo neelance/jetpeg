@@ -244,7 +244,7 @@ module JetPEG
       end
       
       def build(builder, start_input, modes, failed_block)
-        rule_end_input = builder.call_rule referenced, start_input, modes, @label_data_ptr, *@arguments.map(&:value), "rule_end_input"
+        rule_end_input = referenced.call_internal_rule_function builder, start_input, modes, @label_data_ptr, *@arguments.map(&:value), "rule_end_input"
         
         rule_successful = builder.icmp :ne, rule_end_input, LLVM_STRING.null_pointer, "rule_successful"
         successful_block = builder.create_block "rule_call_successful"

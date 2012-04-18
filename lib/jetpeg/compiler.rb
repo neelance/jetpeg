@@ -61,7 +61,7 @@ module JetPEG
         end
       end
       
-      attr_writer :parser, :traced
+      attr_accessor :parser, :traced
       
       def create_block(name)
         LazyBlock.new self.insert_block.parent, name
@@ -87,10 +87,6 @@ module JetPEG
           self.store new_value, @parser.free_counter
         end
         super
-      end
-      
-      def call_rule(rule, *args)
-        self.call(@traced ? rule.traced_rule_function : rule.fast_rule_function, *args)
       end
       
       def add_failure_reason(failed, position, reason)

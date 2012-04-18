@@ -22,7 +22,6 @@ module JetPEG
           @expression.return_type
         rescue Recursion
           @recursive = true
-          rule.recursive_expressions << @expression
           PointerValueType.new @expression
         end
         

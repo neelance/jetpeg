@@ -2,7 +2,7 @@ module JetPEG
   module Compiler
     class ParsingExpression
       attr_accessor :parent, :name, :parameters, :local_label_source
-      attr_reader :recursive_expressions, :fast_rule_function, :traced_rule_function, :root_rule_function
+      attr_reader :rule_function
       
       def initialize
         @name = nil
@@ -12,7 +12,6 @@ module JetPEG
         @return_type_recursion = false
         @fast_rule_function = nil
         @traced_rule_function = nil
-        @recursive_expressions = []
         @local_label_source = nil
       end
       
@@ -54,10 +53,6 @@ module JetPEG
         nil
       end
       
-      def realize_recursive_return_types
-        @recursive_expressions.each(&:return_type)
-      end
-      
       def get_local_label(name)
         @parameters.each do |parameter|
           return parameter if parameter.name == name
@@ -97,23 +92,23 @@ module JetPEG
         @traced_rule_function = @mod.functions.add "#{@name}_traced", [LLVM_STRING, parser.mode_struct, return_llvm_type] + parameter_llvm_types, LLVM_STRING
         @traced_rule_function.linkage = :private
         if is_root_rule
-          @root_rule_function = @mod.functions.add @name, [LLVM_STRING, LLVM_STRING, return_llvm_type], LLVM::Int1
-          @root_rule_function.linkage = :external
+          @rule_function = @mod.functions.add @name, [LLVM_STRING, LLVM_STRING, return_llvm_type], LLVM::Int1
+          @rule_function.linkage = :external
         end
       end
       
       def build_rule_functions(is_root_rule)
-        build_rule_function false
-        build_rule_function true
+        build_internal_rule_function false
+        build_internal_rule_function true
         
         if is_root_rule
           builder = Builder.new
-          entry_block = @root_rule_function.basic_blocks.append "rule_entry"
-          successful_block = @root_rule_function.basic_blocks.append "rule_successful"
-          failed_block = @root_rule_function.basic_blocks.append "rule_failed"
+          entry_block = @rule_function.basic_blocks.append "rule_entry"
+          successful_block = @rule_function.basic_blocks.append "rule_successful"
+          failed_block = @rule_function.basic_blocks.append "rule_failed"
           
           builder.position_at_end entry_block
-          start_ptr, end_ptr, return_value_ptr = @root_rule_function.params.to_a
+          start_ptr, end_ptr, return_value_ptr = @rule_function.params.to_a
           result = builder.call @fast_rule_function, start_ptr, parser.mode_struct.null, return_value_ptr
           successful = builder.icmp :eq, result, end_ptr
           builder.cond successful, successful_block, failed_block
@@ -129,7 +124,7 @@ module JetPEG
         end
       end
       
-      def build_rule_function(traced)
+      def build_internal_rule_function(traced)
         function = traced ? @traced_rule_function : @fast_rule_function
         
         builder = Builder.new
@@ -153,6 +148,10 @@ module JetPEG
         builder.ret LLVM_STRING.null_pointer
         
         builder.dispose
+      end
+      
+      def call_internal_rule_function(builder, *args)
+        builder.call(builder.traced ? @traced_rule_function : @fast_rule_function, *args)
       end
       
       def match(input, options = {})

@@ -58,7 +58,6 @@ module JetPEG
     
     def verify!
       @rules.values.each(&:return_type)
-      @rules.values.each(&:realize_recursive_return_types)
     end
     
     def parser
@@ -179,7 +178,7 @@ module JetPEG
       @failure_reason = ParsingError.new([])
       @failure_reason_position = start_ptr
       
-      success_value = @execution_engine.run_function root_rule.root_rule_function, start_ptr, end_ptr, value_ptr
+      success_value = @execution_engine.run_function root_rule.rule_function, start_ptr, end_ptr, value_ptr
       if not success_value.to_b
         success_value.dispose
         check_malloc_counter
