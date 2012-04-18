@@ -9,7 +9,7 @@ module JetPEG
         parser.scalar_value_type
       end
       
-      def build(builder, start_input, failed_block)
+      def build(builder, start_input, modes, failed_block)
         Result.new start_input, parser.scalar_value_for(true)
       end
     end
@@ -23,7 +23,7 @@ module JetPEG
         parser.scalar_value_type
       end
       
-      def build(builder, start_input, failed_block)
+      def build(builder, start_input, modes, failed_block)
         Result.new start_input, parser.scalar_value_for(false)
       end
     end
@@ -35,7 +35,7 @@ module JetPEG
         self.children = [@string]
       end
 
-      def build(builder, start_input, failed_block)
+      def build(builder, start_input, modes, failed_block)
         expected_begin = builder.extract_value @string.value, 0
         expected_end = builder.extract_value @string.value, 1
         input = DynamicPhi.new builder, LLVM_STRING, "match_input", start_input
@@ -70,12 +70,51 @@ module JetPEG
         @message = data[:message].string
       end
       
-      def build(builder, start_input, failed_block)
+      def build(builder, start_input, modes, failed_block)
         builder.add_failure_reason LLVM::TRUE, start_input, ParsingError.new([], [@message])
         builder.br failed_block
 
         dummy_block = builder.create_block "error_dummy"
         builder.position_at_end dummy_block
+        Result.new start_input
+      end
+    end
+    
+    class ModeFunction < ParsingExpression
+      def initialize(data)
+        super()
+        @name = data[:name].string.to_sym
+        if data[:expression]
+          @expression = data[:expression]
+          self.children = [@expression]
+        end
+      end
+      
+      def all_mode_names
+        super + [@name]
+      end
+    end
+    
+    class EnterModeFunction < ModeFunction      
+      def build(builder, start_input, modes, failed_block)
+        new_modes = builder.insert_value modes, LLVM::TRUE, parser.mode_names.index(@name)
+        @expression.build builder, start_input, new_modes, failed_block
+      end
+    end
+    
+    class LeaveModeFunction < ModeFunction
+      def build(builder, start_input, modes, failed_block)
+        new_modes = builder.insert_value modes, LLVM::FALSE, parser.mode_names.index(@name)
+        @expression.build builder, start_input, new_modes, failed_block
+      end
+    end
+    
+    class InModeFunction < ModeFunction
+      def build(builder, start_input, modes, failed_block)
+        successful_block = builder.create_block "in_mode_successful"
+        in_mode = builder.extract_value modes, parser.mode_names.index(@name), "in_mode_#{@name}"
+        builder.cond in_mode, successful_block, failed_block
+        builder.position_at_end successful_block
         Result.new start_input
       end
     end

@@ -8,7 +8,7 @@ module JetPEG
         @string = data[:string].gsub(/\\./) { |str| Compiler.translate_escaped_character str[1] }
       end
       
-      def build(builder, start_input, failed_block)
+      def build(builder, start_input, modes, failed_block)
         end_input = @string.chars.inject(start_input) do |input, char|
           failed = builder.icmp :ne, builder.load(input), LLVM::Int8.from_i(char.ord), "failed"
           builder.add_failure_reason failed, start_input, ParsingError.new([@string])
@@ -35,7 +35,7 @@ module JetPEG
         @inverted = data[:inverted]
       end
 
-      def build(builder, start_input, failed_block)
+      def build(builder, start_input, modes, failed_block)
         input_char = builder.load start_input, "char"
         successful_block = builder.create_block "character_class_successful" unless @inverted
         

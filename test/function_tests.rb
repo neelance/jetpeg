@@ -31,4 +31,19 @@ class FunctionTests < Test::Unit::TestCase
     assert !rule.match("aba")
     assert !rule.match("abaX")
   end
+  
+  def test_modes
+    grammar = JetPEG::Compiler.compile_grammar "
+      rule test
+        test2 $enter_mode['somemode', test2 $enter_mode['othermode', $leave_mode['somemode', test2]]]
+      end
+      rule test2
+        !$in_mode['somemode'] 'a' / $in_mode['somemode'] 'b' 
+      end
+    "
+    assert grammar[:test].match("aba")
+    assert !grammar[:test].match("aaa")
+    assert !grammar[:test].match("bba")
+    assert !grammar[:test].match("abb")
+  end
 end

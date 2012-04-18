@@ -87,7 +87,10 @@ rule function
   '$true' <TrueFunction> /
   '$false' <FalseFunction> /
   '$match' '[' string:local_value ']' <MatchFunction> /
-  '$error' '[' message:quoted_string ']' <ErrorFunction>
+  '$error' '[' message:quoted_string ']' <ErrorFunction> /
+  '$enter_mode' '[' name:quoted_string ',' ws expression:choice ']' <EnterModeFunction> /
+  '$leave_mode' '[' name:quoted_string ',' ws expression:choice ']' <LeaveModeFunction> /
+  '$in_mode' '[' name:quoted_string ']' <InModeFunction>
 end
 
 rule value_list
@@ -135,7 +138,7 @@ rule alphanumeric_char
 end
 
 rule ws
-  single_ws+ / &'\0'
+  single_ws+ / &']' / &'\0'
 end
 
 rule single_ws

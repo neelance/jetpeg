@@ -41,7 +41,7 @@ module JetPEG
       @@default_options
     end
     
-    attr_reader :mod, :execution_engine, :free_value_functions, :malloc_counter, :free_counter,
+    attr_reader :mod, :execution_engine, :free_value_functions, :mode_names, :mode_struct, :malloc_counter, :free_counter,
                 :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_value_type
     attr_accessor :root_rules, :failure_reason, :filename
     
@@ -96,7 +96,9 @@ module JetPEG
         @free_value_functions_to_create << llvm_type
         hash[llvm_type] = @mod.functions.add("free_value", [LLVM::Pointer(llvm_type)], LLVM.Void())
       }
-
+      @mode_names = @rules.values.map(&:all_mode_names).flatten.uniq
+      @mode_struct = LLVM::Struct(*([LLVM::Int1] * @mode_names.size), "mode_struct")
+      
       if options[:track_malloc]
         @malloc_counter = @mod.globals.add LLVM::Int32, "malloc_counter"
         @malloc_counter.initializer = LLVM::Int(0)
@@ -160,7 +162,7 @@ module JetPEG
         pass_manager.run @mod
       end
     end
-        
+    
     def match_rule(root_rule, input, options = {})
       raise ArgumentError.new("Input must be a String.") if not input.is_a? String
       options.merge!(@@default_options) { |key, oldval, newval| oldval }

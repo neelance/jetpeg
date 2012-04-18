@@ -40,8 +40,8 @@ module JetPEG
         end
       end
       
-      def build(builder, start_input, failed_block)
-        expression_result = @expression.build builder, start_input, failed_block
+      def build(builder, start_input, modes, failed_block)
+        expression_result = @expression.build builder, start_input, modes, failed_block
         
         if @capture_input
           builder.build_free @expression.return_type, expression_result.return_value if @expression.return_type
@@ -100,7 +100,7 @@ module JetPEG
         local_label.value
       end
       
-      def build(builder, start_input, failed_block)
+      def build(builder, start_input, modes, failed_block)
         builder.build_use_counter_increment local_label.value_type, local_label.value
         
         Result.new start_input, value
