@@ -18,7 +18,7 @@ class LabelsTests < Test::Unit::TestCase
     
     rule = JetPEG::Compiler.compile_rule "( word:[abc]+ )?"
     assert rule.match("abc") == { word: "abc" }
-    assert rule.match("") == {}
+    assert rule.match("") == true
     
     rule = JetPEG::Compiler.compile_rule "'a' outer:( inner:. ) 'c' / 'def'"
     assert rule.match("abc") == { outer: { inner: "b" } }

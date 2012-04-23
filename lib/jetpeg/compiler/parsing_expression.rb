@@ -185,6 +185,16 @@ module JetPEG
       end
     end
     
+    class EmptyParsingExpression < ParsingExpression
+      def create_return_type
+        nil
+      end
+      
+      def build(builder, start_input, modes, failed_block)
+        Result.new start_input
+      end
+    end
+        
     class Primary < ParsingExpression
     end
   end

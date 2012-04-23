@@ -13,9 +13,11 @@ module JetPEG
       end
   
       def create_return_type
+        return @children.first.return_type if @children.size == 1
+
         child_types = @children.map(&:return_type)
         return nil if not child_types.any?
-
+        
         type = SequenceValueType.new child_types, "#{rule.name}_sequence"
         labels = type.all_labels
         raise CompilationError.new("Invalid mix of return values (#{labels.map(&:inspect).join(', ')}).", rule) if labels.include?(nil) and labels.size != 1
@@ -24,6 +26,8 @@ module JetPEG
       end
       
       def build(builder, start_input, modes, failed_block)
+        return @children.first.build builder, start_input, modes, failed_block if @children.size == 1
+        
         return_value = return_type && builder.create_struct(return_type.llvm_type)
         input = start_input
         
@@ -90,7 +94,7 @@ module JetPEG
     
     class Optional < Choice
       def initialize(data)
-        super(children: [data[:expression], Sequence.new(children: [])])
+        super(children: [data[:expression], EmptyParsingExpression.new])
       end
     end
     

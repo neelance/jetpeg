@@ -106,7 +106,7 @@ task :benchmark do
     end
     
     bm.report("loading data:") do
-      data = parser[:grammar].return_type.load data_pointer, code, input_address, {}
+      data = parser[:grammar].return_type.load data_pointer, code, input_address
       parser[:grammar].free_value data_pointer
     end
     
