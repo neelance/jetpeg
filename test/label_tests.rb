@@ -6,7 +6,7 @@ JetPEG::Parser.default_options[:track_malloc] = true
 class LabelsTests < Test::Unit::TestCase
   def test_label
     rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' / 'def'"
-    result = rule.match "abc"
+    result = rule.match "abc", show_reader_stack: true
     assert result == { char: "b" }
     assert result[:char] == "b"
     assert result[:char] === "b"
@@ -90,7 +90,7 @@ class LabelsTests < Test::Unit::TestCase
     assert rule.match("abc") == { list: [{ char: "a" }, { char: "b" }, nil] }
     
     rule = JetPEG::Compiler.compile_rule "( 'a' / 'b' / 'c' )+"
-    assert rule.match("abc") == {}
+    assert rule.match("abc") == true
     
     rule = JetPEG::Compiler.compile_rule "list:( 'a' char:. )*->( 'ada' final:. )"
     assert rule.match("abacadae") == { list: [{ char: "b" }, { char: "c" }, { final: "e" }] }

@@ -11,10 +11,9 @@ module JetPEG
       [nil]
     end
     
-    def load(pointer, input, input_address)
-      return nil if pointer.null?
+    def load(output, pointer, input_address)
       data = ffi_type == :pointer ? pointer.get_pointer(0) : ffi_type.new(pointer)
-      read data, input, input_address
+      read output, data, input_address
     end
     
     def alloca(builder, name)
@@ -34,20 +33,18 @@ module JetPEG
   class InputRangeValueType < ValueType
     INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING, self.name), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }
     
-    def read(data, input, input_address)
-      return nil if data[:begin].null?
-      { __type__: :input_range, input: input, position: (data[:begin].address - input_address)...(data[:end].address - input_address) }
+    def read(output, data, input_address)
+      output.new_input_range data[:begin].address - input_address, data[:end].address - input_address
     end
   end
   
   class ScalarValueType < ValueType
-    def initialize(scalar_values)
+    def initialize
       super LLVM::Int32.type, :int32
-      @scalar_values = scalar_values
     end
     
-    def read(data, input, input_address)
-      @scalar_values[data]
+    def read(output, data, input_address)
+      output.new_scalar data
     end
   end
   
@@ -81,12 +78,15 @@ module JetPEG
       struct
     end
     
-    def read_entry(data, index, input, input_address)
+    def read_entry(output, data, index, input_address)
       type = @child_types[index]
-      return nil if type.nil?
-      type_index = @type_indices[index]
-      child_data = type_index.is_a?(Array) ? data.values_at(*type_index) : data[type_index]
-      type.read child_data, input, input_address
+      if type
+        type_index = @type_indices[index]
+        child_data = type_index.is_a?(Array) ? data.values_at(*type_index) : data[type_index]
+        type.read output, child_data, input_address
+      else
+        output.new_nil
+      end
     end
   end
   
@@ -105,13 +105,13 @@ module JetPEG
       end
     end
     
-    def read(data, input, input_address)
+    def read(output, data, input_address)
       data = data.values if data.is_a? FFI::Struct
-      values = {}
+      output.new_hash
       @child_types.each_index do |child_index|
-        values.merge!(read_entry(data, child_index, input, input_address) || {})
+        read_entry output, data, child_index, input_address
+        output.merge_labels
       end
-      values
     end
     
     def all_labels
@@ -153,10 +153,10 @@ module JetPEG
       struct
     end
     
-    def read(data, input, input_address)
+    def read(output, data, input_address)
       data = data.values if data.is_a? FFI::Struct
       child_index = data.first
-      read_entry data, child_index, input, input_address
+      read_entry output, data, child_index, input_address
     end
     
     def all_labels
@@ -188,9 +188,12 @@ module JetPEG
       ptr
     end
     
-    def read(data, input, input_address)
-      return nil if data.null?
-      @target.return_type.load data, input, input_address # we can read directly, since the value is at the beginning of @target_struct
+    def read(output, data, input_address)
+      if data.null?
+        output.new_nil
+        return
+      end
+      @target.return_type.load output, data, input_address # we can read directly, since the value is at the beginning of @target_struct
     end
   end
   
@@ -212,14 +215,9 @@ module JetPEG
       @pointer_type.store_value builder, value
     end
     
-    def read(data, input, input_address)
-      array = []
-      data = @pointer_type.read data, input, input_address
-      until data.nil?
-        array.unshift data[:value]
-        data = data[:previous]
-      end
-      array
+    def read(output, data, input_address)
+      @pointer_type.read output, data, input_address
+      output.make_array
     end
   end
   
@@ -243,8 +241,9 @@ module JetPEG
       [@name]
     end
     
-    def read(data, input, input_address)
-      { @name => @inner_type.read(data, input, input_address) }
+    def read(output, data, input_address)
+      @inner_type.read output, data, input_address
+      output.set_label @name
     end
     
     def to_s
@@ -258,10 +257,9 @@ module JetPEG
       @creator_data = creator_data
     end
     
-    def read(data, input, input_address)
-      result = @creator_data.clone
-      result[:data] = @inner_type.read data, input, input_address
-      result
+    def read(output, data, input_address)
+      @inner_type.read output, data, input_address
+      output.make_object @creator_data
     end
   end
 end

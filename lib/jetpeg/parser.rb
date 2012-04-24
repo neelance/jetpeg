@@ -34,6 +34,67 @@ module JetPEG
     end
   end
   
+  class OutputInterface
+    attr_reader :stack
+    
+    def initialize(input, scalar_values)
+      @input = input
+      @scalar_values = scalar_values
+      @stack = []
+    end
+    
+    def new_input_range(from, to)
+      @stack << { __type__: :input_range, input: @input, position: from...to }
+    end
+    
+    def new_hash
+      @stack << {}
+    end
+    
+    def new_scalar(value)
+      @stack << @scalar_values[value]
+    end
+    
+    def new_array
+      @stack << []
+    end
+    
+    def new_nil
+      @stack << nil
+    end
+    
+    def add_entry(entry)
+      @stack.last << entry
+    end
+    
+    def set_label(name)
+      value = @stack.pop
+      @stack.push({ name => value })
+    end
+    
+    def merge_labels
+      inner = @stack.pop
+      outer = @stack.pop
+      outer.merge! inner if inner
+      @stack.push outer
+    end
+    
+    def make_array
+      data = @stack.pop
+      array = []
+      until data.nil?
+        array.unshift data[:value]
+        data = data[:previous]
+      end
+      @stack.push array
+    end
+    
+    def make_object(creator_data)
+      data = @stack.pop
+      @stack.push creator_data.merge({ data: data })
+    end
+  end
+  
   class Parser
     @@default_options = { raise_on_failure: true, output: :realized, class_scope: ::Object, bitcode_optimization: false, machine_code_optimization: 0, track_malloc: false }
     
@@ -42,7 +103,7 @@ module JetPEG
     end
     
     attr_reader :mod, :execution_engine, :free_value_functions, :mode_names, :mode_struct, :malloc_counter, :free_counter,
-                :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_value_type
+                :llvm_add_failure_reason_callback, :possible_failure_reasons
     attr_accessor :root_rules, :failure_reason, :filename
     
     def initialize(rules)
@@ -53,7 +114,6 @@ module JetPEG
       @root_rules = [@rules.values.first.name]
       @filename = "grammar"
       @scalar_values = [nil]
-      @scalar_value_type = ScalarValueType.new @scalar_values
     end
     
     def verify!
@@ -191,9 +251,11 @@ module JetPEG
       
       return [value_ptr, start_ptr.address] if options[:output] == :pointer
       
-      intermediate = {} 
+      intermediate = true 
       if value_ptr
-        intermediate = root_rule.return_type.load(value_ptr, input, start_ptr.address) || true
+        output = OutputInterface.new input, @scalar_values
+        root_rule.return_type.load output, value_ptr, start_ptr.address
+        intermediate = output.stack.first || true
         root_rule.free_value value_ptr if value_ptr
       end
       check_malloc_counter
