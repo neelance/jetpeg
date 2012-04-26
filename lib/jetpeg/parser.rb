@@ -103,7 +103,7 @@ module JetPEG
     end
     
     attr_reader :mod, :execution_engine, :free_value_functions, :mode_names, :mode_struct, :malloc_counter, :free_counter,
-                :llvm_add_failure_reason_callback, :possible_failure_reasons
+                :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_values
     attr_accessor :root_rules, :failure_reason, :filename
     
     def initialize(rules)

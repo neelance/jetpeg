@@ -82,8 +82,8 @@ task :benchmark do
   require "jetpeg"
 
   JetPEG::Parser.default_options[:track_malloc] = true
-  code = IO.read "lib/jetpeg/compiler/metagrammar.jetpeg"
-  parser = data_pointer = input_address = data = result = nil
+  input = IO.read "lib/jetpeg/compiler/metagrammar.jetpeg"
+  parser = data_pointer = input_address = intermediate = result = nil
   
   Benchmark.bm(17) do |bm|
     bm.report("loading grammar:") do
@@ -102,16 +102,18 @@ task :benchmark do
     end
     
     bm.report("parsing:") do
-      data_pointer, input_address = parser.match_rule parser[:grammar], code, :output => :pointer
+      data_pointer, input_address = parser.match_rule parser[:grammar], input, :output => :pointer
     end
     
     bm.report("loading data:") do
-      data = parser[:grammar].return_type.load data_pointer, code, input_address
+      output = JetPEG::OutputInterface.new input, parser.scalar_values
+      parser[:grammar].return_type.load output, data_pointer, input_address
+      intermediate = output.stack.first
       parser[:grammar].free_value data_pointer
     end
     
     bm.report("realizing data:") do
-      JetPEG.realize_data data, JetPEG::Compiler
+      JetPEG.realize_data intermediate, JetPEG::Compiler
     end
   end
   
