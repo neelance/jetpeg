@@ -28,6 +28,25 @@ module JetPEG
     def to_s
       self.class.to_s
     end
+    
+    def create_functions(mod)
+      @free_function = mod.functions.add("free_value", [llvm_type], LLVM.Void())
+    end
+    
+    def build_functions
+      builder = Compiler::Builder.new
+      
+      entry = @free_function.basic_blocks.append "entry"
+      builder.position_at_end entry
+      #builder.call
+      
+      builder.ret_void
+      builder.dispose
+    end
+    
+    def free_function
+      $parser.free_value_functions[llvm_type]
+    end
   end
   
   class InputRangeValueType < ValueType
@@ -40,7 +59,7 @@ module JetPEG
   
   class ScalarValueType < ValueType
     def initialize
-      super LLVM::Int32.type, :int32
+      super LLVM::Int64.type, :int64
     end
     
     def read(output, data, input_address)
@@ -120,7 +139,7 @@ module JetPEG
   end
   
   class ChoiceValueType < StructValueType
-    SelectionFieldType = Struct.new(:llvm_type, :ffi_type).new(LLVM::Int32, :int32)
+    SelectionFieldType = Struct.new(:llvm_type, :ffi_type).new(LLVM::Int64, :int64)
 
     def process_types
       @layout_types << SelectionFieldType
@@ -148,7 +167,7 @@ module JetPEG
     
     def create_choice_value(builder, index, entry_result)
       struct = llvm_type.null
-      struct = builder.insert_value struct, LLVM::Int(index), 0
+      struct = builder.insert_value struct, LLVM::Int64.from_i(index), 0
       struct = insert_value builder, struct, entry_result.return_value, index if entry_result.return_value
       struct
     end
@@ -174,7 +193,7 @@ module JetPEG
     
     def realize_target_struct
       return if @target_struct_realized
-      @target_struct.element_types = [@target.return_type.llvm_type, LLVM::Int] # [value, additional_use_counter]
+      @target_struct.element_types = [@target.return_type.llvm_type, LLVM::Int64] # [value, additional_use_counter]
       @target_struct_realized = true
     end
     

@@ -243,19 +243,16 @@ module JetPEG
         referenced.return_type
       end
       
-      def build_allocas(builder)
-        @label_data_ptr = return_type ? return_type.alloca(builder, "#{@referenced_name}_data_ptr") : LLVM::Pointer(LLVM::Int8).null
-      end
-      
       def build(builder, start_input, modes, failed_block)
-        rule_end_input = referenced.call_internal_rule_function builder, start_input, modes, @label_data_ptr, *@arguments.map(&:value), "rule_end_input"
+        rule_result = referenced.call_internal_rule_function builder, start_input, modes, *@arguments.map(&:value), "rule_end_input"
         
+        rule_end_input = builder.extract_value rule_result, 0
         rule_successful = builder.icmp :ne, rule_end_input, LLVM_STRING.null_pointer, "rule_successful"
         successful_block = builder.create_block "rule_call_successful"
         builder.cond rule_successful, successful_block, failed_block
         
         builder.position_at_end successful_block
-        return_value = return_type && builder.load(@label_data_ptr, "#{@referenced_name}_data")
+        return_value = return_type && builder.extract_value(rule_result, 1)
         Result.new rule_end_input, return_value
       end
       

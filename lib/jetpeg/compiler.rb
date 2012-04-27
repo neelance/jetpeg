@@ -74,7 +74,7 @@ module JetPEG
       def malloc(type, name = "")
         if @parser.malloc_counter
           old_value = self.load @parser.malloc_counter
-          new_value = self.add old_value, LLVM::Int(1)
+          new_value = self.add old_value, LLVM::Int64.from_i(1)
           self.store new_value, @parser.malloc_counter
         end
         super
@@ -83,7 +83,7 @@ module JetPEG
       def free(pointer)
         if @parser.free_counter
           old_value = self.load @parser.free_counter
-          new_value = self.add old_value, LLVM::Int(1)
+          new_value = self.add old_value, LLVM::Int64.from_i(1)
           self.store new_value, @parser.free_counter
         end
         super
@@ -120,7 +120,7 @@ module JetPEG
           self.position_at_end check_counter_block
           additional_use_counter = self.struct_gep value, 1, "additional_use_counter"
           old_counter_value = self.load additional_use_counter
-          no_additional_use = self.icmp :eq, old_counter_value, LLVM::Int(0), "no_additional_use"
+          no_additional_use = self.icmp :eq, old_counter_value, LLVM::Int64.from_i(0), "no_additional_use"
           self.cond no_additional_use, follow_pointer_block, decrement_counter_block
           
           self.position_at_end follow_pointer_block
@@ -129,7 +129,7 @@ module JetPEG
           self.br continue_block
           
           self.position_at_end decrement_counter_block
-          new_counter_value = self.sub old_counter_value, LLVM::Int(1)
+          new_counter_value = self.sub old_counter_value, LLVM::Int64.from_i(1)
           self.store new_counter_value, additional_use_counter
           self.br continue_block
 
@@ -159,7 +159,7 @@ module JetPEG
           self.position_at_end increment_counter_block
           additional_use_counter = self.struct_gep value, 1, "additional_use_counter"
           old_counter_value = self.load additional_use_counter
-          new_counter_value = self.add old_counter_value, LLVM::Int(1)
+          new_counter_value = self.add old_counter_value, LLVM::Int64.from_i(1)
           self.store new_counter_value, additional_use_counter
           self.br continue_block
 

@@ -73,31 +73,27 @@ module JetPEG
         @children.map(&:all_mode_names).flatten
       end
       
-      def build_allocas(builder)
-        @children.each { |child| child.build_allocas builder }
+      def rule_result_structure
+        @rule_result_structure ||= LLVM::Struct(LLVM_STRING, return_type ? return_type.llvm_type : LLVM::Int8)
       end
       
-      def mod=(mod)
-        @mod = mod
-        @fast_rule_function = nil
-        @traced_rule_function = nil
-      end
-      
-      def create_rule_functions(is_root_rule)
+      def create_functions(mod, is_root_rule)
         return_llvm_type = LLVM::Pointer(return_type ? return_type.llvm_type : LLVM::Int8)
         parameter_llvm_types = @parameters.map(&:value_type).map(&:llvm_type)
         
-        @fast_rule_function = @mod.functions.add "#{@name}_fast", [LLVM_STRING, parser.mode_struct, return_llvm_type] + parameter_llvm_types, LLVM_STRING
+        @fast_rule_function = mod.functions.add "#{@name}_fast", [LLVM_STRING, parser.mode_struct] + parameter_llvm_types, rule_result_structure
         @fast_rule_function.linkage = :private
-        @traced_rule_function = @mod.functions.add "#{@name}_traced", [LLVM_STRING, parser.mode_struct, return_llvm_type] + parameter_llvm_types, LLVM_STRING
+        @traced_rule_function = mod.functions.add "#{@name}_traced", [LLVM_STRING, parser.mode_struct] + parameter_llvm_types, rule_result_structure
         @traced_rule_function.linkage = :private
         if is_root_rule
-          @rule_function = @mod.functions.add @name, [LLVM_STRING, LLVM_STRING, return_llvm_type], LLVM::Int1
+          @rule_function = mod.functions.add @name, [LLVM_STRING, LLVM_STRING, return_llvm_type], LLVM::Int1
           @rule_function.linkage = :external
         end
+        
+        return_type.create_functions mod if return_type
       end
       
-      def build_rule_functions(is_root_rule)
+      def build_functions(is_root_rule)
         build_internal_rule_function false
         build_internal_rule_function true
         
@@ -109,19 +105,24 @@ module JetPEG
           
           builder.position_at_end entry_block
           start_ptr, end_ptr, return_value_ptr = @rule_function.params.to_a
-          result = builder.call @fast_rule_function, start_ptr, parser.mode_struct.null, return_value_ptr
-          successful = builder.icmp :eq, result, end_ptr
+          rule_result = builder.call @fast_rule_function, start_ptr, parser.mode_struct.null
+          rule_end_input = builder.extract_value rule_result, 0
+          successful = builder.icmp :eq, rule_end_input, end_ptr
           builder.cond successful, successful_block, failed_block
           
           builder.position_at_end successful_block
+          builder.store builder.extract_value(rule_result, 1), return_value_ptr if return_type
           builder.ret LLVM::TRUE
           
           builder.position_at_end failed_block
-          builder.call parser.free_value_functions[return_type.llvm_type], return_value_ptr if return_type
-          builder.call @traced_rule_function, start_ptr, parser.mode_struct.null, return_value_ptr
-          builder.call parser.free_value_functions[return_type.llvm_type], return_value_ptr if return_type
+          $parser = parser
+          builder.call return_type.free_function, return_value_ptr if return_type
+          builder.call @traced_rule_function, start_ptr, parser.mode_struct.null
+          builder.call return_type.free_function, return_value_ptr if return_type
           builder.ret LLVM::FALSE
         end
+        
+        return_type.build_functions if return_type
       end
       
       def build_internal_rule_function(traced)
@@ -133,19 +134,20 @@ module JetPEG
         
         entry = function.basic_blocks.append "entry"
         builder.position_at_end entry
-        build_allocas builder
         
         failed_block = builder.create_block "failed"
         @parameters.each_with_index do |parameter, index|
-          parameter.value = function.params[index + 3]
+          parameter.value = function.params[index + 2]
         end
         end_result = build builder, function.params[0], function.params[1], failed_block
         
-        builder.store end_result.return_value, function.params[2] if return_type
-        builder.ret end_result.input
+        result = rule_result_structure.null
+        result = builder.insert_value result, end_result.input, 0
+        result = builder.insert_value result, end_result.return_value, 1 if return_type
+        builder.ret result
         
         builder.position_at_end failed_block
-        builder.ret LLVM_STRING.null_pointer
+        builder.ret rule_result_structure.null
         
         builder.dispose
       end

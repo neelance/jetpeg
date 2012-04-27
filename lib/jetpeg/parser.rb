@@ -138,7 +138,7 @@ module JetPEG
         index = @scalar_values.size
         @scalar_values << scalar
       end
-      LLVM::Int index
+      LLVM::Int64.from_i index
     end
     
     def build(options = {})
@@ -159,10 +159,10 @@ module JetPEG
       @mode_struct = LLVM::Struct(*([LLVM::Int1] * @mode_names.size), "mode_struct")
       
       if options[:track_malloc]
-        @malloc_counter = @mod.globals.add LLVM::Int32, "malloc_counter"
-        @malloc_counter.initializer = LLVM::Int(0)
-        @free_counter = @mod.globals.add LLVM::Int32, "free_counter"
-        @free_counter.initializer = LLVM::Int(0)
+        @malloc_counter = @mod.globals.add LLVM::Int64, "malloc_counter"
+        @malloc_counter.initializer = LLVM::Int64.from_i(0)
+        @free_counter = @mod.globals.add LLVM::Int64, "free_counter"
+        @free_counter.initializer = LLVM::Int64.from_i(0)
       else
         @malloc_counter = nil
         @free_counter = nil
@@ -182,13 +182,11 @@ module JetPEG
       @llvm_add_failure_reason_callback = LLVM::C.const_int_to_ptr LLVM::Int64.from_i(@ffi_add_failure_reason_callback.address), add_failure_reason_callback_type
       
       @rules.values.each do |rule|
-        rule.mod = @mod
-        rule.create_rule_functions @root_rules.include?(rule.name)
-        @free_value_functions[rule.return_type.llvm_type] if rule.return_type
+        rule.create_functions @mod, @root_rules.include?(rule.name)
       end
       
       @rules.values.each do |rule|
-        rule.build_rule_functions @root_rules.include?(rule.name)
+        rule.build_functions @root_rules.include?(rule.name)
       end
       
       until @free_value_functions_to_create.empty?
@@ -276,8 +274,8 @@ module JetPEG
       instruction_counts = @mod.functions.map { |f| f.basic_blocks.map { |b| b.instructions.to_a.size } }
       info = "#{@mod.functions.to_a.size} functions / #{block_counts.reduce(:+)} blocks / #{instruction_counts.flatten.reduce(:+)} instructions"
       if @malloc_counter
-        malloc_count = @execution_engine.pointer_to_global(@malloc_counter).read_int32
-        free_count = @execution_engine.pointer_to_global(@free_counter).read_int32
+        malloc_count = @execution_engine.pointer_to_global(@malloc_counter).read_int64
+        free_count = @execution_engine.pointer_to_global(@free_counter).read_int64
         info << "\n#{malloc_count} calls of malloc / #{free_count} calls of free"
       end
       info
@@ -285,8 +283,8 @@ module JetPEG
     
     def check_malloc_counter
       return if @malloc_counter.nil?
-      malloc_count = @execution_engine.pointer_to_global(@malloc_counter).read_int32
-      free_count = @execution_engine.pointer_to_global(@free_counter).read_int32
+      malloc_count = @execution_engine.pointer_to_global(@malloc_counter).read_int64
+      free_count = @execution_engine.pointer_to_global(@free_counter).read_int64
       raise "Internal error: Memory leak (#{malloc_count - free_count})." if malloc_count != free_count
     end
   end
