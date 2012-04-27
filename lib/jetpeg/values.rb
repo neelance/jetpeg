@@ -167,7 +167,7 @@ module JetPEG
   class PointerValueType < ValueType
     def initialize(target)
       @target = target
-      @target_struct = LLVM::Struct(self.class.name)
+      @target_struct = LLVM::Type.struct(nil, false, self.class.name)
       @target_struct_realized = false
       super LLVM::Pointer(@target_struct), :pointer
     end

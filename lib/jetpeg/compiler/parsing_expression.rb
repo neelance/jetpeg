@@ -84,7 +84,7 @@ module JetPEG
       end
       
       def create_rule_functions(is_root_rule)
-        return_llvm_type = LLVM::Pointer(return_type ? return_type.llvm_type : LLVM.Void)
+        return_llvm_type = LLVM::Pointer(return_type ? return_type.llvm_type : LLVM::Int8)
         parameter_llvm_types = @parameters.map(&:value_type).map(&:llvm_type)
         
         @fast_rule_function = @mod.functions.add "#{@name}_fast", [LLVM_STRING, parser.mode_struct, return_llvm_type] + parameter_llvm_types, LLVM_STRING

@@ -244,7 +244,7 @@ module JetPEG
       end
       
       def build_allocas(builder)
-        @label_data_ptr = return_type ? return_type.alloca(builder, "#{@referenced_name}_data_ptr") : LLVM::Pointer(LLVM.Void).null
+        @label_data_ptr = return_type ? return_type.alloca(builder, "#{@referenced_name}_data_ptr") : LLVM::Pointer(LLVM::Int8).null
       end
       
       def build(builder, start_input, modes, failed_block)
