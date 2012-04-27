@@ -1,6 +1,6 @@
 module JetPEG
   class ValueType
-    attr_reader :llvm_type, :ffi_type, :child_types
+    attr_reader :llvm_type, :ffi_type, :child_types, :free_function
     
     def initialize(llvm_type, ffi_type)
       @llvm_type = llvm_type
@@ -14,10 +14,6 @@ module JetPEG
     def load(output, pointer, input_address)
       data = ffi_type == :pointer ? pointer.get_pointer(0) : ffi_type.new(pointer)
       read output, data, input_address
-    end
-    
-    def alloca(builder, name)
-      builder.alloca llvm_type, name
     end
     
     def print_tree(indentation = 0)
@@ -35,17 +31,13 @@ module JetPEG
     
     def build_functions
       builder = Compiler::Builder.new
+      builder.parser = $parser
       
       entry = @free_function.basic_blocks.append "entry"
       builder.position_at_end entry
-      #builder.call
-      
+      builder.build_free self, @free_function.params[0]
       builder.ret_void
       builder.dispose
-    end
-    
-    def free_function
-      $parser.free_value_functions[llvm_type]
     end
   end
   
@@ -187,18 +179,14 @@ module JetPEG
     def initialize(target)
       @target = target
       @target_struct = LLVM::Type.struct(nil, false, self.class.name)
-      @target_struct_realized = false
       super LLVM::Pointer(@target_struct), :pointer
     end
     
-    def realize_target_struct
-      return if @target_struct_realized
+    def realize
       @target_struct.element_types = [@target.return_type.llvm_type, LLVM::Int64] # [value, additional_use_counter]
-      @target_struct_realized = true
     end
     
     def store_value(builder, value, begin_pos = nil, end_pos = nil)
-      realize_target_struct
       target_data = @target_struct.null
       target_data = builder.insert_value target_data, value, 0, "pointer_target_data"
       
@@ -224,6 +212,7 @@ module JetPEG
       @child_types = [entry_type]
       @pointer_type = PointerValueType.new self
       @return_type = SequenceValueType.new([LabeledValueType.new(entry_type, :value), LabeledValueType.new(@pointer_type, :previous)], name)
+      @pointer_type.realize
       super @pointer_type.llvm_type, @pointer_type.ffi_type
     end
     

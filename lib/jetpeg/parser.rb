@@ -102,22 +102,21 @@ module JetPEG
       @@default_options
     end
     
-    attr_reader :mod, :execution_engine, :free_value_functions, :mode_names, :mode_struct, :malloc_counter, :free_counter,
+    attr_reader :filename, :mod, :execution_engine, :free_value_functions, :mode_names, :mode_struct, :malloc_counter, :free_counter,
                 :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_values
-    attr_accessor :root_rules, :failure_reason, :filename
+    attr_accessor :root_rules, :failure_reason
     
-    def initialize(rules)
+    def initialize(rules, filename = "grammar")
       @rules = rules
       @rules.values.each { |rule| rule.parent = self }
       @mod = nil
       @execution_engine = nil
-      @root_rules = [@rules.values.first.name]
-      @filename = "grammar"
+      @root_rules = [@rules.values.first.rule_name]
+      @filename = filename
       @scalar_values = [nil]
-    end
-    
-    def verify!
-      @rules.values.each(&:return_type)
+      
+      @rules.values.each(&:return_type) # calculate all return types
+      @rules.values.each(&:realize_return_type) # realize recursive structures
     end
     
     def parser
@@ -181,13 +180,11 @@ module JetPEG
       add_failure_reason_callback_type = LLVM::Pointer(LLVM::Function([LLVM::Int1, LLVM_STRING, LLVM::Int], LLVM::Void()))
       @llvm_add_failure_reason_callback = LLVM::C.const_int_to_ptr LLVM::Int64.from_i(@ffi_add_failure_reason_callback.address), add_failure_reason_callback_type
       
-      @rules.values.each do |rule|
-        rule.create_functions @mod, @root_rules.include?(rule.name)
-      end
+      @rules.values.each { |rule| rule.create_functions @mod }
+      #each_expression { |expression|  }
       
-      @rules.values.each do |rule|
-        rule.build_functions @root_rules.include?(rule.name)
-      end
+      $parser = parser
+      @rules.values.each { |rule| rule.build_functions }
       
       until @free_value_functions_to_create.empty?
         llvm_type = @free_value_functions_to_create.pop
@@ -220,12 +217,19 @@ module JetPEG
       end
     end
     
+    def each_expression(expressions = @rules.values, &block)
+      expressions.each do |expression|
+        block.call expression
+        each_expression expression.children, &block
+      end
+    end
+    
     def match_rule(root_rule, input, options = {})
       raise ArgumentError.new("Input must be a String.") if not input.is_a? String
       options.merge!(@@default_options) { |key, oldval, newval| oldval }
       
-      if @mod.nil? or not @root_rules.include?(root_rule.name)
-        @root_rules << root_rule.name
+      if @mod.nil? or not @root_rules.include?(root_rule.rule_name)
+        @root_rules << root_rule.rule_name
         build options
       end
       

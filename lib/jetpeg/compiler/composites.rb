@@ -18,7 +18,7 @@ module JetPEG
         child_types = @children.map(&:return_type)
         return nil if not child_types.any?
         
-        type = SequenceValueType.new child_types, "#{rule.name}_sequence"
+        type = SequenceValueType.new child_types, "#{rule.rule_name}_sequence"
         labels = type.all_labels
         raise CompilationError.new("Invalid mix of return values (#{labels.map(&:inspect).join(', ')}).", rule) if labels.include?(nil) and labels.size != 1
         labels.uniq.each { |name| raise CompilationError.new("Duplicate label \"#{name}\".", rule) if labels.count(name) > 1 }
@@ -41,7 +41,7 @@ module JetPEG
           if child.return_type or child.has_local_value?
             current_fail_cleanup_block = builder.create_block "sequence_fail_cleanup"
             builder.position_at_end current_fail_cleanup_block
-            builder.build_free child.return_type, current_result.return_value if child.return_type
+            builder.call child.return_type.free_function, current_result.return_value if child.return_type
             child.free_local_value builder
             builder.br previous_fail_cleanup_block
             previous_fail_cleanup_block = current_fail_cleanup_block
@@ -68,7 +68,7 @@ module JetPEG
         @slots = {}
         child_types = @children.map(&:return_type)
         return nil if not child_types.any?
-        ChoiceValueType.new child_types, "#{rule.name}_choice_return_value"
+        ChoiceValueType.new child_types, "#{rule.rule_name}_choice_return_value"
       end
       
       def build(builder, start_input, modes, failed_block)
@@ -106,7 +106,7 @@ module JetPEG
       end
       
       def create_return_type
-        @expression.return_type && ArrayValueType.new(@expression.return_type, "#{rule.name}_loop")
+        @expression.return_type && ArrayValueType.new(@expression.return_type, "#{rule.rule_name}_loop")
       end
       
       def build(builder, start_input, modes, failed_block, start_return_value = nil)
@@ -151,8 +151,8 @@ module JetPEG
         loop_type = @expression.return_type
         until_type = @until_expression.return_type
         return nil if loop_type.nil? and until_type.nil?
-        @choice_type = ChoiceValueType.new([loop_type, until_type], "#{rule.name}_until_choice")
-        ArrayValueType.new(@choice_type, "#{rule.name}_until_array")
+        @choice_type = ChoiceValueType.new([loop_type, until_type], "#{rule.rule_name}_until_choice")
+        ArrayValueType.new(@choice_type, "#{rule.rule_name}_until_array")
       end
       
       def build(builder, start_input, modes, failed_block)
@@ -179,7 +179,7 @@ module JetPEG
         builder.br loop1_block
         
         builder.position_at_end until_failed_block
-        builder.build_free return_type, return_value if return_type
+        builder.call return_type.free_function, return_value if return_type
         builder.br failed_block
         
         builder.position_at_end exit_block
@@ -196,7 +196,7 @@ module JetPEG
   
       def build(builder, start_input, modes, failed_block)
         result = @expression.build builder, start_input, modes, failed_block
-        builder.build_free @expression.return_type, result.return_value if @expression.return_type
+        builder.call @expression.return_type.free_function, result.return_value if @expression.return_type
         Result.new start_input
       end
     end
@@ -212,7 +212,7 @@ module JetPEG
         lookahead_failed_block = builder.create_block "lookahead_failed"
   
         result = @expression.build builder, start_input, modes, lookahead_failed_block
-        builder.build_free @expression.return_type, result.return_value if @expression.return_type
+        builder.call @expression.return_type.free_function, result.return_value if @expression.return_type
         builder.br failed_block
         
         builder.position_at_end lookahead_failed_block

@@ -1,11 +1,11 @@
 module JetPEG
   module Compiler
     class ParsingExpression
-      attr_accessor :parent, :name, :parameters, :local_label_source
+      attr_accessor :parent, :rule_name, :parameters, :local_label_source
       attr_reader :rule_function
       
       def initialize
-        @name = nil
+        @rule_name = nil
         @parameters = []
         @children = []
         @return_type = :pending
@@ -29,7 +29,7 @@ module JetPEG
       end
       
       def rule
-        @name ? self : parent.rule
+        @rule_name ? self : parent.rule
       end
       
       def return_type
@@ -51,6 +51,10 @@ module JetPEG
       
       def create_return_type
         nil
+      end
+      
+      def realize_return_type
+        @children.map(&:realize_return_type)
       end
       
       def get_local_label(name)
@@ -77,52 +81,71 @@ module JetPEG
         @rule_result_structure ||= LLVM::Struct(LLVM_STRING, return_type ? return_type.llvm_type : LLVM::Int8)
       end
       
-      def create_functions(mod, is_root_rule)
-        return_llvm_type = LLVM::Pointer(return_type ? return_type.llvm_type : LLVM::Int8)
-        parameter_llvm_types = @parameters.map(&:value_type).map(&:llvm_type)
-        
-        @fast_rule_function = mod.functions.add "#{@name}_fast", [LLVM_STRING, parser.mode_struct] + parameter_llvm_types, rule_result_structure
-        @fast_rule_function.linkage = :private
-        @traced_rule_function = mod.functions.add "#{@name}_traced", [LLVM_STRING, parser.mode_struct] + parameter_llvm_types, rule_result_structure
-        @traced_rule_function.linkage = :private
-        if is_root_rule
-          @rule_function = mod.functions.add @name, [LLVM_STRING, LLVM_STRING, return_llvm_type], LLVM::Int1
-          @rule_function.linkage = :external
+      def create_functions(mod)
+        if @rule_name
+          parameter_llvm_types = @parameters.map(&:value_type).map(&:llvm_type)
+          
+          @fast_rule_function = mod.functions.add "#{@rule_name}_fast", [LLVM_STRING, parser.mode_struct] + parameter_llvm_types, rule_result_structure
+          @fast_rule_function.linkage = :private
+          @traced_rule_function = mod.functions.add "#{@rule_name}_traced", [LLVM_STRING, parser.mode_struct] + parameter_llvm_types, rule_result_structure
+          @traced_rule_function.linkage = :private
+          if parser.root_rules.include? @rule_name
+            @rule_function = mod.functions.add @rule_name, [LLVM_STRING, LLVM_STRING, LLVM::Pointer(return_type ? return_type.llvm_type : LLVM::Int8)], LLVM::Int1
+            @rule_function.linkage = :external
+          end
         end
         
-        return_type.create_functions mod if return_type
+        if return_type
+          return_type.create_functions mod
+          @free_value_function = mod.functions.add "free_value", [LLVM::Pointer(return_type.llvm_type)], LLVM.Void()
+        end
+        
+        @children.each { |child| child.create_functions mod }
       end
       
-      def build_functions(is_root_rule)
-        build_internal_rule_function false
-        build_internal_rule_function true
-        
-        if is_root_rule
-          builder = Builder.new
-          entry_block = @rule_function.basic_blocks.append "rule_entry"
-          successful_block = @rule_function.basic_blocks.append "rule_successful"
-          failed_block = @rule_function.basic_blocks.append "rule_failed"
+      def build_functions
+        builder = Builder.new
+        builder.parser = parser
+
+        if @rule_name
+          build_internal_rule_function false
+          build_internal_rule_function true
           
-          builder.position_at_end entry_block
-          start_ptr, end_ptr, return_value_ptr = @rule_function.params.to_a
-          rule_result = builder.call @fast_rule_function, start_ptr, parser.mode_struct.null
-          rule_end_input = builder.extract_value rule_result, 0
-          successful = builder.icmp :eq, rule_end_input, end_ptr
-          builder.cond successful, successful_block, failed_block
-          
-          builder.position_at_end successful_block
-          builder.store builder.extract_value(rule_result, 1), return_value_ptr if return_type
-          builder.ret LLVM::TRUE
-          
-          builder.position_at_end failed_block
-          $parser = parser
-          builder.call return_type.free_function, return_value_ptr if return_type
-          builder.call @traced_rule_function, start_ptr, parser.mode_struct.null
-          builder.call return_type.free_function, return_value_ptr if return_type
-          builder.ret LLVM::FALSE
+          if parser.root_rules.include? @rule_name
+            entry_block = @rule_function.basic_blocks.append "rule_entry"
+            successful_block = @rule_function.basic_blocks.append "rule_successful"
+            failed_block = @rule_function.basic_blocks.append "rule_failed"
+            start_ptr, end_ptr, return_value_ptr = @rule_function.params.to_a
+            
+            builder.position_at_end entry_block
+            rule_result = builder.call @fast_rule_function, start_ptr, parser.mode_struct.null
+            rule_end_input = builder.extract_value rule_result, 0
+            return_value = builder.extract_value rule_result, 1
+            successful = builder.icmp :eq, rule_end_input, end_ptr
+            builder.cond successful, successful_block, failed_block
+            
+            builder.position_at_end successful_block
+            builder.store return_value, return_value_ptr if return_type
+            builder.ret LLVM::TRUE
+            
+            builder.position_at_end failed_block
+            builder.call return_type.free_function, return_value if return_type
+            builder.call @traced_rule_function, start_ptr, parser.mode_struct.null
+            builder.call return_type.free_function, return_value if return_type
+            builder.ret LLVM::FALSE
+          end
         end
         
-        return_type.build_functions if return_type
+        if return_type
+          return_type.build_functions
+          entry_block = @free_value_function.basic_blocks.append "entry"
+          builder.position_at_end entry_block
+          value = builder.load @free_value_function.params[0]
+          builder.call return_type.free_function, value
+          builder.ret_void
+        end
+        
+        @children.each { |child| child.build_functions }
       end
       
       def build_internal_rule_function(traced)
@@ -161,8 +184,7 @@ module JetPEG
       end
       
       def free_value(value)
-        return if return_type.nil?
-        parser.execution_engine.run_function parser.free_value_functions[return_type.llvm_type], value
+        parser.execution_engine.run_function @free_value_function, value
       end
           
       def eql?(other)

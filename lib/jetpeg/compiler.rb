@@ -43,7 +43,7 @@ module JetPEG
     end
     
     def to_s
-      "In rule \"#{@rule ? @rule.name : '<unknown>'}\": #{@msg}"
+      "In rule \"#{@rule ? @rule.rule_name : '<unknown>'}\": #{@msg}"
     end
   end
   
@@ -107,7 +107,7 @@ module JetPEG
           end
           
         when :pointer
-          return if llvm_type.element_type.kind != :struct or llvm_type.element_type.element_types.empty?
+          return if llvm_type.element_type.kind != :struct
           
           check_counter_block = self.create_block "check_counter"
           follow_pointer_block = self.create_block "follow_pointer"
@@ -185,8 +185,7 @@ module JetPEG
         begin
           File.open(File.join(File.dirname(__FILE__), "compiler/metagrammar.data"), "rb") do |io|
             metagrammar_data = JetPEG.realize_data(Marshal.load(io.read), self)
-            @@metagrammar_parser = load_parser metagrammar_data
-            @@metagrammar_parser.verify!
+            @@metagrammar_parser = load_parser metagrammar_data, "compiler/metagrammar.jetpeg"
             @@metagrammar_parser.root_rules = [:choice, :grammar]
             @@metagrammar_parser.build
           end
@@ -198,35 +197,31 @@ module JetPEG
       @@metagrammar_parser
     end
 
-    def self.compile_rule(code, filename = nil)
+    def self.compile_rule(code, filename = "grammar")
       expression = metagrammar_parser[:rule_expression].match code, output: :realized, class_scope: self, raise_on_failure: true
-      expression.name = :rule
-      parser = Parser.new({ "rule" => expression })
-      parser.filename = filename if filename
-      parser.verify!
+      expression.rule_name = :rule
+      Parser.new({ "rule" => expression }, filename)
       expression
     rescue ParsingError => e
       raise CompilationError, "Syntax error in grammar: #{e}"
     end
     
-    def self.compile_grammar(code, filename = nil)
+    def self.compile_grammar(code, filename = "grammar")
       data = metagrammar_parser[:grammar].match code, output: :realized, class_scope: self, raise_on_failure: true
-      parser = load_parser data
-      parser.filename = filename if filename
-      parser.verify!
+      parser = load_parser data, filename
       parser
     rescue ParsingError => e
       raise CompilationError, "Syntax error in grammar: #{e}"
     end
     
-    def self.load_parser(data)
+    def self.load_parser(data, filename)
       rules = data[:rules].each_with_object({}) do |element, h|
         expression = element[:expression]
-        expression.name = element[:rule_name].to_sym
+        expression.rule_name = element[:rule_name].to_sym
         expression.parameters = element[:parameters] ? ([element[:parameters][:head]] + element[:parameters][:tail]).map{ |p| Parameter.new p.name } : []
-        h[expression.name] = expression
+        h[expression.rule_name] = expression
       end
-      Parser.new rules
+      Parser.new rules, filename
     end
     
     def self.translate_escaped_character(char)

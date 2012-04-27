@@ -11,7 +11,7 @@ module JetPEG
       def build(builder)
         data = @llvm_type.null
         @array.each_with_index do |value, index|
-          data = builder.insert_value data, value, index, "hash_data_with_#{index}" if value
+          data = builder.insert_value data, value, index, "struct_with_#{index}" if value
         end
         data
       end
@@ -40,6 +40,11 @@ module JetPEG
       def store(val, pointer)
         val = val.build self if val.is_a? RubySideStruct
         super val, pointer
+      end
+      
+      def call(function, *args)
+        args.map! { |arg| arg.is_a?(RubySideStruct) ? arg.build(self) : arg }
+        super function, *args
       end
     end
     

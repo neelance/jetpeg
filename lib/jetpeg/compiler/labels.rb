@@ -39,11 +39,16 @@ module JetPEG
         end
       end
       
+      def realize_return_type
+        @value_type.realize if @recursive
+        super
+      end
+      
       def build(builder, start_input, modes, failed_block)
         expression_result = @expression.build builder, start_input, modes, failed_block
         
         if @capture_input
-          builder.build_free @expression.return_type, expression_result.return_value if @expression.return_type
+          builder.call @expression.return_type.free_function, expression_result.return_value if @expression.return_type
           @value = @value_type.llvm_type.null
           @value = builder.insert_value @value, start_input, 0, "pos"
           @value = builder.insert_value @value, expression_result.input, 1, "pos"
@@ -66,7 +71,7 @@ module JetPEG
       end
       
       def free_local_value(builder)
-        builder.build_free value_type, @value if @is_local
+        builder.call @value_type.free_function, @value if @is_local
       end
     end
     
