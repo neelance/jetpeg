@@ -8,7 +8,7 @@ module JetPEG
     end
     
     def all_labels
-      [nil]
+      []
     end
     
     def load(output, pointer, input_address)
@@ -47,6 +47,10 @@ module JetPEG
     def read(output, data, input_address)
       output.new_input_range data[:begin].address - input_address, data[:end].address - input_address
     end
+    
+    def all_labels
+      [nil]
+    end
   end
   
   class ScalarValueType < ValueType
@@ -56,6 +60,10 @@ module JetPEG
     
     def read(output, data, input_address)
       output.new_scalar data
+    end
+    
+    def all_labels
+      [nil]
     end
   end
   
@@ -202,6 +210,10 @@ module JetPEG
       end
       @target.return_type.load output, data, input_address # we can read directly, since the value is at the beginning of @target_struct
     end
+    
+    def all_labels
+      [nil]
+    end
   end
   
   class ArrayValueType < ValueType
@@ -226,6 +238,10 @@ module JetPEG
     def read(output, data, input_address)
       @pointer_type.read output, data, input_address
       output.make_array
+    end
+    
+    def all_labels
+      @inner_type ? [nil] : []
     end
   end
   
@@ -268,6 +284,10 @@ module JetPEG
     def read(output, data, input_address)
       @inner_type.read output, data, input_address
       output.make_object @creator_data
+    end
+    
+    def all_labels
+      @inner_type ? [nil] : []
     end
   end
 end
