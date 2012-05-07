@@ -2,9 +2,10 @@ module JetPEG
   class ValueType
     attr_reader :llvm_type, :ffi_type, :child_types, :free_function
     
-    def initialize(llvm_type, ffi_type)
+    def initialize(llvm_type, ffi_type, value_types)
       @llvm_type = llvm_type
       @ffi_type = ffi_type
+      value_types << self
     end
     
     def all_labels
@@ -42,7 +43,7 @@ module JetPEG
   end
   
   class InputRangeValueType < ValueType
-    INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING, self.name), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }
+    INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING, self.name), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }, []
     
     def read(output, data, input_address)
       output.new_input_range data[:begin].address - input_address, data[:end].address - input_address
@@ -54,8 +55,8 @@ module JetPEG
   end
   
   class ScalarValueType < ValueType
-    def initialize
-      super LLVM::Int64.type, :int64
+    def initialize(value_types)
+      super LLVM::Int64.type, :int64, value_types
     end
     
     def read(output, data, input_address)
@@ -70,7 +71,7 @@ module JetPEG
   class StructValueType < ValueType
     attr_reader :layout_types
     
-    def initialize(child_types, name)
+    def initialize(child_types, name, value_types)
       @child_types = child_types
       
       @child_layouts, @layout_types = process_types child_types
@@ -82,7 +83,7 @@ module JetPEG
       ffi_layout = []
       @layout_types.each_with_index { |type, index| ffi_layout.push index.to_s.to_sym, type.ffi_type }
       ffi_type.layout(*ffi_layout)
-      super llvm_type, ffi_type
+      super llvm_type, ffi_type, value_types
     end
     
     def insert_value(builder, struct, value, index)
@@ -230,10 +231,10 @@ module JetPEG
   end
   
   class PointerValueType < ValueType
-    def initialize(target)
+    def initialize(target, value_types)
       @target = target
       @target_struct = LLVM::Type.struct(nil, false, self.class.name)
-      super LLVM::Pointer(@target_struct), :pointer
+      super LLVM::Pointer(@target_struct), :pointer, value_types
     end
     
     def realize
@@ -294,15 +295,15 @@ module JetPEG
   class ArrayValueType < ValueType
     attr_reader :return_type
     
-    def initialize(entry_type, name)
+    def initialize(entry_type, name, value_types)
       @entry_type = entry_type
       @child_types = [entry_type]
-      @pointer_type = PointerValueType.new self
-      @value_label_type = LabeledValueType.new entry_type, :value
-      @previous_label_type = LabeledValueType.new(@pointer_type, :previous)
-      @return_type = SequenceValueType.new([@value_label_type, @previous_label_type], name)
+      @pointer_type = PointerValueType.new self, value_types
+      @value_label_type = LabeledValueType.new entry_type, :value, value_types
+      @previous_label_type = LabeledValueType.new(@pointer_type, :previous, value_types)
+      @return_type = SequenceValueType.new([@value_label_type, @previous_label_type], name, value_types)
       @pointer_type.realize
-      super @pointer_type.llvm_type, @pointer_type.ffi_type
+      super @pointer_type.llvm_type, @pointer_type.ffi_type, value_types
     end
     
     def create_array_value(builder, entry_value, previous_entry)
@@ -321,44 +322,28 @@ module JetPEG
       @inner_type ? [nil] : []
     end
     
-    def create_functions(mod)
-      super
-      @pointer_type.create_functions mod
-      @value_label_type.create_functions mod
-      @previous_label_type.create_functions mod
-      @return_type.create_functions mod
-    end
-    
-    def build_functions(builder)
-      super
-      @pointer_type.build_functions builder
-      @value_label_type.build_functions builder
-      @previous_label_type.build_functions builder
-      @return_type.build_functions builder
-    end
-    
     def build_free_function(builder, value)
-      @pointer_type.build_free_function builder, value
+      builder.call @pointer_type.free_function, value
     end
   end
   
   class WrappingValueType < ValueType
     attr_reader :inner_type
     
-    def initialize(inner_type)
-      super inner_type.llvm_type, inner_type.ffi_type
+    def initialize(inner_type, value_types)
+      super inner_type.llvm_type, inner_type.ffi_type, value_types
       @inner_type = inner_type
       @child_types = [inner_type]
     end
     
     def build_free_function(builder, value)
-      @inner_type.build_free_function builder, value
+      builder.call @inner_type.free_function, value
     end
   end
   
   class LabeledValueType < WrappingValueType
-    def initialize(inner_type, name)
-      super inner_type
+    def initialize(inner_type, name, value_types)
+      super inner_type, value_types
       @name = name
     end
     
@@ -377,8 +362,8 @@ module JetPEG
   end
     
   class CreatorType < WrappingValueType
-    def initialize(inner_type, creator_data = {})
-      super inner_type
+    def initialize(inner_type, creator_data, value_types)
+      super inner_type, value_types
       @creator_data = creator_data
     end
     

@@ -95,10 +95,7 @@ module JetPEG
           end
         end
         
-        if return_type
-          return_type.create_functions mod
-          @free_value_function = mod.functions.add "free_value", [LLVM::Pointer(return_type.llvm_type)], LLVM.Void()
-        end
+        @free_value_function = mod.functions.add "free_value", [LLVM::Pointer(return_type.llvm_type)], LLVM.Void() if return_type
         
         @children.each { |child| child.create_functions mod }
       end
@@ -134,8 +131,6 @@ module JetPEG
         end
         
         if return_type
-          return_type.build_functions builder
-          
           entry_block = @free_value_function.basic_blocks.append "entry"
           builder.position_at_end entry_block
           value = builder.load @free_value_function.params[0]

@@ -22,7 +22,7 @@ module JetPEG
           @expression.return_type
         rescue Recursion
           @recursive = true
-          PointerValueType.new @expression
+          PointerValueType.new @expression, parser.value_types
         end
         
         if @value_type.nil?
@@ -35,7 +35,7 @@ module JetPEG
         elsif @label_name == AT_SYMBOL
           @value_type
         else
-          LabeledValueType.new @value_type, label_name
+          LabeledValueType.new @value_type, label_name, parser.value_types
         end
       end
       
@@ -119,7 +119,7 @@ module JetPEG
       end
 
       def create_return_type
-        CreatorType.new super, __type__: :object, class_name: @class_name
+        CreatorType.new super, { __type__: :object, class_name: @class_name }, parser.value_types
       end
     end
     
@@ -133,7 +133,7 @@ module JetPEG
       end
 
       def create_return_type
-        CreatorType.new super, __type__: :value, code: @code, filename: parser.filename, lineno: @lineno
+        CreatorType.new super, { __type__: :value, code: @code, filename: parser.filename, lineno: @lineno }, parser.value_types
       end
     end
   end

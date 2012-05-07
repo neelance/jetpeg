@@ -102,7 +102,7 @@ module JetPEG
       @@default_options
     end
     
-    attr_reader :filename, :mod, :execution_engine, :mode_names, :mode_struct, :malloc_counter, :free_counter,
+    attr_reader :filename, :mod, :execution_engine, :value_types, :mode_names, :mode_struct, :malloc_counter, :free_counter,
                 :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_values
     attr_accessor :root_rules, :failure_reason
     
@@ -112,6 +112,7 @@ module JetPEG
       @mod = nil
       @execution_engine = nil
       @root_rules = [@rules.values.first.rule_name]
+      @value_types = [InputRangeValueType::INSTANCE]
       @filename = filename
       @scalar_values = [nil]
       
@@ -178,7 +179,9 @@ module JetPEG
       builder = Compiler::Builder.new
       builder.parser = self
       @rules.values.each { |rule| rule.create_functions @mod }
+      @value_types.each { |type| type.create_functions @mod }
       @rules.values.each { |rule| rule.build_functions builder }
+      @value_types.each { |type| type.build_functions builder }
       builder.dispose
       
       @mod.verify!

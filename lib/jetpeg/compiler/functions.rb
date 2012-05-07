@@ -6,7 +6,7 @@ module JetPEG
       end
       
       def create_return_type
-        ScalarValueType.new
+        ScalarValueType.new parser.value_types 
       end
       
       def build(builder, start_input, modes, failed_block)
@@ -20,7 +20,7 @@ module JetPEG
       end
       
       def create_return_type
-        ScalarValueType.new
+        ScalarValueType.new parser.value_types
       end
       
       def build(builder, start_input, modes, failed_block)
