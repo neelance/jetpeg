@@ -1,10 +1,9 @@
 module JetPEG
   class ValueType
-    attr_reader :llvm_type, :ffi_type, :child_types, :read_function, :free_function
+    attr_reader :llvm_type, :child_types, :read_function, :free_function
     
-    def initialize(llvm_type, ffi_type, value_types)
+    def initialize(llvm_type, value_types)
       @llvm_type = llvm_type
-      @ffi_type = ffi_type
       value_types << self
     end
     
@@ -49,7 +48,7 @@ module JetPEG
   end
   
   class InputRangeValueType < ValueType
-    INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING, self.name), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }, []
+    INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING, self.name), []
     
     def all_labels
       [nil]
@@ -68,7 +67,7 @@ module JetPEG
   
   class BooleanValueType < ValueType
     def initialize(value_types)
-      super LLVM::Int64.type, :int64, value_types
+      super LLVM::Int64.type, value_types
     end
     
     def all_labels
@@ -91,11 +90,7 @@ module JetPEG
       @child_layouts, @layout_types = process_types child_types
       
       llvm_type = LLVM::Struct(*@layout_types.map(&:llvm_type), "#{self.class.name}_#{name}")
-      ffi_type = Class.new FFI::Struct
-      ffi_layout = []
-      @layout_types.each_with_index { |type, index| ffi_layout.push index.to_s.to_sym, type.ffi_type }
-      ffi_type.layout(*ffi_layout)
-      super llvm_type, ffi_type, value_types
+      super llvm_type, value_types
     end
     
     def insert_value(builder, struct, value, index)
@@ -177,7 +172,7 @@ module JetPEG
   end
   
   class ChoiceValueType < StructValueType
-    SelectionFieldType = Struct.new(:llvm_type, :ffi_type).new(LLVM::Int64, :int64)
+    SelectionFieldType = Struct.new(:llvm_type).new(LLVM::Int64)
 
     def process_types(child_types)
       child_layouts = {}
@@ -256,7 +251,7 @@ module JetPEG
     def initialize(target, value_types)
       @target = target
       @target_struct = LLVM::Type.struct(nil, false, self.class.name)
-      super LLVM::Pointer(@target_struct), :pointer, value_types
+      super LLVM::Pointer(@target_struct), value_types
     end
     
     def realize
@@ -334,7 +329,7 @@ module JetPEG
       @previous_label_type = LabeledValueType.new(@pointer_type, :previous, value_types)
       @return_type = SequenceValueType.new([@value_label_type, @previous_label_type], name, value_types)
       @pointer_type.realize
-      super @pointer_type.llvm_type, @pointer_type.ffi_type, value_types
+      super @pointer_type.llvm_type, value_types
     end
     
     def create_array_value(builder, entry_value, previous_entry)
@@ -362,7 +357,7 @@ module JetPEG
     attr_reader :inner_type
     
     def initialize(inner_type, value_types)
-      super inner_type.llvm_type, inner_type.ffi_type, value_types
+      super inner_type.llvm_type, value_types
       @inner_type = inner_type
       @child_types = [inner_type]
     end
