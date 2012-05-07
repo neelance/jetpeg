@@ -43,40 +43,26 @@ module JetPEG
       @stack = []
     end
     
+    def new_nil
+      @stack << nil
+    end
+        
     def new_input_range(from, to)
       @stack << { __type__: :input_range, input: @input, position: from...to }
-    end
-    
-    def new_hash
-      @stack << {}
     end
     
     def new_scalar(value)
       @stack << @scalar_values[value]
     end
     
-    def new_array
-      @stack << []
-    end
-    
-    def new_nil
-      @stack << nil
-    end
-    
-    def add_entry(entry)
-      @stack.last << entry
-    end
-    
-    def set_label(name)
+    def make_label(name)
       value = @stack.pop
       @stack.push({ name => value })
     end
     
-    def merge_labels
-      inner = @stack.pop
-      outer = @stack.pop
-      outer.merge! inner if inner
-      @stack.push outer
+    def merge_labels(count)
+      merged = @stack.pop(count).compact.reduce({}, &:merge)
+      @stack.push merged
     end
     
     def make_array

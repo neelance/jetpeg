@@ -31,18 +31,26 @@ module JetPEG
     end
     
     def create_functions(mod)
+      @read_function = mod.functions.add("read_value", [llvm_type], LLVM.Void())
+      @read_function.linkage = :private
+      
       @free_function = mod.functions.add("free_value", [llvm_type], LLVM.Void())
       @free_function.linkage = :private
     end
     
     def build_functions(builder)
+      entry = @read_function.basic_blocks.append "entry"
+      builder.position_at_end entry
+      build_read_function builder, @read_function.params[0]
+      builder.ret_void
+      
       entry = @free_function.basic_blocks.append "entry"
       builder.position_at_end entry
       build_free_function builder, @free_function.params[0]
       builder.ret_void
     end
     
-    def build_free_function(builder, value)
+    def build_read_function(builder, value)
       # empty
     end
   end
@@ -57,6 +65,10 @@ module JetPEG
     def all_labels
       [nil]
     end
+    
+    def build_free_function(builder, value)
+      # empty
+    end
   end
   
   class ScalarValueType < ValueType
@@ -70,6 +82,10 @@ module JetPEG
     
     def all_labels
       [nil]
+    end
+    
+    def build_free_function(builder, value)
+      # empty
     end
   end
   
@@ -144,11 +160,10 @@ module JetPEG
     
     def read(output, data, input_address)
       data = data.values if data.is_a? FFI::Struct
-      output.new_hash
       @child_layouts.each_key do |child_index|
         read_entry output, data, child_index, input_address
-        output.merge_labels
       end
+      output.merge_labels @child_layouts.size
     end
     
     def all_labels
@@ -355,7 +370,7 @@ module JetPEG
     
     def read(output, data, input_address)
       @inner_type.read output, data, input_address
-      output.set_label @name
+      output.make_label @name
     end
     
     def to_s
