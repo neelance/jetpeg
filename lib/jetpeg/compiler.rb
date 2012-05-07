@@ -71,6 +71,15 @@ module JetPEG
         llvm_type.null
       end
       
+      def create_string_constant(string)
+        constant = LLVM::ConstantArray.string string
+        global = @parser.mod.globals.add constant.type, "strings.#{string[0..9]}"
+        global.initializer = constant
+        global.global_constant = 1
+        global.linkage = :private
+        self.gep global, [LLVM::Int(0), LLVM::Int(0)]
+      end
+            
       def extract_values(aggregate, count)
         count.times.map { |i| extract_value aggregate, i }
       end

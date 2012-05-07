@@ -34,6 +34,18 @@ module JetPEG
     end
   end
   
+  OUTPUT_INTERFACE_SIGNATURES = {
+    new_nil:         LLVM.Function([], LLVM.Void()),
+    new_input_range: LLVM.Function([LLVM::Int64, LLVM::Int64], LLVM.Void()),
+    new_boolean:     LLVM.Function([LLVM::Int1], LLVM.Void()),
+    make_label:      LLVM.Function([LLVM_STRING], LLVM.Void()),
+    merge_labels:    LLVM.Function([LLVM::Int64], LLVM.Void()),
+    make_array:      LLVM.Function([], LLVM.Void()),
+    make_object:     LLVM.Function([LLVM_STRING], LLVM.Void()),
+    make_value:      LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int64], LLVM.Void()),
+  }
+  OUTPUT_FUNCTION_POINTERS = OUTPUT_INTERFACE_SIGNATURES.values.map { |fun_type| LLVM::Pointer(fun_type) }
+  
   class Parser
     @@default_options = { raise_on_failure: true, output: :realized, class_scope: ::Object, bitcode_optimization: false, machine_code_optimization: 0, track_malloc: false }
     
@@ -135,11 +147,10 @@ module JetPEG
       end
     end
     
-    def match_rule(root_rule, input, options = {})
+    def match_rule(rule_name, input, options = {})
       raise ArgumentError.new("Input must be a String.") if not input.is_a? String
       options.merge!(@@default_options) { |key, oldval, newval| oldval }
       
-      rule_name = root_rule.rule_name
       if @mod.nil? or not @root_rules.include?(rule_name)
         @root_rules << rule_name
         build options
@@ -147,12 +158,49 @@ module JetPEG
       
       start_ptr = FFI::MemoryPointer.from_string input
       end_ptr = start_ptr + input.size
-      value_ptr = root_rule.return_type && FFI::MemoryPointer.new(root_rule.return_type.ffi_type)
+      
+      output_stack = []
+      output_functions = [
+        FFI::Function.new(:void, []) { # 0: new_nil
+          output_stack << nil
+        },
+        FFI::Function.new(:void, [:int64, :int64]) { |from, to| # 1: new_input_range
+          output_stack << { __type__: :input_range, input: input, position: from...to }
+        },
+        FFI::Function.new(:void, [:bool]) { |value| # 2: new_boolean
+          output_stack << value
+        },
+        FFI::Function.new(:void, [:string]) { |name| # 3: make_label
+          value = output_stack.pop
+          output_stack << { name.to_sym => value }
+        },
+        FFI::Function.new(:void, [:int64]) { |count| # 4: merge_labels
+          merged = output_stack.pop(count).compact.reduce({}, &:merge)
+          output_stack << merged
+        },
+        FFI::Function.new(:void, []) { # 5: make_array
+          data = output_stack.pop
+          array = []
+          until data.nil?
+            array.unshift data[:value]
+            data = data[:previous]
+          end
+          output_stack << array
+        },
+        FFI::Function.new(:void, [:string]) { |class_name| # 6: make_object
+          data = output_stack.pop
+          output_stack << { __type__: :object, class_name: class_name.split("::").map(&:to_sym), data: data }
+        },
+        FFI::Function.new(:void, [:string, :string, :int64]) { |code, filename, lineno| # 7: make_value
+          data = output_stack.pop
+          output_stack << { __type__: :value, code: code, filename: filename, lineno: lineno, data: data }
+        }
+      ]
       
       @failure_reason = ParsingError.new([])
       @failure_reason_position = start_ptr
       
-      success_value = @execution_engine.run_function @mod.functions["#{rule_name}_match"], start_ptr, end_ptr, value_ptr
+      success_value = @execution_engine.run_function @mod.functions["#{rule_name}_match"], start_ptr, end_ptr, *output_functions
       if not success_value.to_b
         success_value.dispose
         check_malloc_counter
@@ -163,53 +211,7 @@ module JetPEG
       end
       success_value.dispose
       
-      return [value_ptr, start_ptr.address] if options[:output] == :pointer
-      
-      intermediate = true 
-      if value_ptr
-        stack = []
-        functions = [
-          FFI::Function.new(:void, []) { # 0: new_nil
-            stack << nil
-          },
-          FFI::Function.new(:void, [:int, :int]) { |from, to| # 1: new_input_range
-            stack << { __type__: :input_range, input: input, position: from...to }
-          },
-          FFI::Function.new(:void, [:bool]) { |value| # 2: new_boolean
-            stack << value
-          },
-          FFI::Function.new(:void, [:string]) { |name| # 3: make_label
-            value = stack.pop
-            stack << { name.to_sym => value }
-          },
-          FFI::Function.new(:void, [:int]) { |count| # 4: merge_labels
-            merged = stack.pop(count).compact.reduce({}, &:merge)
-            stack << merged
-          },
-          FFI::Function.new(:void, []) { # 5: make_array
-            data = stack.pop
-            array = []
-            until data.nil?
-              array.unshift data[:value]
-              data = data[:previous]
-            end
-            stack << array
-          },
-          FFI::Function.new(:void, [:string]) { |class_name| # 6: make_object
-            data = stack.pop
-            stack << { __type__: :object, class_name: class_name.split("::").map(&:to_sym), data: data }
-          },
-          FFI::Function.new(:void, [:string, :string, :int]) { |code, filename, lineno| # 7: make_value
-            data = stack.pop
-            stack << { __type__: :value, code: code, filename: filename, lineno: lineno, data: data }
-          }
-        ]
-        
-        output_functions = Hash[*[:new_nil, :new_input_range, :new_boolean, :make_label, :merge_labels, :make_array, :make_object, :make_value].zip(functions).flatten]
-        root_rule.return_type.load output_functions, value_ptr, start_ptr.address
-        intermediate = stack.first || true
-        @execution_engine.run_function @mod.functions["#{rule_name}_free_value"], value_ptr if value_ptr
-      end
+      intermediate = output_stack.first || true 
       check_malloc_counter
       return intermediate if options[:output] == :intermediate
 
@@ -220,7 +222,7 @@ module JetPEG
     end
     
     def parse(input)
-      match_rule @rules.values.first, input
+      match_rule @rules.values.first.rule_name, input
     end
     
     def stats

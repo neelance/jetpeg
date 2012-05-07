@@ -89,13 +89,8 @@ module JetPEG
         @traced_match_function.linkage = :private
 
         if parser.root_rules.include? @rule_name
-          @match_function = mod.functions.add "#{@rule_name}_match", [LLVM_STRING, LLVM_STRING, LLVM::Pointer(return_type ? return_type.llvm_type : LLVM::Int8)], LLVM::Int1
+          @match_function = mod.functions.add "#{@rule_name}_match", [LLVM_STRING, LLVM_STRING, *OUTPUT_FUNCTION_POINTERS], LLVM::Int1
           @match_function.linkage = :external
-
-          if return_type
-            @free_value_function = mod.functions.add "#{@rule_name}_free_value", [LLVM::Pointer(return_type.llvm_type)], LLVM.Void()
-            @free_value_function.linkage = :external
-          end
         end
       end
       
@@ -107,7 +102,7 @@ module JetPEG
           entry_block = @match_function.basic_blocks.append "rule_entry"
           successful_block = @match_function.basic_blocks.append "rule_successful"
           failed_block = @match_function.basic_blocks.append "rule_failed"
-          start_ptr, end_ptr, return_value_ptr = @match_function.params.to_a
+          start_ptr, end_ptr, *output_functions = @match_function.params.to_a
           
           builder.position_at_end entry_block
           rule_result = builder.call @fast_match_function, start_ptr, parser.mode_struct.null
@@ -117,7 +112,8 @@ module JetPEG
           builder.cond successful, successful_block, failed_block
           
           builder.position_at_end successful_block
-          builder.store return_value, return_value_ptr if return_type
+          builder.call return_type.read_function, return_value, builder.ptr2int(start_ptr, LLVM::Int64), *output_functions if return_type
+          builder.call return_type.free_function, return_value if return_type
           builder.ret LLVM::TRUE
           
           builder.position_at_end failed_block
@@ -125,14 +121,6 @@ module JetPEG
           builder.call @traced_match_function, start_ptr, parser.mode_struct.null
           builder.call return_type.free_function, return_value if return_type
           builder.ret LLVM::FALSE
-
-          if return_type
-            entry_block = @free_value_function.basic_blocks.append "entry"
-            builder.position_at_end entry_block
-            value = builder.load @free_value_function.params[0]
-            builder.call return_type.free_function, value
-            builder.ret_void
-          end
         end
       end
       
@@ -168,7 +156,7 @@ module JetPEG
       end
       
       def match(input, options = {})
-        parser.match_rule self, input, options
+        parser.match_rule @rule_name, input, options
       end
       
       def eql?(other)
