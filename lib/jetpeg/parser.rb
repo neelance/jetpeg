@@ -151,7 +151,7 @@ module JetPEG
       @failure_reason = ParsingError.new([])
       @failure_reason_position = start_ptr
       
-      success_value = @execution_engine.run_function root_rule.rule_function, start_ptr, end_ptr, value_ptr
+      success_value = @execution_engine.run_function root_rule.match_function, start_ptr, end_ptr, value_ptr
       if not success_value.to_b
         success_value.dispose
         check_malloc_counter

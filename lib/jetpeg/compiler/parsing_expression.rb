@@ -2,7 +2,7 @@ module JetPEG
   module Compiler
     class ParsingExpression
       attr_accessor :parent, :rule_name, :parameters, :local_label_source
-      attr_reader :rule_function
+      attr_reader :match_function
       
       def initialize
         @rule_name = nil
@@ -10,8 +10,8 @@ module JetPEG
         @children = []
         @return_type = :pending
         @return_type_recursion = false
-        @fast_rule_function = nil
-        @traced_rule_function = nil
+        @fast_match_function = nil
+        @traced_match_function = nil
         @local_label_source = nil
       end
       
@@ -84,17 +84,17 @@ module JetPEG
       def create_functions(mod)
         parameter_llvm_types = @parameters.map(&:value_type).map(&:llvm_type)
         
-        @fast_rule_function = mod.functions.add "#{@rule_name}_fast", [LLVM_STRING, parser.mode_struct] + parameter_llvm_types, rule_result_structure
-        @fast_rule_function.linkage = :private
-        @traced_rule_function = mod.functions.add "#{@rule_name}_traced", [LLVM_STRING, parser.mode_struct] + parameter_llvm_types, rule_result_structure
-        @traced_rule_function.linkage = :private
+        @fast_match_function = mod.functions.add "#{@rule_name}_fast_match", [LLVM_STRING, parser.mode_struct] + parameter_llvm_types, rule_result_structure
+        @fast_match_function.linkage = :private
+        @traced_match_function = mod.functions.add "#{@rule_name}_traced_match", [LLVM_STRING, parser.mode_struct] + parameter_llvm_types, rule_result_structure
+        @traced_match_function.linkage = :private
 
         if parser.root_rules.include? @rule_name
-          @rule_function = mod.functions.add @rule_name, [LLVM_STRING, LLVM_STRING, LLVM::Pointer(return_type ? return_type.llvm_type : LLVM::Int8)], LLVM::Int1
-          @rule_function.linkage = :external
+          @match_function = mod.functions.add "#{@rule_name}_match", [LLVM_STRING, LLVM_STRING, LLVM::Pointer(return_type ? return_type.llvm_type : LLVM::Int8)], LLVM::Int1
+          @match_function.linkage = :external
 
           if return_type
-            @free_value_function = mod.functions.add "free_value", [LLVM::Pointer(return_type.llvm_type)], LLVM.Void()
+            @free_value_function = mod.functions.add "#{@rule_name}_free_value", [LLVM::Pointer(return_type.llvm_type)], LLVM.Void()
             @free_value_function.linkage = :external
           end
         end
@@ -105,13 +105,13 @@ module JetPEG
         build_internal_rule_function true
         
         if parser.root_rules.include? @rule_name
-          entry_block = @rule_function.basic_blocks.append "rule_entry"
-          successful_block = @rule_function.basic_blocks.append "rule_successful"
-          failed_block = @rule_function.basic_blocks.append "rule_failed"
-          start_ptr, end_ptr, return_value_ptr = @rule_function.params.to_a
+          entry_block = @match_function.basic_blocks.append "rule_entry"
+          successful_block = @match_function.basic_blocks.append "rule_successful"
+          failed_block = @match_function.basic_blocks.append "rule_failed"
+          start_ptr, end_ptr, return_value_ptr = @match_function.params.to_a
           
           builder.position_at_end entry_block
-          rule_result = builder.call @fast_rule_function, start_ptr, parser.mode_struct.null
+          rule_result = builder.call @fast_match_function, start_ptr, parser.mode_struct.null
           rule_end_input = builder.extract_value rule_result, 0
           return_value = builder.extract_value rule_result, 1
           successful = builder.icmp :eq, rule_end_input, end_ptr
@@ -123,7 +123,7 @@ module JetPEG
           
           builder.position_at_end failed_block
           builder.call return_type.free_function, return_value if return_type
-          builder.call @traced_rule_function, start_ptr, parser.mode_struct.null
+          builder.call @traced_match_function, start_ptr, parser.mode_struct.null
           builder.call return_type.free_function, return_value if return_type
           builder.ret LLVM::FALSE
 
@@ -138,7 +138,7 @@ module JetPEG
       end
       
       def build_internal_rule_function(traced)
-        function = traced ? @traced_rule_function : @fast_rule_function
+        function = traced ? @traced_match_function : @fast_match_function
         
         builder = Builder.new
         builder.parser = parser
@@ -164,8 +164,8 @@ module JetPEG
         builder.dispose
       end
       
-      def call_internal_rule_function(builder, *args)
-        builder.call(builder.traced ? @traced_rule_function : @fast_rule_function, *args)
+      def call_internal_match_function(builder, *args)
+        builder.call(builder.traced ? @traced_match_function : @fast_match_function, *args)
       end
       
       def match(input, options = {})
