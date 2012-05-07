@@ -35,49 +35,48 @@ module JetPEG
   end
   
   class OutputInterface
-    attr_reader :stack
+    attr_reader :stack, :functions
     
     def initialize(input, scalar_values)
       @input = input
       @scalar_values = scalar_values
       @stack = []
-    end
-    
-    def new_nil
-      @stack << nil
-    end
-        
-    def new_input_range(from, to)
-      @stack << { __type__: :input_range, input: @input, position: from...to }
-    end
-    
-    def new_scalar(value)
-      @stack << @scalar_values[value]
-    end
-    
-    def make_label(name)
-      value = @stack.pop
-      @stack.push({ name => value })
-    end
-    
-    def merge_labels(count)
-      merged = @stack.pop(count).compact.reduce({}, &:merge)
-      @stack.push merged
-    end
-    
-    def make_array
-      data = @stack.pop
-      array = []
-      until data.nil?
-        array.unshift data[:value]
-        data = data[:previous]
-      end
-      @stack.push array
-    end
-    
-    def make_object(creator_data)
-      data = @stack.pop
-      @stack.push creator_data.merge({ data: data })
+      @functions = [
+        FFI::Function.new(:void, []) { # 0: new_nil
+          @stack << nil
+        },
+        FFI::Function.new(:void, [:int, :int]) { |from, to| # 1: new_input_range
+          @stack << { __type__: :input_range, input: @input, position: from...to }
+        },
+        FFI::Function.new(:void, [:int]) { |value| # 2: new_scalar
+          @stack << @scalar_values[value]
+        },
+        FFI::Function.new(:void, [:string]) { |name| # 3: make_label
+          value = @stack.pop
+          @stack << { name.to_sym => value }
+        },
+        FFI::Function.new(:void, [:int]) { |count| # 4: merge_labels
+          merged = @stack.pop(count).compact.reduce({}, &:merge)
+          @stack << merged
+        },
+        FFI::Function.new(:void, []) { # 5: make_array
+          data = @stack.pop
+          array = []
+          until data.nil?
+            array.unshift data[:value]
+            data = data[:previous]
+          end
+          @stack << array
+        },
+        FFI::Function.new(:void, [:string]) { |class_name| # 6: make_object
+          data = @stack.pop
+          @stack << { __type__: :object, class_name: class_name.split("::").map(&:to_sym), data: data }
+        },
+        FFI::Function.new(:void, [:string, :string, :int]) { |code, filename, lineno| # 7: make_value
+          data = @stack.pop
+          @stack << { __type__: :value, code: code, filename: filename, lineno: lineno, data: data }
+        }
+      ]
     end
   end
   
@@ -224,7 +223,8 @@ module JetPEG
       intermediate = true 
       if value_ptr
         output = OutputInterface.new input, @scalar_values
-        root_rule.return_type.load output, value_ptr, start_ptr.address
+        output_functions = Hash[*[:new_nil, :new_input_range, :new_scalar, :make_label, :merge_labels, :make_array, :make_object, :make_value].zip(output.functions).flatten]
+        root_rule.return_type.load output_functions, value_ptr, start_ptr.address
         intermediate = output.stack.first || true
         root_rule.free_value value_ptr if value_ptr
       end

@@ -115,11 +115,11 @@ module JetPEG
       def initialize(data)
         super
         @label_name = AT_SYMBOL
-        @class_name = data[:class_name].split("::").map(&:to_sym)
+        @class_name = data[:class_name]
       end
 
       def create_return_type
-        CreatorType.new super, { __type__: :object, class_name: @class_name }, parser.value_types
+        CreatorValueType.new super, :make_object, [@class_name], parser.value_types
       end
     end
     
@@ -133,7 +133,7 @@ module JetPEG
       end
 
       def create_return_type
-        CreatorType.new super, { __type__: :value, code: @code, filename: parser.filename, lineno: @lineno }, parser.value_types
+        CreatorValueType.new super, :make_value, [@code, parser.filename, @lineno], parser.value_types
       end
     end
   end

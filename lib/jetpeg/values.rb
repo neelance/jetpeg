@@ -59,7 +59,7 @@ module JetPEG
     INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING, self.name), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }, []
     
     def read(output, data, input_address)
-      output.new_input_range data[:begin].address - input_address, data[:end].address - input_address
+      output[:new_input_range].call data[:begin].address - input_address, data[:end].address - input_address
     end
     
     def all_labels
@@ -77,7 +77,7 @@ module JetPEG
     end
     
     def read(output, data, input_address)
-      output.new_scalar data
+      output[:new_scalar].call data
     end
     
     def all_labels
@@ -133,7 +133,7 @@ module JetPEG
     def read_entry(output, data, index, input_address)
       type, layout = @child_layouts[index]
       if layout.nil?
-        output.new_nil
+        output[:new_nil].call
         return
       end
       child_data = layout.is_a?(Array) ? data.values_at(*layout) : data[layout]
@@ -163,7 +163,7 @@ module JetPEG
       @child_layouts.each_key do |child_index|
         read_entry output, data, child_index, input_address
       end
-      output.merge_labels @child_layouts.size
+      output[:merge_labels].call @child_layouts.size
     end
     
     def all_labels
@@ -265,7 +265,7 @@ module JetPEG
     
     def read(output, data, input_address)
       if data.null?
-        output.new_nil
+        output[:new_nil].call
         return
       end
       @target.return_type.load output, data, input_address # we can read directly, since the value is at the beginning of @target_struct
@@ -328,7 +328,7 @@ module JetPEG
     
     def read(output, data, input_address)
       @pointer_type.read output, data, input_address
-      output.make_array
+      output[:make_array].call
     end
     
     def all_labels
@@ -370,7 +370,7 @@ module JetPEG
     
     def read(output, data, input_address)
       @inner_type.read output, data, input_address
-      output.make_label @name
+      output[:make_label].call @name.to_s
     end
     
     def to_s
@@ -378,15 +378,16 @@ module JetPEG
     end
   end
     
-  class CreatorType < WrappingValueType
-    def initialize(inner_type, creator_data, value_types)
+  class CreatorValueType < WrappingValueType
+    def initialize(inner_type, function, arguments, value_types)
       super inner_type, value_types
-      @creator_data = creator_data
+      @function = function
+      @arguments = arguments
     end
     
     def read(output, data, input_address)
       @inner_type.read output, data, input_address
-      output.make_object @creator_data
+      output[@function].call(*@arguments)
     end
     
     def all_labels
