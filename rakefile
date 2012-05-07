@@ -102,14 +102,7 @@ task :benchmark do
     end
     
     bm.report("parsing:") do
-      data_pointer, input_address = parser.match_rule parser[:grammar], input, :output => :pointer
-    end
-    
-    bm.report("loading data:") do
-      output = JetPEG::OutputInterface.new input, parser.scalar_values
-      parser[:grammar].return_type.load output, data_pointer, input_address
-      intermediate = output.stack.first
-      parser[:grammar].free_value data_pointer
+      intermediate = parser.match_rule :grammar, input, :output => :intermediate
     end
     
     bm.report("realizing data:") do
