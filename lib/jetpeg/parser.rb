@@ -102,7 +102,7 @@ module JetPEG
       @@default_options
     end
     
-    attr_reader :filename, :mod, :execution_engine, :free_value_functions, :mode_names, :mode_struct, :malloc_counter, :free_counter,
+    attr_reader :filename, :mod, :execution_engine, :mode_names, :mode_struct, :malloc_counter, :free_counter,
                 :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_values
     attr_accessor :root_rules, :failure_reason
     
@@ -149,11 +149,6 @@ module JetPEG
       
       @possible_failure_reasons = []
       @mod = LLVM::Module.new "Parser"
-      @free_value_functions_to_create = []
-      @free_value_functions = Hash.new { |hash, llvm_type|
-        @free_value_functions_to_create << llvm_type
-        hash[llvm_type] = @mod.functions.add("free_value", [LLVM::Pointer(llvm_type)], LLVM.Void())
-      }
       @mode_names = @rules.values.map(&:all_mode_names).flatten.uniq
       @mode_struct = LLVM::Struct(*([LLVM::Int1] * @mode_names.size), "mode_struct")
       
@@ -180,27 +175,11 @@ module JetPEG
       add_failure_reason_callback_type = LLVM::Pointer(LLVM::Function([LLVM::Int1, LLVM_STRING, LLVM::Int], LLVM::Void()))
       @llvm_add_failure_reason_callback = LLVM::C.const_int_to_ptr LLVM::Int64.from_i(@ffi_add_failure_reason_callback.address), add_failure_reason_callback_type
       
+      builder = Compiler::Builder.new
+      builder.parser = self
       @rules.values.each { |rule| rule.create_functions @mod }
-      #each_expression { |expression|  }
-      
-      $parser = parser
-      @rules.values.each { |rule| rule.build_functions }
-      
-      until @free_value_functions_to_create.empty?
-        llvm_type = @free_value_functions_to_create.pop
-        
-        function = @free_value_functions[llvm_type]
-        builder = Compiler::Builder.new
-        builder.parser = self
-        
-        entry = function.basic_blocks.append "entry"
-        builder.position_at_end entry
-        value = builder.load function.params[0], "value"
-        builder.build_free llvm_type, value
-        
-        builder.ret_void
-        builder.dispose
-      end
+      @rules.values.each { |rule| rule.build_functions builder }
+      builder.dispose
       
       @mod.verify!
       @execution_engine = LLVM::JITCompiler.new @mod, options[:machine_code_optimization]

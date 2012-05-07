@@ -103,10 +103,7 @@ module JetPEG
         @children.each { |child| child.create_functions mod }
       end
       
-      def build_functions
-        builder = Builder.new
-        builder.parser = parser
-
+      def build_functions(builder)
         if @rule_name
           build_internal_rule_function false
           build_internal_rule_function true
@@ -137,7 +134,8 @@ module JetPEG
         end
         
         if return_type
-          return_type.build_functions
+          return_type.build_functions builder
+          
           entry_block = @free_value_function.basic_blocks.append "entry"
           builder.position_at_end entry_block
           value = builder.load @free_value_function.params[0]
@@ -145,7 +143,7 @@ module JetPEG
           builder.ret_void
         end
         
-        @children.each { |child| child.build_functions }
+        @children.each { |child| child.build_functions builder }
       end
       
       def build_internal_rule_function(traced)

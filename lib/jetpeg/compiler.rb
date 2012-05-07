@@ -71,6 +71,14 @@ module JetPEG
         llvm_type.null
       end
       
+      def extract_values(aggregate, count)
+        count.times.map { |i| extract_value aggregate, i }
+      end
+      
+      def insert_values(aggregate, values, indices)
+        values.zip(indices).inject(aggregate) { |a, (value, i)| insert_value a, value, i }
+      end
+      
       def malloc(type, name = "")
         if @parser.malloc_counter
           old_value = self.load @parser.malloc_counter
@@ -93,48 +101,6 @@ module JetPEG
         return if not @traced
         @parser.possible_failure_reasons << reason
         self.call @parser.llvm_add_failure_reason_callback, failed, position, LLVM::Int(@parser.possible_failure_reasons.size - 1)
-      end
-      
-      def build_free(type, value)
-        raise if value.nil?
-        llvm_type = type.is_a?(ValueType) ? type.llvm_type : type
-        case llvm_type.kind
-        when :struct
-          llvm_type.element_types.each_with_index do |element_type, i|
-            next if not [:struct, :pointer].include? element_type.kind
-            element = self.extract_value value, i
-            build_free element_type, element
-          end
-          
-        when :pointer
-          return if llvm_type.element_type.kind != :struct
-          
-          check_counter_block = self.create_block "check_counter"
-          follow_pointer_block = self.create_block "follow_pointer"
-          decrement_counter_block = self.create_block "decrement_counter"
-          continue_block = self.create_block "continue"
-          
-          not_null = self.icmp :ne, value, llvm_type.null, "not_null"
-          self.cond not_null, check_counter_block, continue_block
-          
-          self.position_at_end check_counter_block
-          additional_use_counter = self.struct_gep value, 1, "additional_use_counter"
-          old_counter_value = self.load additional_use_counter
-          no_additional_use = self.icmp :eq, old_counter_value, LLVM::Int64.from_i(0), "no_additional_use"
-          self.cond no_additional_use, follow_pointer_block, decrement_counter_block
-          
-          self.position_at_end follow_pointer_block
-          self.call @parser.free_value_functions[llvm_type.element_type], value
-          self.free value
-          self.br continue_block
-          
-          self.position_at_end decrement_counter_block
-          new_counter_value = self.sub old_counter_value, LLVM::Int64.from_i(1)
-          self.store new_counter_value, additional_use_counter
-          self.br continue_block
-
-          self.position_at_end continue_block
-        end
       end
       
       def build_use_counter_increment(type, value)

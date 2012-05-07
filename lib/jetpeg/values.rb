@@ -29,15 +29,15 @@ module JetPEG
       @free_function = mod.functions.add("free_value", [llvm_type], LLVM.Void())
     end
     
-    def build_functions
-      builder = Compiler::Builder.new
-      builder.parser = $parser
-      
+    def build_functions(builder)
       entry = @free_function.basic_blocks.append "entry"
       builder.position_at_end entry
-      builder.build_free self, @free_function.params[0]
+      build_free_function builder, @free_function.params[0]
       builder.ret_void
-      builder.dispose
+    end
+    
+    def build_free_function(builder, value)
+      # empty
     end
   end
   
@@ -73,9 +73,9 @@ module JetPEG
     def initialize(child_types, name)
       @child_types = child_types
       
-      @type_indices = []
-      @layout_types = []
-      process_types
+      @child_layouts, @layout_types = process_types child_types
+      
+      @child_layouts = @child_types.zip(@child_layouts)
       
       llvm_type = LLVM::Struct(*@layout_types.map(&:llvm_type), "#{self.class.name}_#{name}")
       ffi_type = Class.new FFI::Struct
@@ -86,42 +86,59 @@ module JetPEG
     end
     
     def insert_value(builder, struct, value, index)
-      type_index = @type_indices[index]
-      if type_index.is_a? Array
-        type_index.each_with_index do |target_index, source_index|
-          struct = builder.insert_value struct, builder.extract_value(value, source_index), target_index
+      _, layout = @child_layouts[index]
+      values = indices = nil
+      if layout.is_a? Array
+        values = builder.extract_values value, layout.size
+        indices = layout
+      else
+        values = [value]
+        indices = [layout]
+      end
+      builder.insert_values struct, values, indices
+    end
+    
+    def build_free_entry(builder, type, layout, value)
+      element = nil
+      if layout.is_a?(Array)
+        element = type.llvm_type.null
+        layout.each_with_index do |source_index, target_index|
+          v = builder.extract_value value, source_index
+          element = builder.insert_value element, v, target_index
         end
       else
-        struct = builder.insert_value struct, value, type_index
+        element = builder.extract_value value, layout
       end
-      struct
+      builder.call type.free_function, element
     end
     
     def read_entry(output, data, index, input_address)
-      type = @child_types[index]
-      if type
-        type_index = @type_indices[index]
-        child_data = type_index.is_a?(Array) ? data.values_at(*type_index) : data[type_index]
-        type.read output, child_data, input_address
-      else
+      type, layout = @child_layouts[index]
+      if layout.nil?
         output.new_nil
+        return
       end
+      child_data = layout.is_a?(Array) ? data.values_at(*layout) : data[layout]
+      type.read output, child_data, input_address
     end
   end
   
   class SequenceValueType < StructValueType
-    def process_types
-      @child_types.each_with_index do |child_type, child_index|
+    def process_types(child_types)
+      child_layouts = []
+      layout_types = []
+      child_types.each_with_index do |child_type, child_index|
         next if child_type.nil?
         child_type = child_type.inner_type while child_type.is_a? WrappingValueType
         if child_type.is_a? StructValueType
-          @type_indices[child_index] = (@layout_types.size...(@layout_types.size + child_type.layout_types.size)).to_a
-          @layout_types.concat child_type.layout_types
+          child_layouts[child_index] = (layout_types.size...(layout_types.size + child_type.layout_types.size)).to_a
+          layout_types.concat child_type.layout_types
         else
-          @type_indices[child_index] = @layout_types.size
-          @layout_types << child_type
+          child_layouts[child_index] = layout_types.size
+          layout_types << child_type
         end
       end
+      [child_layouts, layout_types]
     end
     
     def read(output, data, input_address)
@@ -136,33 +153,43 @@ module JetPEG
     def all_labels
       @child_types.compact.map(&:all_labels).flatten
     end
+    
+    def build_free_function(builder, value)
+      @child_layouts.each do |type, layout|
+        next if layout.nil?
+        build_free_entry builder, type, layout, value
+      end
+    end
   end
   
   class ChoiceValueType < StructValueType
     SelectionFieldType = Struct.new(:llvm_type, :ffi_type).new(LLVM::Int64, :int64)
 
-    def process_types
-      @layout_types << SelectionFieldType
-      @child_types.each_with_index do |child_type, child_index|
+    def process_types(child_types)
+      child_layouts = []
+      layout_types = []
+      layout_types << SelectionFieldType
+      child_types.each_with_index do |child_type, child_index|
         next if child_type.nil?
         child_type = child_type.inner_type while child_type.is_a? WrappingValueType
         if child_type.is_a? StructValueType
           index_array = []
-          available_layout_types = @layout_types.dup
+          available_layout_types = layout_types.dup
           available_layout_types[0] = nil
           child_type.layout_types.each do |child_layout_type|
             layout_index = available_layout_types.index child_layout_type
-            index_array << (layout_index || @layout_types.size)
-            @layout_types << child_layout_type unless layout_index
+            index_array << (layout_index || layout_types.size)
+            layout_types << child_layout_type unless layout_index
             available_layout_types[layout_index] = nil if layout_index
           end
-          @type_indices[child_index] = index_array
+          child_layouts[child_index] = index_array
         else
-          layout_index = @layout_types.index child_type
-          @type_indices[child_index] = layout_index || @layout_types.size
-          @layout_types << child_type unless layout_index
+          layout_index = layout_types.index child_type
+          child_layouts[child_index] = layout_index || layout_types.size
+          layout_types << child_type unless layout_index
         end
       end
+      [child_layouts, layout_types]
     end
     
     def create_choice_value(builder, index, entry_result)
@@ -180,6 +207,25 @@ module JetPEG
     
     def all_labels
       @child_types.compact.map(&:all_labels).reduce(&:|)
+    end
+    
+    def build_free_function(builder, value)
+      end_block = builder.create_block "choice_free_end"
+      child_blocks = @child_types.map { builder.create_block "choice_free_entry" }
+      child_index = builder.extract_value value, 0
+      builder.switch child_index, end_block, @child_types.size.times.map{ |i| [LLVM::Int64.from_i(i), child_blocks[i]] }
+      
+      @child_layouts.zip(child_blocks).each do |(type, layout), block|
+        builder.position_at_end block
+        if layout.nil?
+          builder.br end_block
+          next
+        end
+        build_free_entry builder, type, layout, value
+        builder.br end_block
+      end
+      
+      builder.position_at_end end_block
     end
   end
   
@@ -214,6 +260,35 @@ module JetPEG
     def all_labels
       [nil]
     end
+    
+    def build_free_function(builder, value)
+      check_counter_block = builder.create_block "check_counter"
+      follow_pointer_block = builder.create_block "follow_pointer"
+      decrement_counter_block = builder.create_block "decrement_counter"
+      continue_block = builder.create_block "continue"
+      
+      not_null = builder.icmp :ne, value, llvm_type.null, "not_null"
+      builder.cond not_null, check_counter_block, continue_block
+      
+      builder.position_at_end check_counter_block
+      additional_use_counter = builder.struct_gep value, 1, "additional_use_counter"
+      old_counter_value = builder.load additional_use_counter
+      no_additional_use = builder.icmp :eq, old_counter_value, LLVM::Int64.from_i(0), "no_additional_use"
+      builder.cond no_additional_use, follow_pointer_block, decrement_counter_block
+      
+      builder.position_at_end follow_pointer_block
+      target_value = builder.load builder.struct_gep(value, 0, "additional_use_counter")
+      builder.call @target.return_type.free_function, target_value
+      builder.free value
+      builder.br continue_block
+      
+      builder.position_at_end decrement_counter_block
+      new_counter_value = builder.sub old_counter_value, LLVM::Int64.from_i(1)
+      builder.store new_counter_value, additional_use_counter
+      builder.br continue_block
+
+      builder.position_at_end continue_block
+    end
   end
   
   class ArrayValueType < ValueType
@@ -223,7 +298,9 @@ module JetPEG
       @entry_type = entry_type
       @child_types = [entry_type]
       @pointer_type = PointerValueType.new self
-      @return_type = SequenceValueType.new([LabeledValueType.new(entry_type, :value), LabeledValueType.new(@pointer_type, :previous)], name)
+      @value_label_type = LabeledValueType.new entry_type, :value
+      @previous_label_type = LabeledValueType.new(@pointer_type, :previous)
+      @return_type = SequenceValueType.new([@value_label_type, @previous_label_type], name)
       @pointer_type.realize
       super @pointer_type.llvm_type, @pointer_type.ffi_type
     end
@@ -243,6 +320,26 @@ module JetPEG
     def all_labels
       @inner_type ? [nil] : []
     end
+    
+    def create_functions(mod)
+      super
+      @pointer_type.create_functions mod
+      @value_label_type.create_functions mod
+      @previous_label_type.create_functions mod
+      @return_type.create_functions mod
+    end
+    
+    def build_functions(builder)
+      super
+      @pointer_type.build_functions builder
+      @value_label_type.build_functions builder
+      @previous_label_type.build_functions builder
+      @return_type.build_functions builder
+    end
+    
+    def build_free_function(builder, value)
+      @pointer_type.build_free_function builder, value
+    end
   end
   
   class WrappingValueType < ValueType
@@ -252,6 +349,10 @@ module JetPEG
       super inner_type.llvm_type, inner_type.ffi_type
       @inner_type = inner_type
       @child_types = [inner_type]
+    end
+    
+    def build_free_function(builder, value)
+      @inner_type.build_free_function builder, value
     end
   end
   
