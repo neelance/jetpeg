@@ -16,9 +16,9 @@ module JetPEG
       nil
     end
     
-    def load(output, pointer, input_address)
+    def load(output_functions, pointer, input_address)
       data = ffi_type == :pointer ? pointer.get_pointer(0) : ffi_type.new(pointer)
-      read output, data, input_address
+      read output_functions, data, input_address
     end
     
     def print_tree(indentation = 0)
@@ -58,8 +58,8 @@ module JetPEG
   class InputRangeValueType < ValueType
     INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING, self.name), Class.new(FFI::Struct).tap{ |s| s.layout(:begin, :pointer, :end, :pointer) }, []
     
-    def read(output, data, input_address)
-      output[:new_input_range].call data[:begin].address - input_address, data[:end].address - input_address
+    def read(output_functions, data, input_address)
+      output_functions[:new_input_range].call data[:begin].address - input_address, data[:end].address - input_address
     end
     
     def all_labels
@@ -76,8 +76,8 @@ module JetPEG
       super LLVM::Int64.type, :int64, value_types
     end
     
-    def read(output, data, input_address)
-      output[:new_boolean].call(data == 1)
+    def read(output_functions, data, input_address)
+      output_functions[:new_boolean].call(data == 1)
     end
     
     def all_labels
@@ -130,14 +130,14 @@ module JetPEG
       builder.call type.free_function, element
     end
     
-    def read_entry(output, data, index, input_address)
+    def read_entry(output_functions, data, index, input_address)
       type, layout = @child_layouts[index]
       if layout.nil?
-        output[:new_nil].call
+        output_functions[:new_nil].call
         return
       end
       child_data = layout.is_a?(Array) ? data.values_at(*layout) : data[layout]
-      type.read output, child_data, input_address
+      type.read output_functions, child_data, input_address
     end
   end
   
@@ -158,12 +158,12 @@ module JetPEG
       [child_layouts, layout_types]
     end
     
-    def read(output, data, input_address)
+    def read(output_functions, data, input_address)
       data = data.values if data.is_a? FFI::Struct
       @child_layouts.each_key do |child_index|
-        read_entry output, data, child_index, input_address
+        read_entry output_functions, data, child_index, input_address
       end
-      output[:merge_labels].call @child_layouts.size
+      output_functions[:merge_labels].call @child_layouts.size
     end
     
     def all_labels
@@ -213,10 +213,10 @@ module JetPEG
       struct
     end
     
-    def read(output, data, input_address)
+    def read(output_functions, data, input_address)
       data = data.values if data.is_a? FFI::Struct
       child_index = data.first
-      read_entry output, data, child_index, input_address
+      read_entry output_functions, data, child_index, input_address
     end
     
     def all_labels
@@ -263,12 +263,12 @@ module JetPEG
       ptr
     end
     
-    def read(output, data, input_address)
+    def read(output_functions, data, input_address)
       if data.null?
-        output[:new_nil].call
+        output_functions[:new_nil].call
         return
       end
-      @target.return_type.load output, data, input_address # we can read directly, since the value is at the beginning of @target_struct
+      @target.return_type.load output_functions, data, input_address # we can read directly, since the value is at the beginning of @target_struct
     end
     
     def all_labels
@@ -326,9 +326,9 @@ module JetPEG
       @pointer_type.store_value builder, value
     end
     
-    def read(output, data, input_address)
-      @pointer_type.read output, data, input_address
-      output[:make_array].call
+    def read(output_functions, data, input_address)
+      @pointer_type.read output_functions, data, input_address
+      output_functions[:make_array].call
     end
     
     def all_labels
@@ -368,9 +368,9 @@ module JetPEG
       [@name]
     end
     
-    def read(output, data, input_address)
-      @inner_type.read output, data, input_address
-      output[:make_label].call @name.to_s
+    def read(output_functions, data, input_address)
+      @inner_type.read output_functions, data, input_address
+      output_functions[:make_label].call @name.to_s
     end
     
     def to_s
@@ -385,9 +385,9 @@ module JetPEG
       @arguments = arguments
     end
     
-    def read(output, data, input_address)
-      @inner_type.read output, data, input_address
-      output[@function].call(*@arguments)
+    def read(output_functions, data, input_address)
+      @inner_type.read output_functions, data, input_address
+      output_functions[@function].call(*@arguments)
     end
     
     def all_labels
