@@ -71,13 +71,13 @@ module JetPEG
     end
   end
   
-  class ScalarValueType < ValueType
+  class BooleanValueType < ValueType
     def initialize(value_types)
       super LLVM::Int64.type, :int64, value_types
     end
     
     def read(output, data, input_address)
-      output[:new_scalar].call data
+      output[:new_boolean].call(data == 1)
     end
     
     def all_labels

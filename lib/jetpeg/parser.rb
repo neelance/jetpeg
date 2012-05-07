@@ -37,9 +37,8 @@ module JetPEG
   class OutputInterface
     attr_reader :stack, :functions
     
-    def initialize(input, scalar_values)
+    def initialize(input)
       @input = input
-      @scalar_values = scalar_values
       @stack = []
       @functions = [
         FFI::Function.new(:void, []) { # 0: new_nil
@@ -48,8 +47,8 @@ module JetPEG
         FFI::Function.new(:void, [:int, :int]) { |from, to| # 1: new_input_range
           @stack << { __type__: :input_range, input: @input, position: from...to }
         },
-        FFI::Function.new(:void, [:int]) { |value| # 2: new_scalar
-          @stack << @scalar_values[value]
+        FFI::Function.new(:void, [:bool]) { |value| # 2: new_boolean
+          @stack << value
         },
         FFI::Function.new(:void, [:string]) { |name| # 3: make_label
           value = @stack.pop
@@ -88,7 +87,7 @@ module JetPEG
     end
     
     attr_reader :filename, :mod, :execution_engine, :value_types, :mode_names, :mode_struct, :malloc_counter, :free_counter,
-                :llvm_add_failure_reason_callback, :possible_failure_reasons, :scalar_values
+                :llvm_add_failure_reason_callback, :possible_failure_reasons
     attr_accessor :root_rules, :failure_reason
     
     def initialize(rules, filename = "grammar")
@@ -99,7 +98,6 @@ module JetPEG
       @root_rules = [@rules.values.first.rule_name]
       @value_types = [InputRangeValueType::INSTANCE]
       @filename = filename
-      @scalar_values = [nil]
       
       @rules.each_value(&:return_type) # calculate all return types
       @rules.each_value(&:realize_return_type) # realize recursive structures
@@ -115,15 +113,6 @@ module JetPEG
     
     def [](name)
       @rules[name]
-    end
-    
-    def scalar_value_for(scalar)
-      index = @scalar_values.index(scalar)
-      if index.nil?
-        index = @scalar_values.size
-        @scalar_values << scalar
-      end
-      LLVM::Int64.from_i index
     end
     
     def build(options = {})
@@ -222,8 +211,8 @@ module JetPEG
       
       intermediate = true 
       if value_ptr
-        output = OutputInterface.new input, @scalar_values
-        output_functions = Hash[*[:new_nil, :new_input_range, :new_scalar, :make_label, :merge_labels, :make_array, :make_object, :make_value].zip(output.functions).flatten]
+        output = OutputInterface.new input
+        output_functions = Hash[*[:new_nil, :new_input_range, :new_boolean, :make_label, :merge_labels, :make_array, :make_object, :make_value].zip(output.functions).flatten]
         root_rule.return_type.load output_functions, value_ptr, start_ptr.address
         intermediate = output.stack.first || true
         root_rule.free_value value_ptr if value_ptr

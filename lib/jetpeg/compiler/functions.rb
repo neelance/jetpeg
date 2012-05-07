@@ -6,11 +6,11 @@ module JetPEG
       end
       
       def create_return_type
-        ScalarValueType.new parser.value_types 
+        BooleanValueType.new parser.value_types 
       end
       
       def build(builder, start_input, modes, failed_block)
-        Result.new start_input, parser.scalar_value_for(true)
+        Result.new start_input, LLVM::Int64.from_i(1)
       end
     end
     
@@ -20,11 +20,11 @@ module JetPEG
       end
       
       def create_return_type
-        ScalarValueType.new parser.value_types
+        BooleanValueType.new parser.value_types
       end
       
       def build(builder, start_input, modes, failed_block)
-        Result.new start_input, parser.scalar_value_for(false)
+        Result.new start_input, LLVM::Int64.from_i(0)
       end
     end
     
