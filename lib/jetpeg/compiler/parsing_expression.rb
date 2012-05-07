@@ -93,7 +93,10 @@ module JetPEG
           @rule_function = mod.functions.add @rule_name, [LLVM_STRING, LLVM_STRING, LLVM::Pointer(return_type ? return_type.llvm_type : LLVM::Int8)], LLVM::Int1
           @rule_function.linkage = :external
 
-          @free_value_function = mod.functions.add "free_value", [LLVM::Pointer(return_type.llvm_type)], LLVM.Void() if return_type
+          if return_type
+            @free_value_function = mod.functions.add "free_value", [LLVM::Pointer(return_type.llvm_type)], LLVM.Void()
+            @free_value_function.linkage = :external
+          end
         end
       end
       

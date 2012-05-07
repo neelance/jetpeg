@@ -28,6 +28,7 @@ module JetPEG
     
     def create_functions(mod)
       @free_function = mod.functions.add("free_value", [llvm_type], LLVM.Void())
+      @free_function.linkage = :private
     end
     
     def build_functions(builder)
