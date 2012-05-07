@@ -108,7 +108,7 @@ module JetPEG
     
     def initialize(rules, filename = "grammar")
       @rules = rules
-      @rules.values.each { |rule| rule.parent = self }
+      @rules.each_value { |rule| rule.parent = self }
       @mod = nil
       @execution_engine = nil
       @root_rules = [@rules.values.first.rule_name]
@@ -116,8 +116,8 @@ module JetPEG
       @filename = filename
       @scalar_values = [nil]
       
-      @rules.values.each(&:return_type) # calculate all return types
-      @rules.values.each(&:realize_return_type) # realize recursive structures
+      @rules.each_value(&:return_type) # calculate all return types
+      @rules.each_value(&:realize_return_type) # realize recursive structures
     end
     
     def parser
@@ -178,9 +178,9 @@ module JetPEG
       
       builder = Compiler::Builder.new
       builder.parser = self
-      @rules.values.each { |rule| rule.create_functions @mod }
+      @rules.each_value { |rule| rule.create_functions @mod }
       @value_types.each { |type| type.create_functions @mod }
-      @rules.values.each { |rule| rule.build_functions builder }
+      @rules.each_value { |rule| rule.build_functions builder }
       @value_types.each { |type| type.build_functions builder }
       builder.dispose
       

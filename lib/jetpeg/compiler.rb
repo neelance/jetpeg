@@ -14,14 +14,14 @@ end
 class Hash
   def map_hash
     h = {}
-    self.keys.each do |key|
+    self.each_key do |key|
       h[key] = yield key, self[key]
     end
     h
   end
   
   def map_hash!
-    self.keys.each do |key|
+    self.each_key do |key|
       self[key] = yield key, self[key]
     end
   end

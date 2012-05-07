@@ -12,6 +12,10 @@ module JetPEG
       []
     end
     
+    def layout_types
+      nil
+    end
+    
     def load(output, pointer, input_address)
       data = ffi_type == :pointer ? pointer.get_pointer(0) : ffi_type.new(pointer)
       read output, data, input_address
@@ -73,11 +77,7 @@ module JetPEG
     attr_reader :layout_types
     
     def initialize(child_types, name, value_types)
-      @child_types = child_types
-      
       @child_layouts, @layout_types = process_types child_types
-      
-      @child_layouts = @child_types.zip(@child_layouts)
       
       llvm_type = LLVM::Struct(*@layout_types.map(&:llvm_type), "#{self.class.name}_#{name}")
       ffi_type = Class.new FFI::Struct
@@ -127,16 +127,15 @@ module JetPEG
   
   class SequenceValueType < StructValueType
     def process_types(child_types)
-      child_layouts = []
+      child_layouts = {}
       layout_types = []
       child_types.each_with_index do |child_type, child_index|
         next if child_type.nil?
-        child_type = child_type.inner_type while child_type.is_a? WrappingValueType
-        if child_type.is_a? StructValueType
-          child_layouts[child_index] = (layout_types.size...(layout_types.size + child_type.layout_types.size)).to_a
+        if child_type.layout_types
+          child_layouts[child_index] = [child_type, (layout_types.size...(layout_types.size + child_type.layout_types.size)).to_a]
           layout_types.concat child_type.layout_types
         else
-          child_layouts[child_index] = layout_types.size
+          child_layouts[child_index] = [child_type, layout_types.size]
           layout_types << child_type
         end
       end
@@ -146,19 +145,18 @@ module JetPEG
     def read(output, data, input_address)
       data = data.values if data.is_a? FFI::Struct
       output.new_hash
-      @child_types.each_index do |child_index|
+      @child_layouts.each_key do |child_index|
         read_entry output, data, child_index, input_address
         output.merge_labels
       end
     end
     
     def all_labels
-      @child_types.compact.map(&:all_labels).flatten
+      @child_layouts.values.map(&:first).map(&:all_labels).flatten
     end
     
     def build_free_function(builder, value)
-      @child_layouts.each do |type, layout|
-        next if layout.nil?
+      @child_layouts.each_value do |type, layout|
         build_free_entry builder, type, layout, value
       end
     end
@@ -168,13 +166,12 @@ module JetPEG
     SelectionFieldType = Struct.new(:llvm_type, :ffi_type).new(LLVM::Int64, :int64)
 
     def process_types(child_types)
-      child_layouts = []
+      child_layouts = {}
       layout_types = []
       layout_types << SelectionFieldType
       child_types.each_with_index do |child_type, child_index|
         next if child_type.nil?
-        child_type = child_type.inner_type while child_type.is_a? WrappingValueType
-        if child_type.is_a? StructValueType
+        if child_type.layout_types
           index_array = []
           available_layout_types = layout_types.dup
           available_layout_types[0] = nil
@@ -184,10 +181,10 @@ module JetPEG
             layout_types << child_layout_type unless layout_index
             available_layout_types[layout_index] = nil if layout_index
           end
-          child_layouts[child_index] = index_array
+          child_layouts[child_index] = [child_type, index_array]
         else
           layout_index = layout_types.index child_type
-          child_layouts[child_index] = layout_index || layout_types.size
+          child_layouts[child_index] = [child_type, layout_index || layout_types.size]
           layout_types << child_type unless layout_index
         end
       end
@@ -208,16 +205,16 @@ module JetPEG
     end
     
     def all_labels
-      @child_types.compact.map(&:all_labels).reduce(&:|)
+      @child_layouts.values.map(&:first).map(&:all_labels).reduce(&:|)
     end
     
     def build_free_function(builder, value)
       end_block = builder.create_block "choice_free_end"
-      child_blocks = @child_types.map { builder.create_block "choice_free_entry" }
+      child_blocks = @child_layouts.map { builder.create_block "choice_free_entry" }
       child_index = builder.extract_value value, 0
-      builder.switch child_index, end_block, @child_types.size.times.map{ |i| [LLVM::Int64.from_i(i), child_blocks[i]] }
+      builder.switch child_index, end_block, @child_layouts.size.times.map{ |i| [LLVM::Int64.from_i(i), child_blocks[i]] }
       
-      @child_layouts.zip(child_blocks).each do |(type, layout), block|
+      @child_layouts.values.zip(child_blocks).each do |(type, layout), block|
         builder.position_at_end block
         if layout.nil?
           builder.br end_block
@@ -335,6 +332,10 @@ module JetPEG
       super inner_type.llvm_type, inner_type.ffi_type, value_types
       @inner_type = inner_type
       @child_types = [inner_type]
+    end
+    
+    def layout_types
+      @inner_type.layout_types
     end
     
     def build_free_function(builder, value)
