@@ -2,7 +2,6 @@ module JetPEG
   module Compiler
     class ParsingExpression
       attr_accessor :parent, :rule_name, :parameters, :local_label_source
-      attr_reader :match_function
       
       def initialize
         @rule_name = nil
@@ -172,10 +171,6 @@ module JetPEG
         parser.match_rule self, input, options
       end
       
-      def free_value(value)
-        parser.execution_engine.run_function @free_value_function, value
-      end
-          
       def eql?(other)
         self == other
       end

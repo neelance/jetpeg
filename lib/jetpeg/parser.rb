@@ -139,8 +139,9 @@ module JetPEG
       raise ArgumentError.new("Input must be a String.") if not input.is_a? String
       options.merge!(@@default_options) { |key, oldval, newval| oldval }
       
-      if @mod.nil? or not @root_rules.include?(root_rule.rule_name)
-        @root_rules << root_rule.rule_name
+      rule_name = root_rule.rule_name
+      if @mod.nil? or not @root_rules.include?(rule_name)
+        @root_rules << rule_name
         build options
       end
       
@@ -151,7 +152,7 @@ module JetPEG
       @failure_reason = ParsingError.new([])
       @failure_reason_position = start_ptr
       
-      success_value = @execution_engine.run_function root_rule.match_function, start_ptr, end_ptr, value_ptr
+      success_value = @execution_engine.run_function @mod.functions["#{rule_name}_match"], start_ptr, end_ptr, value_ptr
       if not success_value.to_b
         success_value.dispose
         check_malloc_counter
@@ -207,7 +208,7 @@ module JetPEG
         output_functions = Hash[*[:new_nil, :new_input_range, :new_boolean, :make_label, :merge_labels, :make_array, :make_object, :make_value].zip(functions).flatten]
         root_rule.return_type.load output_functions, value_ptr, start_ptr.address
         intermediate = stack.first || true
-        root_rule.free_value value_ptr if value_ptr
+        @execution_engine.run_function @mod.functions["#{rule_name}_free_value"], value_ptr if value_ptr
       end
       check_malloc_counter
       return intermediate if options[:output] == :intermediate
