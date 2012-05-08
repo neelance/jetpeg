@@ -173,7 +173,7 @@ module JetPEG
   
   class ChoiceValueType < StructValueType
     SelectionFieldType = Struct.new(:llvm_type).new(LLVM::Int64)
-
+    
     def process_types(child_types)
       child_layouts = {}
       layout_types = []
@@ -216,7 +216,7 @@ module JetPEG
       nil_block = builder.create_block "choice_read_nil"
       child_blocks = @child_layouts.map { builder.create_block "choice_read_entry" }
       child_index = builder.extract_value value, 0
-      builder.switch child_index, nil_block, @child_layouts.size.times.map{ |i| [LLVM::Int64.from_i(i), child_blocks[i]] }
+      builder.switch child_index, nil_block, @child_layouts.keys.map{ |i| LLVM::Int64.from_i(i) }.zip(child_blocks)
       
       @child_layouts.values.zip(child_blocks).each do |(type, layout), block|
         builder.position_at_end block
