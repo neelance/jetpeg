@@ -10,10 +10,9 @@ module JetPEG
       
       def build(builder, start_input, modes, failed_block)
         end_input = @string.chars.inject(start_input) do |input, char|
-          failed = builder.icmp :ne, builder.load(input), LLVM::Int8.from_i(char.ord), "failed"
-          builder.add_failure_reason failed, start_input, ParsingError.new([@string])
+          successful = builder.icmp :eq, builder.load(input), LLVM::Int8.from_i(char.ord), "failed"
           next_char_block = builder.create_block "string_terminal_next_char"
-          builder.cond failed, failed_block, next_char_block
+          builder.cond successful, next_char_block, builder.add_failure_reason(failed_block, start_input, ParsingError.new([@string]))
           
           builder.position_at_end next_char_block
           builder.gep input, LLVM::Int(1), "new_input"
@@ -67,9 +66,8 @@ module JetPEG
       end
       
       def build(builder, start_input, input_char, successful_block, failed_block)
-        failed = builder.icmp :ne, input_char, LLVM::Int8.from_i(character.ord), "matching"
-        builder.add_failure_reason failed, start_input, ParsingError.new([character])
-        builder.cond failed, failed_block, successful_block
+        successful = builder.icmp :eq, input_char, LLVM::Int8.from_i(character.ord), "matching"
+        builder.cond successful, successful_block, builder.add_failure_reason(failed_block, start_input, ParsingError.new([character]))
       end
       
       def ==(other)
@@ -95,13 +93,11 @@ module JetPEG
       def build(builder, start_input, input_char, successful_block, failed_block)
         error = ParsingError.new(["#{@begin_char}-#{@end_char}"])
         begin_char_successful = builder.create_block "character_class_range_begin_char_successful"
-        failed = builder.icmp :ult, input_char, LLVM::Int8.from_i(@begin_char.ord), "begin_matching"
-        builder.add_failure_reason failed, start_input, error
-        builder.cond failed, failed_block, begin_char_successful
+        successful = builder.icmp :uge, input_char, LLVM::Int8.from_i(@begin_char.ord), "begin_matching"
+        builder.cond successful, begin_char_successful, builder.add_failure_reason(failed_block, start_input, error)
         builder.position_at_end begin_char_successful
-        failed = builder.icmp :ugt, input_char, LLVM::Int8.from_i(@end_char.ord), "end_matching"
-        builder.add_failure_reason failed, start_input, error
-        builder.cond failed, failed_block, successful_block
+        successful = builder.icmp :ule, input_char, LLVM::Int8.from_i(@end_char.ord), "end_matching"
+        builder.cond successful, successful_block, builder.add_failure_reason(failed_block, start_input, error)
       end
       
       def ==(other)

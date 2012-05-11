@@ -104,7 +104,7 @@ module JetPEG
         @free_counter = nil
       end
       
-      @ffi_add_failure_reason_callback = FFI::Function.new(:void, [:bool, :pointer, :long]) do |failure, pos, reason_index|
+      @ffi_add_failure_reason_callback = FFI::Function.new(:void, [:pointer, :long]) do |pos, reason_index|
         reason = @possible_failure_reasons[reason_index]
         if @failure_reason_position.address < pos.address
           @failure_reason = reason
@@ -114,7 +114,7 @@ module JetPEG
         end
       end
       
-      add_failure_reason_callback_type = LLVM::Pointer(LLVM::Function([LLVM::Int1, LLVM_STRING, LLVM::Int], LLVM::Void()))
+      add_failure_reason_callback_type = LLVM::Pointer(LLVM::Function([LLVM_STRING, LLVM::Int], LLVM::Void()))
       @llvm_add_failure_reason_callback = LLVM::C.const_int_to_ptr LLVM::Int64.from_i(@ffi_add_failure_reason_callback.address), add_failure_reason_callback_type
       
       builder = Compiler::Builder.new
