@@ -10,16 +10,13 @@ LLVM.init_x86
 
 module JetPEG
   class ParsingError < RuntimeError
-    attr_reader :expectations, :other_reasons
-    attr_accessor :position, :input
+    attr_reader :input, :position, :expectations, :other_reasons
     
-    def initialize(expectations, other_reasons = [])
+    def initialize(input, position, expectations, other_reasons)
+      @input = input
+      @position = position
       @expectations = expectations.uniq.sort
       @other_reasons = other_reasons.uniq.sort
-    end
-    
-    def merge(other)
-      ParsingError.new(@expectations + other.expectations, @other_reasons + other.other_reasons)
     end
     
     def to_s
@@ -28,7 +25,7 @@ module JetPEG
       column = before.size - (before.rindex("\n") || 0)
       
       reasons = @other_reasons.dup
-      reasons << "Expected one of #{@expectations.map{ |e| e.inspect[1..-2] }.join(", ")}" unless @expectations.empty?
+      reasons << "Expected one of #{@expectations.join(", ")}" unless @expectations.empty?
       
       "At line #{line}, column #{column} (byte #{position}, after #{before[(before.size > 20 ? -20 : 0)..-1].inspect}): #{reasons.join(' / ')}."
     end
@@ -43,7 +40,7 @@ module JetPEG
     make_array:      LLVM.Function([], LLVM.Void()),
     make_object:     LLVM.Function([LLVM_STRING], LLVM.Void()),
     make_value:      LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int64], LLVM.Void()),
-    add_failure:     LLVM.Function([LLVM_STRING, LLVM::Int64], LLVM.Void())
+    add_failure:     LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int1], LLVM.Void())
   }
   OUTPUT_FUNCTION_POINTERS = OUTPUT_INTERFACE_SIGNATURES.values.map { |fun_type| LLVM::Pointer(fun_type) }
   
@@ -54,9 +51,8 @@ module JetPEG
       @@default_options
     end
     
-    attr_reader :filename, :mod, :execution_engine, :value_types, :mode_names, :mode_struct, :malloc_counter, :free_counter,
-                :possible_failure_reasons
-    attr_accessor :root_rules, :failure_reason
+    attr_reader :filename, :failure_reason, :mod, :execution_engine, :value_types, :mode_names, :mode_struct, :malloc_counter, :free_counter
+    attr_accessor :root_rules
     
     def initialize(rules, filename = "grammar")
       @rules = rules
@@ -90,7 +86,6 @@ module JetPEG
         @execution_engine.dispose # disposes module, too
       end
       
-      @possible_failure_reasons = []
       @mod = LLVM::Module.new "Parser"
       @mode_names = @rules.values.map(&:all_mode_names).flatten.uniq
       @mode_struct = LLVM::Type.struct(([LLVM::Int1] * @mode_names.size), true, "mode_struct")
@@ -148,6 +143,9 @@ module JetPEG
       end_ptr = start_ptr + input.size
       
       output_stack = []
+      failure_position = 0
+      failure_expectations = []
+      failure_other_reasons = []
       output_functions = [
         FFI::Function.new(:void, []) { # 0: new_nil
           output_stack << nil
@@ -183,26 +181,23 @@ module JetPEG
           data = output_stack.pop
           output_stack << { __type__: :value, code: code, filename: filename, lineno: lineno, data: data }
         },
-        FFI::Function.new(:void, [:pointer, :int64]) { |pos, reason_index| # 8: add_failure
-          reason = @possible_failure_reasons[reason_index]
-          if @failure_reason_position.address < pos.address
-            @failure_reason = reason
-            @failure_reason_position = pos
-          elsif @failure_reason_position.address == pos.address
-            @failure_reason = @failure_reason.merge reason
+        FFI::Function.new(:void, [:pointer, :string, :bool]) { |pos_ptr, reason, is_expectation| # 8: add_failure
+          position = pos_ptr.address - start_ptr.address
+          if failure_position < position
+            failure_position = position
+            failure_expectations.clear
+            failure_other_reasons.clear
           end
+          failure_expectations << reason if is_expectation
+          failure_other_reasons << reason if !is_expectation
         }
       ]
-      
-      @failure_reason = ParsingError.new([])
-      @failure_reason_position = start_ptr
       
       success_value = @execution_engine.run_function @mod.functions["#{rule_name}_match"], start_ptr, end_ptr, *output_functions
       if not success_value.to_b
         success_value.dispose
         check_malloc_counter
-        @failure_reason.input = input
-        @failure_reason.position = @failure_reason_position.address - start_ptr.address
+        @failure_reason = ParsingError.new input, failure_position, failure_expectations, failure_other_reasons
         raise @failure_reason if options[:raise_on_failure]
         return nil
       end

@@ -56,7 +56,7 @@ module JetPEG
         successful = builder.icmp :eq, builder.load(input), builder.load(expected), "failed"
         input << builder.gep(input, LLVM::Int(1), "new_input")
         expected << builder.gep(expected, LLVM::Int(1), "new_expected")
-        builder.cond successful, end_check_block, builder.add_failure_reason(failed_block, start_input, ParsingError.new([], ["$match failed"])) # TODO better failure message
+        builder.cond successful, end_check_block, builder.add_failure_reason(failed_block, start_input, "$match failed", false) # TODO better failure message
         
         builder.position_at_end exit_block
         Result.new input
@@ -70,7 +70,7 @@ module JetPEG
       end
       
       def build(builder, start_input, modes, failed_block)
-        builder.br builder.add_failure_reason(failed_block, start_input, ParsingError.new([], [@message]))
+        builder.br builder.add_failure_reason(failed_block, start_input, @message, false)
 
         dummy_block = builder.create_block "error_dummy"
         builder.position_at_end dummy_block

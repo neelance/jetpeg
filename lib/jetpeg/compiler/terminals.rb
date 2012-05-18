@@ -12,7 +12,7 @@ module JetPEG
         end_input = @string.chars.inject(start_input) do |input, char|
           successful = builder.icmp :eq, builder.load(input), LLVM::Int8.from_i(char.ord), "failed"
           next_char_block = builder.create_block "string_terminal_next_char"
-          builder.cond successful, next_char_block, builder.add_failure_reason(failed_block, start_input, ParsingError.new([@string]))
+          builder.cond successful, next_char_block, builder.add_failure_reason(failed_block, start_input, @string)
           
           builder.position_at_end next_char_block
           builder.gep input, LLVM::Int(1), "new_input"
@@ -67,7 +67,7 @@ module JetPEG
       
       def build(builder, start_input, input_char, successful_block, failed_block)
         successful = builder.icmp :eq, input_char, LLVM::Int8.from_i(character.ord), "matching"
-        builder.cond successful, successful_block, builder.add_failure_reason(failed_block, start_input, ParsingError.new([character]))
+        builder.cond successful, successful_block, builder.add_failure_reason(failed_block, start_input, character)
       end
       
       def ==(other)
@@ -91,13 +91,13 @@ module JetPEG
       end
 
       def build(builder, start_input, input_char, successful_block, failed_block)
-        error = ParsingError.new(["#{@begin_char}-#{@end_char}"])
+        expectation = "#{@begin_char}-#{@end_char}"
         begin_char_successful = builder.create_block "character_class_range_begin_char_successful"
         successful = builder.icmp :uge, input_char, LLVM::Int8.from_i(@begin_char.ord), "begin_matching"
-        builder.cond successful, begin_char_successful, builder.add_failure_reason(failed_block, start_input, error)
+        builder.cond successful, begin_char_successful, builder.add_failure_reason(failed_block, start_input, expectation)
         builder.position_at_end begin_char_successful
         successful = builder.icmp :ule, input_char, LLVM::Int8.from_i(@end_char.ord), "end_matching"
-        builder.cond successful, successful_block, builder.add_failure_reason(failed_block, start_input, error)
+        builder.cond successful, successful_block, builder.add_failure_reason(failed_block, start_input, expectation)
       end
       
       def ==(other)
