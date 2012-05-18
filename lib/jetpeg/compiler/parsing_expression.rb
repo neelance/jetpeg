@@ -95,8 +95,8 @@ module JetPEG
       end
       
       def build_functions(builder)
-        build_internal_rule_function false
-        build_internal_rule_function true
+        build_internal_rule_function builder, false
+        build_internal_rule_function builder, true
         
         if parser.root_rules.include? @rule_name
           entry_block = @match_function.basic_blocks.append "rule_entry"
@@ -124,11 +124,8 @@ module JetPEG
         end
       end
       
-      def build_internal_rule_function(traced)
+      def build_internal_rule_function(builder, traced)
         function = traced ? @traced_match_function : @fast_match_function
-        
-        builder = Builder.new
-        builder.parser = parser
         builder.traced = traced
         builder.add_failure_callback = function.params[1]
         
@@ -148,8 +145,6 @@ module JetPEG
         
         builder.position_at_end failed_block
         builder.ret rule_result_structure.null
-        
-        builder.dispose
       end
       
       def call_internal_match_function(builder, *args)

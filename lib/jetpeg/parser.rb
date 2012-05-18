@@ -101,7 +101,9 @@ module JetPEG
       end
       
       builder = Compiler::Builder.new
-      builder.parser = self
+      builder.mod = @mod
+      builder.malloc_counter = @malloc_counter
+      builder.free_counter = @free_counter
       @rules.each_value { |rule| rule.create_functions @mod }
       @value_types.each { |type| type.create_functions @mod }
       @rules.each_value { |rule| rule.build_functions builder }

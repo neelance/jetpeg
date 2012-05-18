@@ -61,7 +61,7 @@ module JetPEG
         end
       end
       
-      attr_accessor :parser, :traced, :add_failure_callback
+      attr_accessor :mod, :traced, :add_failure_callback, :malloc_counter, :free_counter
       
       def create_block(name)
         LazyBlock.new self.insert_block.parent, name
@@ -73,7 +73,7 @@ module JetPEG
       
       def create_string_constant(string)
         constant = LLVM::ConstantArray.string string
-        global = @parser.mod.globals.add constant.type, "strings.#{string[0..9]}"
+        global = @mod.globals.add constant.type, "strings.#{string[0..9]}"
         global.initializer = constant
         global.global_constant = 1
         global.linkage = :private
@@ -89,19 +89,19 @@ module JetPEG
       end
       
       def malloc(type, name = "")
-        if @parser.malloc_counter
-          old_value = self.load @parser.malloc_counter
+        if @malloc_counter
+          old_value = self.load @malloc_counter
           new_value = self.add old_value, LLVM::Int64.from_i(1)
-          self.store new_value, @parser.malloc_counter
+          self.store new_value, @malloc_counter
         end
         super
       end
       
       def free(pointer)
-        if @parser.free_counter
-          old_value = self.load @parser.free_counter
+        if @free_counter
+          old_value = self.load @free_counter
           new_value = self.add old_value, LLVM::Int64.from_i(1)
-          self.store new_value, @parser.free_counter
+          self.store new_value, @free_counter
         end
         super
       end
