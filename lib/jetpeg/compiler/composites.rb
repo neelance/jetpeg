@@ -244,7 +244,7 @@ module JetPEG
       end
       
       def build(builder, start_input, modes, failed_block)
-        rule_result = referenced.call_internal_match_function builder, start_input, modes, *@arguments.map(&:value), "rule_end_input"
+        rule_result = referenced.call_internal_match_function builder, start_input, builder.add_failure_callback, modes, *@arguments.map(&:value), "rule_end_input"
         
         rule_end_input = builder.extract_value rule_result, 0
         rule_successful = builder.icmp :ne, rule_end_input, LLVM_STRING.null_pointer, "rule_successful"

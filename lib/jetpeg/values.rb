@@ -48,7 +48,7 @@ module JetPEG
   end
   
   class InputRangeValueType < ValueType
-    INSTANCE = new LLVM::Struct(LLVM_STRING, LLVM_STRING, self.name), []
+    INSTANCE = new LLVM::Type.struct([LLVM_STRING, LLVM_STRING], true, self.name), []
     
     def all_labels
       [nil]
@@ -89,7 +89,7 @@ module JetPEG
     def initialize(child_types, name, value_types)
       @child_layouts, @layout_types = process_types child_types
       
-      llvm_type = LLVM::Struct(*@layout_types.map(&:llvm_type), "#{self.class.name}_#{name}")
+      llvm_type = LLVM::Type.struct(@layout_types.map(&:llvm_type), true, "#{self.class.name}_#{name}")
       super llvm_type, value_types
     end
     
@@ -250,7 +250,7 @@ module JetPEG
   class PointerValueType < ValueType
     def initialize(target, value_types)
       @target = target
-      @target_struct = LLVM::Type.struct(nil, false, self.class.name)
+      @target_struct = LLVM::Type.struct(nil, true, self.class.name)
       super LLVM::Pointer(@target_struct), value_types
     end
     

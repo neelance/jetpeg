@@ -61,7 +61,7 @@ module JetPEG
         end
       end
       
-      attr_accessor :parser, :traced
+      attr_accessor :parser, :traced, :add_failure_callback
       
       def create_block(name)
         LazyBlock.new self.insert_block.parent, name
@@ -113,7 +113,7 @@ module JetPEG
         failure_reason_block = self.create_block "add_failure_reason"
         self.position_at_end failure_reason_block
         @parser.possible_failure_reasons << reason
-        self.call @parser.llvm_add_failure_reason_callback, position, LLVM::Int(@parser.possible_failure_reasons.size - 1)
+        self.call @add_failure_callback, position, LLVM::Int64.from_i(@parser.possible_failure_reasons.size - 1)
         self.br failed_block
         self.position_at_end initial_block
         failure_reason_block

@@ -77,15 +77,15 @@ module JetPEG
       end
       
       def rule_result_structure
-        @rule_result_structure ||= LLVM::Struct(LLVM_STRING, return_type ? return_type.llvm_type : LLVM::Int8)
+        @rule_result_structure ||= LLVM::Type.struct([LLVM_STRING, return_type ? return_type.llvm_type : LLVM::Int8], true)
       end
       
       def create_functions(mod)
         parameter_llvm_types = @parameters.map(&:value_type).map(&:llvm_type)
         
-        @fast_match_function = mod.functions.add "#{@rule_name}_fast_match", [LLVM_STRING, parser.mode_struct] + parameter_llvm_types, rule_result_structure
+        @fast_match_function = mod.functions.add "#{@rule_name}_fast_match", [LLVM_STRING, OUTPUT_FUNCTION_POINTERS.last, parser.mode_struct] + parameter_llvm_types, rule_result_structure
         @fast_match_function.linkage = :private
-        @traced_match_function = mod.functions.add "#{@rule_name}_traced_match", [LLVM_STRING, parser.mode_struct] + parameter_llvm_types, rule_result_structure
+        @traced_match_function = mod.functions.add "#{@rule_name}_traced_match", [LLVM_STRING, OUTPUT_FUNCTION_POINTERS.last, parser.mode_struct] + parameter_llvm_types, rule_result_structure
         @traced_match_function.linkage = :private
 
         if parser.root_rules.include? @rule_name
@@ -105,7 +105,7 @@ module JetPEG
           start_ptr, end_ptr, *output_functions = @match_function.params.to_a
           
           builder.position_at_end entry_block
-          rule_result = builder.call @fast_match_function, start_ptr, parser.mode_struct.null
+          rule_result = builder.call @fast_match_function, start_ptr, OUTPUT_FUNCTION_POINTERS.last.null, parser.mode_struct.null
           rule_end_input = builder.extract_value rule_result, 0
           return_value = builder.extract_value rule_result, 1
           successful = builder.icmp :eq, rule_end_input, end_ptr
@@ -118,7 +118,7 @@ module JetPEG
           
           builder.position_at_end failed_block
           builder.call return_type.free_function, return_value if return_type
-          builder.call @traced_match_function, start_ptr, parser.mode_struct.null
+          builder.call @traced_match_function, start_ptr, output_functions.last, parser.mode_struct.null
           builder.call return_type.free_function, return_value if return_type
           builder.ret LLVM::FALSE
         end
@@ -130,15 +130,16 @@ module JetPEG
         builder = Builder.new
         builder.parser = parser
         builder.traced = traced
+        builder.add_failure_callback = function.params[1]
         
         entry = function.basic_blocks.append "entry"
         builder.position_at_end entry
         
         failed_block = builder.create_block "failed"
         @parameters.each_with_index do |parameter, index|
-          parameter.value = function.params[index + 2]
+          parameter.value = function.params[index + 3]
         end
-        end_result = build builder, function.params[0], function.params[1], failed_block
+        end_result = build builder, function.params[0], function.params[2], failed_block
         
         result = rule_result_structure.null
         result = builder.insert_value result, end_result.input, 0

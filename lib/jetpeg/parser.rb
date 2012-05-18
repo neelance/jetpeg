@@ -43,6 +43,7 @@ module JetPEG
     make_array:      LLVM.Function([], LLVM.Void()),
     make_object:     LLVM.Function([LLVM_STRING], LLVM.Void()),
     make_value:      LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int64], LLVM.Void()),
+    add_failure:     LLVM.Function([LLVM_STRING, LLVM::Int64], LLVM.Void())
   }
   OUTPUT_FUNCTION_POINTERS = OUTPUT_INTERFACE_SIGNATURES.values.map { |fun_type| LLVM::Pointer(fun_type) }
   
@@ -54,7 +55,7 @@ module JetPEG
     end
     
     attr_reader :filename, :mod, :execution_engine, :value_types, :mode_names, :mode_struct, :malloc_counter, :free_counter,
-                :llvm_add_failure_reason_callback, :possible_failure_reasons
+                :possible_failure_reasons
     attr_accessor :root_rules, :failure_reason
     
     def initialize(rules, filename = "grammar")
@@ -92,7 +93,7 @@ module JetPEG
       @possible_failure_reasons = []
       @mod = LLVM::Module.new "Parser"
       @mode_names = @rules.values.map(&:all_mode_names).flatten.uniq
-      @mode_struct = LLVM::Struct(*([LLVM::Int1] * @mode_names.size), "mode_struct")
+      @mode_struct = LLVM::Type.struct(([LLVM::Int1] * @mode_names.size), true, "mode_struct")
       
       if options[:track_malloc]
         @malloc_counter = @mod.globals.add LLVM::Int64, "malloc_counter"
@@ -103,19 +104,6 @@ module JetPEG
         @malloc_counter = nil
         @free_counter = nil
       end
-      
-      @ffi_add_failure_reason_callback = FFI::Function.new(:void, [:pointer, :long]) do |pos, reason_index|
-        reason = @possible_failure_reasons[reason_index]
-        if @failure_reason_position.address < pos.address
-          @failure_reason = reason
-          @failure_reason_position = pos
-        elsif @failure_reason_position.address == pos.address
-          @failure_reason = @failure_reason.merge reason
-        end
-      end
-      
-      add_failure_reason_callback_type = LLVM::Pointer(LLVM::Function([LLVM_STRING, LLVM::Int], LLVM::Void()))
-      @llvm_add_failure_reason_callback = LLVM::C.const_int_to_ptr LLVM::Int64.from_i(@ffi_add_failure_reason_callback.address), add_failure_reason_callback_type
       
       builder = Compiler::Builder.new
       builder.parser = self
@@ -194,6 +182,15 @@ module JetPEG
         FFI::Function.new(:void, [:string, :string, :int64]) { |code, filename, lineno| # 7: make_value
           data = output_stack.pop
           output_stack << { __type__: :value, code: code, filename: filename, lineno: lineno, data: data }
+        },
+        FFI::Function.new(:void, [:pointer, :int64]) { |pos, reason_index| # 8: add_failure
+          reason = @possible_failure_reasons[reason_index]
+          if @failure_reason_position.address < pos.address
+            @failure_reason = reason
+            @failure_reason_position = pos
+          elsif @failure_reason_position.address == pos.address
+            @failure_reason = @failure_reason.merge reason
+          end
         }
       ]
       
@@ -221,8 +218,8 @@ module JetPEG
       raise ArgumentError, "Invalid output option: #{options[:output]}"
     end
     
-    def parse(input)
-      match_rule @rules.values.first.rule_name, input
+    def parse(input, options = {})
+      match_rule @rules.values.first.rule_name, input, options
     end
     
     def stats
