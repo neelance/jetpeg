@@ -25,7 +25,7 @@ module JetPEG
     end
     
     def create_functions(mod)
-      @read_function = mod.functions.add("read_value", [llvm_type, LLVM::Int64, *OUTPUT_FUNCTION_POINTERS], LLVM.Void())
+      @read_function = mod.functions.add("read_value", [llvm_type, *OUTPUT_FUNCTION_POINTERS], LLVM.Void())
       @read_function.linkage = :private
       
       @free_function = mod.functions.add("free_value", [llvm_type], LLVM.Void())
@@ -35,9 +35,9 @@ module JetPEG
     def build_functions(builder)
       entry = @read_function.basic_blocks.append "entry"
       builder.position_at_end entry
-      value, input_address, *output_functions_array = @read_function.params.to_a
+      value, *output_functions_array = @read_function.params.to_a
       output_functions = Hash[*OUTPUT_INTERFACE_SIGNATURES.keys.zip(output_functions_array).flatten]
-      build_read_function builder, value, input_address, output_functions
+      build_read_function builder, value, output_functions
       builder.ret_void
       
       entry = @free_function.basic_blocks.append "entry"
@@ -54,10 +54,8 @@ module JetPEG
       [nil]
     end
     
-    def build_read_function(builder, value, input_address, output_functions)
-      begin_offset = builder.sub(builder.ptr2int(builder.extract_value(value, 0), LLVM::Int64), input_address)
-      end_offset = builder.sub(builder.ptr2int(builder.extract_value(value, 1), LLVM::Int64), input_address)
-      builder.call output_functions[:new_input_range], begin_offset, end_offset
+    def build_read_function(builder, value, output_functions)
+      builder.call output_functions[:new_input_range], builder.extract_value(value, 0), builder.extract_value(value, 1)
     end
 
     def build_free_function(builder, value)
@@ -74,7 +72,7 @@ module JetPEG
       [nil]
     end
     
-    def build_read_function(builder, value, input_address, output_functions)
+    def build_read_function(builder, value, output_functions)
       builder.call output_functions[:new_boolean], builder.trunc(value, LLVM::Int1)
     end
     
@@ -106,7 +104,7 @@ module JetPEG
       builder.insert_values struct, values, indices
     end
     
-    def build_read_entry(builder, type, layout, value, input_address, output_functions)
+    def build_read_entry(builder, type, layout, value, output_functions)
       element = nil
       if layout.is_a?(Array)
         element = type.llvm_type.null
@@ -118,7 +116,7 @@ module JetPEG
         element = builder.extract_value value, layout
       end
       raise if type.read_function.nil?
-      builder.call type.read_function, element, input_address, *output_functions.values
+      builder.call type.read_function, element, *output_functions.values
     end
     
     def build_free_entry(builder, type, layout, value)
@@ -157,9 +155,9 @@ module JetPEG
       @child_layouts.values.map(&:first).map(&:all_labels).flatten
     end
     
-    def build_read_function(builder, value, input_address, output_functions)
+    def build_read_function(builder, value, output_functions)
       @child_layouts.each_value do |type, layout|
-        build_read_entry builder, type, layout, value, input_address, output_functions
+        build_read_entry builder, type, layout, value, output_functions
       end
       builder.call output_functions[:merge_labels], LLVM::Int64.from_i(@child_layouts.size)
     end
@@ -211,7 +209,7 @@ module JetPEG
       @child_layouts.values.map(&:first).map(&:all_labels).reduce(&:|)
     end
     
-    def build_read_function(builder, value, input_address, output_functions)
+    def build_read_function(builder, value, output_functions)
       end_block = builder.create_block "choice_read_end"
       nil_block = builder.create_block "choice_read_nil"
       child_blocks = @child_layouts.map { builder.create_block "choice_read_entry" }
@@ -220,7 +218,7 @@ module JetPEG
       
       @child_layouts.values.zip(child_blocks).each do |(type, layout), block|
         builder.position_at_end block
-        build_read_entry builder, type, layout, value, input_address, output_functions
+        build_read_entry builder, type, layout, value, output_functions
         builder.br end_block
       end
       
@@ -271,7 +269,7 @@ module JetPEG
       [nil]
     end
     
-    def build_read_function(builder, value, input_address, output_functions)
+    def build_read_function(builder, value, output_functions)
       null_block = builder.create_block "read_pointer_null"
       not_null_block = builder.create_block "read_pointer_not_null"
       end_block = builder.create_block "read_pointer_end"
@@ -282,7 +280,7 @@ module JetPEG
       builder.br end_block
       
       builder.position_at_end not_null_block
-      builder.call @target.return_type.read_function, builder.load(builder.struct_gep(value, 0)), input_address, *output_functions.values
+      builder.call @target.return_type.read_function, builder.load(builder.struct_gep(value, 0)), *output_functions.values
       builder.br end_block
       
       builder.position_at_end end_block
@@ -343,8 +341,8 @@ module JetPEG
       @inner_type ? [nil] : []
     end
     
-    def build_read_function(builder, value, input_address, output_functions)
-      builder.call @pointer_type.read_function, value, input_address, *output_functions.values
+    def build_read_function(builder, value, output_functions)
+      builder.call @pointer_type.read_function, value, *output_functions.values
       builder.call output_functions[:make_array]
     end
     
@@ -381,8 +379,8 @@ module JetPEG
       [@name]
     end
     
-    def build_read_function(builder, value, input_address, output_functions)
-      builder.call @inner_type.read_function, value, input_address, *output_functions.values
+    def build_read_function(builder, value, output_functions)
+      builder.call @inner_type.read_function, value, *output_functions.values
       builder.call output_functions[:make_label], builder.create_string_constant(@name.to_s)
     end
     
@@ -402,8 +400,8 @@ module JetPEG
       @inner_type ? [nil] : []
     end
     
-    def build_read_function(builder, value, input_address, output_functions)
-      builder.call @inner_type.read_function, value, input_address, *output_functions.values
+    def build_read_function(builder, value, output_functions)
+      builder.call @inner_type.read_function, value, *output_functions.values
       mapped_arguments = @arguments.map { |arg|
         case arg
         when Integer then LLVM::Int64.from_i(arg) 

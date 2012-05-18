@@ -33,7 +33,7 @@ module JetPEG
   
   OUTPUT_INTERFACE_SIGNATURES = {
     new_nil:         LLVM.Function([], LLVM.Void()),
-    new_input_range: LLVM.Function([LLVM::Int64, LLVM::Int64], LLVM.Void()),
+    new_input_range: LLVM.Function([LLVM_STRING, LLVM_STRING], LLVM.Void()),
     new_boolean:     LLVM.Function([LLVM::Int1], LLVM.Void()),
     make_label:      LLVM.Function([LLVM_STRING], LLVM.Void()),
     merge_labels:    LLVM.Function([LLVM::Int64], LLVM.Void()),
@@ -150,8 +150,8 @@ module JetPEG
         FFI::Function.new(:void, []) { # 0: new_nil
           output_stack << nil
         },
-        FFI::Function.new(:void, [:int64, :int64]) { |from, to| # 1: new_input_range
-          output_stack << { __type__: :input_range, input: input, position: from...to }
+        FFI::Function.new(:void, [:pointer, :pointer]) { |from_ptr, to_ptr| # 1: new_input_range
+          output_stack << { __type__: :input_range, input: input, position: (from_ptr.address - start_ptr.address)...(to_ptr.address - start_ptr.address) }
         },
         FFI::Function.new(:void, [:bool]) { |value| # 2: new_boolean
           output_stack << value
