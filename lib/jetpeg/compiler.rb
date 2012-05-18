@@ -61,7 +61,20 @@ module JetPEG
         end
       end
       
-      attr_accessor :mod, :traced, :add_failure_callback, :malloc_counter, :free_counter
+      attr_accessor :traced, :add_failure_callback
+      
+      def init(mod, track_malloc)
+        @mod = mod
+        if track_malloc
+          @malloc_counter = @mod.globals.add LLVM::Int64, :malloc_counter
+          @malloc_counter.initializer = LLVM::Int64.from_i(0)
+          @free_counter = @mod.globals.add LLVM::Int64, :free_counter
+          @free_counter.initializer = LLVM::Int64.from_i(0)
+        else
+          @malloc_counter = nil
+          @free_counter = nil
+        end
+      end
       
       def create_block(name)
         LazyBlock.new self.insert_block.parent, name

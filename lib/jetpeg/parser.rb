@@ -51,7 +51,7 @@ module JetPEG
       @@default_options
     end
     
-    attr_reader :filename, :failure_reason, :mod, :execution_engine, :value_types, :mode_names, :mode_struct, :malloc_counter, :free_counter
+    attr_reader :filename, :failure_reason, :mod, :execution_engine, :value_types, :mode_names
     attr_accessor :root_rules
     
     def initialize(rules, filename = "grammar")
@@ -90,23 +90,11 @@ module JetPEG
       @mode_names = @rules.values.map(&:all_mode_names).flatten.uniq
       @mode_struct = LLVM::Type.struct(([LLVM::Int1] * @mode_names.size), true, "mode_struct")
       
-      if options[:track_malloc]
-        @malloc_counter = @mod.globals.add LLVM::Int64, "malloc_counter"
-        @malloc_counter.initializer = LLVM::Int64.from_i(0)
-        @free_counter = @mod.globals.add LLVM::Int64, "free_counter"
-        @free_counter.initializer = LLVM::Int64.from_i(0)
-      else
-        @malloc_counter = nil
-        @free_counter = nil
-      end
-      
       builder = Compiler::Builder.new
-      builder.mod = @mod
-      builder.malloc_counter = @malloc_counter
-      builder.free_counter = @free_counter
-      @rules.each_value { |rule| rule.create_functions @mod }
+      builder.init @mod, options[:track_malloc]
+      @rules.each_value { |rule| rule.create_functions @mod, @root_rules.include?(rule.rule_name), @mode_struct }
       @value_types.each { |type| type.create_functions @mod }
-      @rules.each_value { |rule| rule.build_functions builder }
+      @rules.each_value { |rule| rule.build_functions builder, @root_rules.include?(rule.rule_name), @mode_struct }
       @value_types.each { |type| type.build_functions builder }
       builder.dispose
       
@@ -130,6 +118,10 @@ module JetPEG
         block.call expression
         each_expression expression.children, &block
       end
+    end
+    
+    def parse(input, options = {})
+      parse_rule @rules.values.first.rule_name, input, options
     end
     
     def parse_rule(rule_name, input, options = {})
@@ -215,26 +207,22 @@ module JetPEG
       raise ArgumentError, "Invalid output option: #{options[:output]}"
     end
     
-    def parse(input, options = {})
-      parse_rule @rules.values.first.rule_name, input, options
-    end
-    
     def stats
       block_counts = @mod.functions.map { |f| f.basic_blocks.size }
       instruction_counts = @mod.functions.map { |f| f.basic_blocks.map { |b| b.instructions.to_a.size } }
       info = "#{@mod.functions.to_a.size} functions / #{block_counts.reduce(:+)} blocks / #{instruction_counts.flatten.reduce(:+)} instructions"
-      if @malloc_counter
-        malloc_count = @execution_engine.pointer_to_global(@malloc_counter).read_int64
-        free_count = @execution_engine.pointer_to_global(@free_counter).read_int64
+      if @mod.globals[:malloc_counter]
+        malloc_count = @execution_engine.pointer_to_global(@mod.globals[:malloc_counter]).read_int64
+        free_count = @execution_engine.pointer_to_global(@mod.globals[:free_counter]).read_int64
         info << "\n#{malloc_count} calls of malloc / #{free_count} calls of free"
       end
       info
     end
     
     def check_malloc_counter
-      return if @malloc_counter.nil?
-      malloc_count = @execution_engine.pointer_to_global(@malloc_counter).read_int64
-      free_count = @execution_engine.pointer_to_global(@free_counter).read_int64
+      return if @mod.globals[:malloc_counter].nil?
+      malloc_count = @execution_engine.pointer_to_global(@mod.globals[:malloc_counter]).read_int64
+      free_count = @execution_engine.pointer_to_global(@mod.globals[:free_counter]).read_int64
       raise "Internal error: Memory leak (#{malloc_count - free_count})." if malloc_count != free_count
     end
   end

@@ -80,32 +80,32 @@ module JetPEG
         @rule_result_structure ||= LLVM::Type.struct([LLVM_STRING, return_type ? return_type.llvm_type : LLVM::Int8], true)
       end
       
-      def create_functions(mod)
+      def create_functions(mod, is_root_rule, mode_struct)
         parameter_llvm_types = @parameters.map(&:value_type).map(&:llvm_type)
         
-        @fast_match_function = mod.functions.add "#{@rule_name}_fast_match", [LLVM_STRING, OUTPUT_FUNCTION_POINTERS.last, parser.mode_struct] + parameter_llvm_types, rule_result_structure
+        @fast_match_function = mod.functions.add "#{@rule_name}_fast_match", [LLVM_STRING, OUTPUT_FUNCTION_POINTERS.last, mode_struct] + parameter_llvm_types, rule_result_structure
         @fast_match_function.linkage = :private
-        @traced_match_function = mod.functions.add "#{@rule_name}_traced_match", [LLVM_STRING, OUTPUT_FUNCTION_POINTERS.last, parser.mode_struct] + parameter_llvm_types, rule_result_structure
+        @traced_match_function = mod.functions.add "#{@rule_name}_traced_match", [LLVM_STRING, OUTPUT_FUNCTION_POINTERS.last, mode_struct] + parameter_llvm_types, rule_result_structure
         @traced_match_function.linkage = :private
 
-        if parser.root_rules.include? @rule_name
+        if is_root_rule
           @match_function = mod.functions.add "#{@rule_name}_match", [LLVM_STRING, LLVM_STRING, *OUTPUT_FUNCTION_POINTERS], LLVM::Int1
           @match_function.linkage = :external
         end
       end
       
-      def build_functions(builder)
+      def build_functions(builder, is_root_rule, mode_struct)
         build_internal_rule_function builder, false
         build_internal_rule_function builder, true
         
-        if parser.root_rules.include? @rule_name
+        if is_root_rule
           entry_block = @match_function.basic_blocks.append "rule_entry"
           successful_block = @match_function.basic_blocks.append "rule_successful"
           failed_block = @match_function.basic_blocks.append "rule_failed"
           start_ptr, end_ptr, *output_functions = @match_function.params.to_a
           
           builder.position_at_end entry_block
-          rule_result = builder.call @fast_match_function, start_ptr, OUTPUT_FUNCTION_POINTERS.last.null, parser.mode_struct.null
+          rule_result = builder.call @fast_match_function, start_ptr, OUTPUT_FUNCTION_POINTERS.last.null, mode_struct.null
           rule_end_input = builder.extract_value rule_result, 0
           return_value = builder.extract_value rule_result, 1
           successful = builder.icmp :eq, rule_end_input, end_ptr
@@ -118,7 +118,7 @@ module JetPEG
           
           builder.position_at_end failed_block
           builder.call return_type.free_function, return_value if return_type
-          builder.call @traced_match_function, start_ptr, output_functions.last, parser.mode_struct.null
+          builder.call @traced_match_function, start_ptr, output_functions.last, mode_struct.null
           builder.call return_type.free_function, return_value if return_type
           builder.ret LLVM::FALSE
         end
