@@ -132,7 +132,7 @@ module JetPEG
       end
     end
     
-    def match_rule(rule_name, input, options = {})
+    def parse_rule(rule_name, input, options = {})
       raise ArgumentError.new("Input must be a String.") if not input.is_a? String
       options.merge!(@@default_options) { |key, oldval, newval| oldval }
       
@@ -216,7 +216,7 @@ module JetPEG
     end
     
     def parse(input, options = {})
-      match_rule @rules.values.first.rule_name, input, options
+      parse_rule @rules.values.first.rule_name, input, options
     end
     
     def stats

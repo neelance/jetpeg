@@ -179,16 +179,15 @@ module JetPEG
     end
 
     def self.compile_rule(code, filename = "grammar")
-      expression = metagrammar_parser[:rule_expression].match code, output: :realized, class_scope: self, raise_on_failure: true
+      expression = metagrammar_parser.parse_rule :rule_expression, code, output: :realized, class_scope: self, raise_on_failure: true
       expression.rule_name = :rule
       Parser.new({ "rule" => expression }, filename)
-      expression
     rescue ParsingError => e
       raise CompilationError, "Syntax error in grammar: #{e}"
     end
     
     def self.compile_grammar(code, filename = "grammar")
-      data = metagrammar_parser[:grammar].match code, output: :realized, class_scope: self, raise_on_failure: true
+      data = metagrammar_parser.parse_rule :grammar, code, output: :realized, class_scope: self, raise_on_failure: true
       parser = load_parser data, filename
       parser
     rescue ParsingError => e

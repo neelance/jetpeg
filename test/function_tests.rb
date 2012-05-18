@@ -6,17 +6,17 @@ JetPEG::Parser.default_options[:track_malloc] = true
 class FunctionTests < Test::Unit::TestCase
   def test_boolean_functions
     rule = JetPEG::Compiler.compile_rule "'a' v:$true 'bc' / 'd' v:$false 'ef'"
-    assert rule.match("abc") == { v: true }
-    assert rule.match("def") == { v: false }
+    assert rule.parse("abc") == { v: true }
+    assert rule.parse("def") == { v: false }
     
     rule = JetPEG::Compiler.compile_rule "'a' ( 'b' v:$true )? 'c'"
-    assert rule.match("abc") == { v: true }
-    assert rule.match("ac") == {}
+    assert rule.parse("abc") == { v: true }
+    assert rule.parse("ac") == {}
   end
   
   def test_error_function
     rule = JetPEG::Compiler.compile_rule "'a' $error['test'] 'bc'"
-    assert !rule.match("abc")
+    assert !rule.parse("abc")
     assert rule.parser.failure_reason.is_a? JetPEG::ParsingError
     assert rule.parser.failure_reason.position == 1
     assert rule.parser.failure_reason.other_reasons == ["test"]
@@ -24,12 +24,12 @@ class FunctionTests < Test::Unit::TestCase
   
   def test_match_function
     rule = JetPEG::Compiler.compile_rule "%a:( . . ) $match[%a]"
-    assert rule.match("abab")
-    assert rule.match("cdcd")
-    assert !rule.match("a")
-    assert !rule.match("ab")
-    assert !rule.match("aba")
-    assert !rule.match("abaX")
+    assert rule.parse("abab")
+    assert rule.parse("cdcd")
+    assert !rule.parse("a")
+    assert !rule.parse("ab")
+    assert !rule.parse("aba")
+    assert !rule.parse("abaX")
   end
   
   def test_modes
@@ -41,9 +41,9 @@ class FunctionTests < Test::Unit::TestCase
         !$in_mode['somemode'] 'a' / $in_mode['somemode'] 'b' 
       end
     "
-    assert grammar[:test].match("aba")
-    assert !grammar[:test].match("aaa")
-    assert !grammar[:test].match("bba")
-    assert !grammar[:test].match("abb")
+    assert grammar.parse_rule(:test, "aba")
+    assert !grammar.parse_rule(:test, "aaa")
+    assert !grammar.parse_rule(:test, "bba")
+    assert !grammar.parse_rule(:test, "abb")
   end
 end

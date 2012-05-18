@@ -151,10 +151,6 @@ module JetPEG
         builder.call(builder.traced ? @traced_match_function : @fast_match_function, *args)
       end
       
-      def match(input, options = {})
-        parser.match_rule @rule_name, input, options
-      end
-      
       def eql?(other)
         self == other
       end

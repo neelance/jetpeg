@@ -13,19 +13,19 @@ class MiscTests < Test::Unit::TestCase
         'def'
       end
     "
-    assert grammar[:test1].match("abc")
-    assert grammar[:test2].match("def")
+    assert grammar.parse_rule(:test1, "abc")
+    assert grammar.parse_rule(:test2, "def")
   end
   
   def test_failure_tracing
     rule = JetPEG::Compiler.compile_rule "'a' 'b' 'c'"
-    assert !rule.match("aXc")
+    assert !rule.parse("aXc")
     assert rule.parser.failure_reason.is_a? JetPEG::ParsingError
     assert rule.parser.failure_reason.position == 1
     assert rule.parser.failure_reason.expectations == ["b"]
     
     rule = JetPEG::Compiler.compile_rule "'a' [b2-5] 'c'"
-    assert !rule.match("aXc")
+    assert !rule.parse("aXc")
     assert rule.parser.failure_reason.is_a? JetPEG::ParsingError
     assert rule.parser.failure_reason.position == 1
     assert rule.parser.failure_reason.expectations == ["2-5", "b"]
@@ -38,7 +38,7 @@ class MiscTests < Test::Unit::TestCase
     
     assert_raise ArgumentError do
       rule = JetPEG::Compiler.compile_rule "'a'"
-      rule.match true
+      rule.parse true
     end
   end
   
@@ -82,6 +82,6 @@ class MiscTests < Test::Unit::TestCase
   
   def test_metagrammar
     parser = JetPEG.load "lib/jetpeg/compiler/metagrammar.jetpeg"
-    assert parser[:grammar].match(IO.read("lib/jetpeg/compiler/metagrammar.jetpeg"), output: :realized, class_scope: JetPEG::Compiler)
+    assert parser.parse_rule(:grammar, IO.read("lib/jetpeg/compiler/metagrammar.jetpeg"), output: :realized, class_scope: JetPEG::Compiler)
   end
 end
