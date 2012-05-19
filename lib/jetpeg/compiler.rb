@@ -84,15 +84,6 @@ module JetPEG
         llvm_type.null
       end
       
-      def create_string_constant(string)
-        constant = LLVM::ConstantArray.string string
-        global = @mod.globals.add constant.type, "strings.#{string[0..9]}"
-        global.initializer = constant
-        global.global_constant = 1
-        global.linkage = :private
-        self.gep global, [LLVM::Int(0), LLVM::Int(0)]
-      end
-            
       def extract_values(aggregate, count)
         count.times.map { |i| extract_value aggregate, i }
       end
@@ -125,7 +116,7 @@ module JetPEG
         initial_block = self.insert_block
         failure_reason_block = self.create_block "add_failure_reason"
         self.position_at_end failure_reason_block
-        self.call @add_failure_callback, position, create_string_constant(reason.inspect[1..-2]), is_expectation ? LLVM::TRUE : LLVM::FALSE
+        self.call @add_failure_callback, position, self.global_string_pointer(reason.inspect[1..-2]), is_expectation ? LLVM::TRUE : LLVM::FALSE
         self.br failed_block
         self.position_at_end initial_block
         failure_reason_block

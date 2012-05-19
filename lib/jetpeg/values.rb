@@ -381,7 +381,7 @@ module JetPEG
     
     def build_read_function(builder, value, output_functions)
       builder.call @inner_type.read_function, value, *output_functions.values
-      builder.call output_functions[:make_label], builder.create_string_constant(@name.to_s)
+      builder.call output_functions[:make_label], builder.global_string_pointer(@name.to_s)
     end
     
     def to_s
@@ -405,7 +405,7 @@ module JetPEG
       mapped_arguments = @arguments.map { |arg|
         case arg
         when Integer then LLVM::Int64.from_i(arg) 
-        when String then builder.create_string_constant(arg)
+        when String then builder.global_string_pointer(arg)
         else raise
         end
       }
