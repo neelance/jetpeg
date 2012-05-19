@@ -177,7 +177,7 @@ module JetPEG
     def self.metagrammar_parser
       if @@metagrammar_parser.nil?
         begin
-          mod = LLVM::Module.parse_bitcode File.join(File.dirname(__FILE__), "compiler/metagrammar.bc")
+          mod = LLVM::Module.parse_bitcode File.join(File.dirname(__FILE__), "compiler/metagrammar.jetpeg.bc")
           @@metagrammar_parser = Parser.new mod
         rescue Exception => e
           $stderr.puts "Could not load metagrammar:", e, e.backtrace
