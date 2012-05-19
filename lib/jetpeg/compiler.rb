@@ -177,12 +177,8 @@ module JetPEG
     def self.metagrammar_parser
       if @@metagrammar_parser.nil?
         begin
-          File.open(File.join(File.dirname(__FILE__), "compiler/metagrammar.data"), "rb") do |io|
-            metagrammar_data = JetPEG.realize_data(Marshal.load(io.read), self)
-            @@metagrammar_parser = load_parser metagrammar_data, "compiler/metagrammar.jetpeg"
-            @@metagrammar_parser.root_rules = [:choice, :grammar]
-            @@metagrammar_parser.build
-          end
+          mod = LLVM::Module.parse_bitcode File.join(File.dirname(__FILE__), "compiler/metagrammar.bc")
+          @@metagrammar_parser = Parser.new mod
         rescue Exception => e
           $stderr.puts "Could not load metagrammar:", e, e.backtrace
           exit
@@ -194,7 +190,7 @@ module JetPEG
     def self.compile_rule(code, filename = "grammar")
       expression = metagrammar_parser.parse_rule :rule_expression, code, output: :realized, class_scope: self, raise_on_failure: true
       expression.rule_name = :rule
-      Parser.new({ "rule" => expression }, filename)
+      JitParser.new({ "rule" => expression }, filename)
     rescue ParsingError => e
       raise CompilationError, "Syntax error in grammar: #{e}"
     end
@@ -214,7 +210,7 @@ module JetPEG
         expression.parameters = element[:parameters] ? ([element[:parameters][:head]] + element[:parameters][:tail]).map{ |p| Parameter.new p.name } : []
         h[expression.rule_name] = expression
       end
-      Parser.new rules, filename
+      JitParser.new rules, filename
     end
     
     def self.translate_escaped_character(char)

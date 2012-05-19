@@ -51,73 +51,11 @@ module JetPEG
       @@default_options
     end
     
-    attr_reader :filename, :failure_reason, :mod, :execution_engine, :value_types, :mode_names
-    attr_accessor :root_rules
+    attr_reader :mod, :execution_engine
     
-    def initialize(rules, filename = "grammar")
-      @rules = rules
-      @rules.each_value { |rule| rule.parent = self }
-      @mod = nil
+    def initialize(mod)
+      @mod = mod
       @execution_engine = nil
-      @root_rules = [@rules.values.first.rule_name]
-      @value_types = [InputRangeValueType::INSTANCE]
-      @filename = filename
-      
-      @rules.each_value(&:return_type) # calculate all return types
-      @rules.each_value(&:realize_return_type) # realize recursive structures
-    end
-    
-    def parser
-      self
-    end
-    
-    def get_local_label(name)
-      nil
-    end
-    
-    def [](name)
-      @rules[name]
-    end
-    
-    def build(options = {})
-      options.merge!(@@default_options) { |key, oldval, newval| oldval }
-
-      if @execution_engine
-        @execution_engine.dispose # disposes module, too
-      end
-      
-      @mod = LLVM::Module.new "Parser"
-      @mode_names = @rules.values.map(&:all_mode_names).flatten.uniq
-      @mode_struct = LLVM::Type.struct(([LLVM::Int1] * @mode_names.size), true, "mode_struct")
-      
-      builder = Compiler::Builder.new
-      builder.init @mod, options[:track_malloc]
-      @rules.each_value { |rule| rule.create_functions @mod, @root_rules.include?(rule.rule_name), @mode_struct }
-      @value_types.each { |type| type.create_functions @mod }
-      @rules.each_value { |rule| rule.build_functions builder, @root_rules.include?(rule.rule_name), @mode_struct }
-      @value_types.each { |type| type.build_functions builder }
-      builder.dispose
-      
-      @mod.verify!
-      @execution_engine = LLVM::JITCompiler.new @mod, options[:machine_code_optimization]
-      
-      if options[:bitcode_optimization]
-        pass_manager = LLVM::PassManager.new @execution_engine # TODO tweak passes
-        pass_manager.inline!
-        pass_manager.mem2reg! # alternative: pass_manager.scalarrepl!
-        pass_manager.instcombine!
-        pass_manager.reassociate!
-        pass_manager.gvn!
-        pass_manager.simplifycfg!
-        pass_manager.run @mod
-      end
-    end
-    
-    def each_expression(expressions = @rules.values, &block)
-      expressions.each do |expression|
-        block.call expression
-        each_expression expression.children, &block
-      end
     end
     
     def parse(input, options = {})
@@ -128,9 +66,18 @@ module JetPEG
       raise ArgumentError.new("Input must be a String.") if not input.is_a? String
       options.merge!(@@default_options) { |key, oldval, newval| oldval }
       
-      if @mod.nil? or not @root_rules.include?(rule_name)
-        @root_rules << rule_name
-        build options
+      if @execution_engine.nil?
+        @execution_engine = LLVM::JITCompiler.new @mod, options[:machine_code_optimization]
+        if options[:bitcode_optimization]
+          pass_manager = LLVM::PassManager.new @execution_engine # TODO tweak passes
+          pass_manager.inline!
+          pass_manager.mem2reg! # alternative: pass_manager.scalarrepl!
+          pass_manager.instcombine!
+          pass_manager.reassociate!
+          pass_manager.gvn!
+          pass_manager.simplifycfg!
+          pass_manager.run @mod
+        end
       end
       
       start_ptr = FFI::MemoryPointer.from_string input
@@ -226,4 +173,68 @@ module JetPEG
       raise "Internal error: Memory leak (#{malloc_count - free_count})." if malloc_count != free_count
     end
   end
+  
+  class JitParser < Parser
+    attr_reader :failure_reason, :filename, :value_types, :mode_names
+    attr_accessor :root_rules
+    
+    def initialize(rules, filename = "grammar")
+      super(nil)
+      
+      @rules = rules
+      @rules.each_value { |rule| rule.parent = self }
+      @filename = filename
+
+      @root_rules = [@rules.values.first.rule_name]
+      @value_types = [InputRangeValueType::INSTANCE]
+      
+      @rules.each_value(&:return_type) # calculate all return types
+      @rules.each_value(&:realize_return_type) # realize recursive structures
+    end
+    
+    def parse_rule(rule_name, input, options = {})
+      if @mod.nil? or not @root_rules.include?(rule_name)
+        @root_rules << rule_name
+        build options
+      end
+      
+      super
+    end
+    
+    def build(options = {})
+      options.merge!(@@default_options) { |key, oldval, newval| oldval }
+
+      if @execution_engine
+        @execution_engine.dispose # disposes module, too
+        @execution_engine = nil
+      end
+      
+      @mod = LLVM::Module.new "Parser"
+      @mode_names = @rules.values.map(&:all_mode_names).flatten.uniq
+      @mode_struct = LLVM::Type.struct(([LLVM::Int1] * @mode_names.size), true, "mode_struct")
+      
+      builder = Compiler::Builder.new
+      builder.init @mod, options[:track_malloc]
+      @rules.each_value { |rule| rule.create_functions @mod, @root_rules.include?(rule.rule_name), @mode_struct }
+      @value_types.each { |type| type.create_functions @mod }
+      @rules.each_value { |rule| rule.build_functions builder, @root_rules.include?(rule.rule_name), @mode_struct }
+      @value_types.each { |type| type.build_functions builder }
+      builder.dispose
+      
+      @mod.verify!
+    end
+    
+    def parser
+      self
+    end
+    
+    def get_local_label(name)
+      nil
+    end
+    
+    def [](name)
+      @rules[name]
+    end
+  end
+  
 end
