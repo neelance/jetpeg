@@ -67,7 +67,7 @@ module JetPEG
   OUTPUT_FUNCTION_POINTERS = OUTPUT_INTERFACE_SIGNATURES.values.map { |fun_type| LLVM::Pointer(fun_type) }
   
   class Parser
-    @@default_options = { raise_on_failure: true, class_scope: ::Object, bitcode_optimization: false, machine_code_optimization: 0, track_malloc: false }
+    @@default_options = { raise_on_failure: true, class_scope: ::Object, bitcode_optimization: true, machine_code_optimization: 0, track_malloc: false }
     
     def self.default_options
       @@default_options

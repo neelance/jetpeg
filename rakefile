@@ -113,6 +113,6 @@ task :build_metagrammar_parser do
   require "jetpeg"
   parser = JetPEG.load File.join(File.dirname(__FILE__), "lib/jetpeg/compiler/metagrammar.jetpeg")
   parser.root_rules = [:grammar, :rule_expression]
-  parser.build bitcode_optimization: true
+  parser.build
   parser.mod.write_bitcode File.join(File.dirname(__FILE__), "lib/jetpeg/compiler/metagrammar.jetpeg.bc")
 end
