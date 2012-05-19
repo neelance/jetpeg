@@ -150,13 +150,15 @@ module JetPEG
         },
         FFI::Function.new(:void, [:pointer, :string, :bool]) { |pos_ptr, reason, is_expectation| # 8: add_failure
           position = pos_ptr.address - start_ptr.address
-          if failure_position < position
+          if position > failure_position
             failure_position = position
             failure_expectations.clear
             failure_other_reasons.clear
           end
-          failure_expectations << reason if is_expectation
-          failure_other_reasons << reason if !is_expectation
+          if position == failure_position
+            failure_expectations << reason if is_expectation
+            failure_other_reasons << reason if !is_expectation
+          end
         }
       ]
       
