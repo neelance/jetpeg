@@ -102,11 +102,7 @@ task :benchmark do
     end
     
     bm.report("parsing:") do
-      intermediate = parser.parse_rule :grammar, input, :output => :intermediate
-    end
-    
-    bm.report("realizing data:") do
-      JetPEG.realize_data intermediate, JetPEG::Compiler
+      intermediate = parser.parse_rule :grammar, input, class_scope: JetPEG::Compiler
     end
   end
   

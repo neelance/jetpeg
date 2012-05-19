@@ -128,12 +128,10 @@ module JetPEG
         super
         @label_name = AT_SYMBOL
         @code = data[:code]
-        input_range = data.intermediate[:code]
-        @lineno = input_range[:input][0, input_range[:position].begin].count("\n") + 1
       end
 
       def create_return_type
-        CreatorValueType.new super, :make_value, [@code, parser.filename, @lineno], parser.value_types
+        CreatorValueType.new super, :make_value, [@code, parser.filename, @code.line], parser.value_types
       end
     end
   end

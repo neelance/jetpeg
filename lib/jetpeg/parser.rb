@@ -9,6 +9,17 @@ $VERBOSE = verbose
 LLVM.init_x86
 
 module JetPEG
+  
+  class StringWithPosition < String
+    attr_reader :range, :line
+    
+    def initialize(content, range, line)
+      super content
+      @range = range
+      @line = line
+    end
+  end
+  
   class ParsingError < RuntimeError
     attr_reader :input, :position, :expectations, :other_reasons
     
@@ -31,6 +42,17 @@ module JetPEG
     end
   end
   
+  class EvaluationScope
+    def initialize(data)
+      @data = data
+      if data.is_a? Hash
+        data.each do |key, value|
+          instance_variable_set "@#{key}", value
+        end
+      end
+    end
+  end
+  
   OUTPUT_INTERFACE_SIGNATURES = {
     new_nil:         LLVM.Function([], LLVM.Void()),
     new_input_range: LLVM.Function([LLVM_STRING, LLVM_STRING], LLVM.Void()),
@@ -45,7 +67,7 @@ module JetPEG
   OUTPUT_FUNCTION_POINTERS = OUTPUT_INTERFACE_SIGNATURES.values.map { |fun_type| LLVM::Pointer(fun_type) }
   
   class Parser
-    @@default_options = { raise_on_failure: true, output: :realized, class_scope: ::Object, bitcode_optimization: false, machine_code_optimization: 0, track_malloc: false }
+    @@default_options = { raise_on_failure: true, class_scope: ::Object, bitcode_optimization: false, machine_code_optimization: 0, track_malloc: false }
     
     def self.default_options
       @@default_options
@@ -92,7 +114,9 @@ module JetPEG
           output_stack << nil
         },
         FFI::Function.new(:void, [:pointer, :pointer]) { |from_ptr, to_ptr| # 1: new_input_range
-          output_stack << { __type__: :input_range, input: input, position: (from_ptr.address - start_ptr.address)...(to_ptr.address - start_ptr.address) }
+          range = (from_ptr.address - start_ptr.address)...(to_ptr.address - start_ptr.address)
+          line = input[0, range.begin].count("\n")
+          output_stack << StringWithPosition.new(input[range], range, line)
         },
         FFI::Function.new(:void, [:bool]) { |value| # 2: new_boolean
           output_stack << value
@@ -102,7 +126,7 @@ module JetPEG
           output_stack << { name.to_sym => value }
         },
         FFI::Function.new(:void, [:int64]) { |count| # 4: merge_labels
-          merged = output_stack.pop(count).compact.reduce({}, &:merge)
+          merged = output_stack.pop(count).compact.reduce(&:merge)
           output_stack << merged
         },
         FFI::Function.new(:void, []) { # 5: make_array
@@ -116,11 +140,13 @@ module JetPEG
         },
         FFI::Function.new(:void, [:string]) { |class_name| # 6: make_object
           data = output_stack.pop
-          output_stack << { __type__: :object, class_name: class_name.split("::").map(&:to_sym), data: data }
+          object_class = class_name.split("::").map(&:to_sym).inject(options[:class_scope]) { |scope, name| scope.const_get(name) }
+          output_stack << object_class.new(data)
         },
-        FFI::Function.new(:void, [:string, :string, :int64]) { |code, filename, lineno| # 7: make_value
+        FFI::Function.new(:void, [:string, :string, :int64]) { |code, filename, line| # 7: make_value
           data = output_stack.pop
-          output_stack << { __type__: :value, code: code, filename: filename, lineno: lineno, data: data }
+          scope = EvaluationScope.new data
+          output_stack << scope.instance_eval(code, filename, line + 1)
         },
         FFI::Function.new(:void, [:pointer, :string, :bool]) { |pos_ptr, reason, is_expectation| # 8: add_failure
           position = pos_ptr.address - start_ptr.address
@@ -144,14 +170,10 @@ module JetPEG
       end
       success_value.dispose
       
-      intermediate = output_stack.first || true 
+      output = output_stack.first || {} 
       check_malloc_counter
-      return intermediate if options[:output] == :intermediate
-
-      realized = JetPEG.realize_data intermediate, options[:class_scope]
-      return realized if options[:output] == :realized
       
-      raise ArgumentError, "Invalid output option: #{options[:output]}"
+      output
     end
     
     def stats

@@ -18,7 +18,7 @@ class LabelsTests < Test::Unit::TestCase
     
     rule = JetPEG::Compiler.compile_rule "( word:[abc]+ )?"
     assert rule.parse("abc") == { word: "abc" }
-    assert rule.parse("") == true
+    assert rule.parse("") == {}
     
     rule = JetPEG::Compiler.compile_rule "'a' outer:( inner:. ) 'c' / 'def'"
     assert rule.parse("abc") == { outer: { inner: "b" } }
@@ -90,7 +90,7 @@ class LabelsTests < Test::Unit::TestCase
     assert rule.parse("abc") == { list: [{ char: "a" }, { char: "b" }, nil] }
     
     rule = JetPEG::Compiler.compile_rule "( 'a' / 'b' / 'c' )+"
-    assert rule.parse("abc") == true
+    assert rule.parse("abc") == {}
     
     rule = JetPEG::Compiler.compile_rule "list:( 'a' char:. )*->( 'ada' final:. )"
     assert rule.parse("abacadae") == { list: [{ char: "b" }, { char: "c" }, { final: "e" }] }
