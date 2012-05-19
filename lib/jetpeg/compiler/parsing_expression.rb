@@ -118,7 +118,8 @@ module JetPEG
           
           builder.position_at_end failed_block
           builder.call return_type.free_function, return_value if return_type
-          builder.call @traced_match_function, start_ptr, output_functions.last, mode_struct.null
+          rule_result = builder.call @traced_match_function, start_ptr, output_functions.last, mode_struct.null
+          return_value = builder.extract_value rule_result, 1
           builder.call return_type.free_function, return_value if return_type
           builder.ret LLVM::FALSE
         end
