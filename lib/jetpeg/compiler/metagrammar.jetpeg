@@ -59,7 +59,7 @@ rule primary
 end
 
 rule parenthesized_expression
-  '(' ws expression:choice ')' <ParenthesizedExpression>
+  '(' ws expression:choice? ')' <ParenthesizedExpression>
 end
 
 rule local_value

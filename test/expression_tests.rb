@@ -104,7 +104,7 @@ class ExpressionsTests < Test::Unit::TestCase
   end
   
   def test_parenthesized_expression
-    rule = JetPEG::Compiler.compile_rule "( 'a' 'b' )? 'c'"
+    rule = JetPEG::Compiler.compile_rule "( 'a' ( ) 'b' )? 'c'"
     assert rule.parse("abc")
     assert rule.parse("c")
     assert !rule.parse("ac")

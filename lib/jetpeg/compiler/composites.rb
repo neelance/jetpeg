@@ -265,14 +265,15 @@ module JetPEG
       def initialize(data)
         super()
         @expression = data[:expression]
-        self.children = [@expression]
+        self.children = [@expression] if @expression
       end
       
       def create_return_type
-        @expression.return_type
+        @expression && @expression.return_type
       end
       
       def build(builder, start_input, modes, failed_block)
+        return Result.new start_input if @expression.nil?
         @expression.build builder, start_input, modes, failed_block
       end
     end
