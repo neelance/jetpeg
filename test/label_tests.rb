@@ -166,4 +166,23 @@ class LabelsTests < Test::Unit::TestCase
     end
   end
   
+  def no_test_left_recursion_handling # just theory atm
+    JetPEG::Compiler.compile_grammar "
+      rule test
+        a:rule_a b:test c:rule_c <SomeClassA> /
+        a:rule_a b:test d:rule_d <SomeClassB> /
+        rule_b
+      end
+      
+      rule test[%inner = nil]
+        %value:(
+          a:rule_a b:($is_nil[%inner] !$at_rule_entry test / !$is_nil[%inner] $at_rule_entry %inner) c:rule_c <SomeClassA> /
+          a:rule_a b:($is_nil[%inner] !$at_rule_entry test / !$is_nil[%inner] $at_rule_entry %inner) d:rule_d <SomeClassB> /
+          $is_nil[%inner] rule_b
+        ) test[%value] /
+        !$is_nil[%inner_value] %inner_value
+      end
+    "
+  end
+  
 end
