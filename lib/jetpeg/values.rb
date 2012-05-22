@@ -266,7 +266,7 @@ module JetPEG
     end
     
     def all_labels
-      [nil]
+      []
     end
     
     def build_read_function(builder, value, output_functions)
@@ -326,7 +326,6 @@ module JetPEG
       @value_label_type = LabeledValueType.new entry_type, :value, value_types
       @previous_label_type = LabeledValueType.new(@pointer_type, :previous, value_types)
       @return_type = SequenceValueType.new([@value_label_type, @previous_label_type], name, value_types)
-      @pointer_type.realize
       super @pointer_type.llvm_type, value_types
     end
     

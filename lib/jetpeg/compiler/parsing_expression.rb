@@ -33,27 +33,16 @@ module JetPEG
       
       def return_type
         if @return_type == :pending
-          raise Recursion.new(self) if @return_type_recursion
-          begin
-            @return_type_recursion = true
-            @return_type = create_return_type
-          rescue Recursion => recursion
-            raise recursion if not recursion.expression.equal? self
-            @return_type = nil
-          ensure
-            @return_type_recursion = false
-          end
-          raise CompilationError.new("Unlabeled recursion mixed with other labels.", rule) if @return_type.nil? and not create_return_type.nil?
+          raise Recursion.new if @return_type_recursion
+          @return_type_recursion = true
+          @return_type = create_return_type
+          @return_type_recursion = false
         end
         @return_type
       end
       
       def create_return_type
         nil
-      end
-      
-      def realize_return_type
-        @children.map(&:realize_return_type)
       end
       
       def get_local_label(name)

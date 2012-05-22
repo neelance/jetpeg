@@ -154,11 +154,6 @@ module JetPEG
     end
     
     class Recursion < RuntimeError
-      attr_reader :expression
-      
-      def initialize(expression)
-        @expression = expression
-      end
     end
     
     Result = Struct.new :input, :return_value

@@ -12,7 +12,6 @@ module JetPEG
         self.children = [@expression]
         @is_local = data[:is_local]
         @capture_input = false
-        @recursive = false
         @value_type = nil
         @value = nil
       end
@@ -20,28 +19,20 @@ module JetPEG
       def create_return_type
         @value_type = begin
           @expression.return_type
-        rescue Recursion
-          @recursive = true
-          PointerValueType.new @expression, parser.value_types
         end
         
-        if @value_type.nil?
-          @value_type = InputRangeValueType::INSTANCE
+        if @value_type.nil? || label_name == AT_SYMBOL
           @capture_input = true
+          @value_type = InputRangeValueType::INSTANCE
         end
         
         if @is_local
           nil
-        elsif @label_name == AT_SYMBOL
+        elsif label_name.nil? || label_name == AT_SYMBOL
           @value_type
         else
           LabeledValueType.new @value_type, label_name, parser.value_types
         end
-      end
-      
-      def realize_return_type
-        @value_type.realize if @recursive
-        super
       end
       
       def build(builder, start_input, modes, failed_block)
@@ -52,8 +43,6 @@ module JetPEG
           @value = @value_type.llvm_type.null
           @value = builder.insert_value @value, start_input, 0, "pos"
           @value = builder.insert_value @value, expression_result.input, 1, "pos"
-        elsif @recursive
-          @value = @value_type.store_value builder, expression_result.return_value
         else
           @value = expression_result.return_value
         end
@@ -114,7 +103,6 @@ module JetPEG
     class ObjectCreator < Label
       def initialize(data)
         super
-        @label_name = AT_SYMBOL
         @class_name = data[:class_name]
       end
 
@@ -126,7 +114,6 @@ module JetPEG
     class ValueCreator < Label
       def initialize(data)
         super
-        @label_name = AT_SYMBOL
         @code = data[:code]
       end
 

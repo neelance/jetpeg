@@ -70,6 +70,13 @@ class LabelsTests < Test::Unit::TestCase
       end
     "
     assert grammar.parse_rule(:test, "((a)b)") == { inner: { inner: { char: "a" }, other: "b"} }
+
+    grammar = JetPEG::Compiler.compile_grammar "
+      rule test
+        '(' test ')' / char:'a'
+      end
+    "
+    assert grammar.parse_rule(:test, "((a))") == { char: "a" }
     
     grammar = JetPEG::Compiler.compile_grammar "
       rule test
@@ -79,7 +86,7 @@ class LabelsTests < Test::Unit::TestCase
         a:test b:test
       end
     "
-    assert grammar.parse_rule(:test, "((aa)(aa))")
+    assert grammar.parse_rule(:test, "((aa)(aa))") == { a: { a: { char: "a" }, b: { char: "a" }}, b: { a: { char: "a" }, b: { char: "a" } } }
   end
   
   def test_repetition_with_label
@@ -166,23 +173,19 @@ class LabelsTests < Test::Unit::TestCase
     end
   end
   
-  def no_test_left_recursion_handling # just theory atm
-    JetPEG::Compiler.compile_grammar "
-      rule test
-        a:rule_a b:test c:rule_c <SomeClassA> /
-        a:rule_a b:test d:rule_d <SomeClassB> /
-        rule_b
+  def xtest_left_recursion_handling
+    grammar = JetPEG::Compiler.compile_grammar "
+      rule expr
+        l:expr '-' r:num { [l, r] } /
+        expr /
+        num
       end
       
-      rule test[%inner = nil]
-        %value:(
-          a:rule_a b:($is_nil[%inner] !$at_rule_entry test / !$is_nil[%inner] $at_rule_entry %inner) c:rule_c <SomeClassA> /
-          a:rule_a b:($is_nil[%inner] !$at_rule_entry test / !$is_nil[%inner] $at_rule_entry %inner) d:rule_d <SomeClassB> /
-          $is_nil[%inner] rule_b
-        ) test[%value] /
-        !$is_nil[%inner_value] %inner_value
+      rule num
+        [0-9]+
       end
     "
+    assert grammar.parse_rule(:expr, "1-2-3") == [["1", "2"], "3"]
   end
   
 end

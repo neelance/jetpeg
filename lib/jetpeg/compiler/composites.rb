@@ -228,6 +228,7 @@ module JetPEG
         @referenced_name = data[:name].to_sym
         @arguments = data[:arguments] ? ([data[:arguments][:head]] + data[:arguments][:tail]) : []
         self.children = @arguments
+        @recursive = false
       end
       
       def referenced
@@ -240,7 +241,12 @@ module JetPEG
       end
       
       def create_return_type
-        referenced.return_type
+        begin
+          referenced.return_type
+        rescue Recursion
+          @recursive = true
+          PointerValueType.new referenced, parser.value_types
+        end
       end
       
       def build(builder, start_input, modes, failed_block)
@@ -253,6 +259,8 @@ module JetPEG
         
         builder.position_at_end successful_block
         return_value = return_type && builder.extract_value(rule_result, 1)
+        return_value = return_type.store_value builder, return_value if @recursive
+        
         Result.new rule_end_input, return_value
       end
       

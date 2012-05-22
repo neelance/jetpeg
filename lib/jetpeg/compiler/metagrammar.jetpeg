@@ -3,15 +3,15 @@ rule grammar
 end
 
 rule parsing_rule
-  'rule' ws :rule_name parameters:( '[' head:local_value tail:( ',' ws @:local_value )* ']' )? ws expression:rule_expression 'end' ws
+  'rule' ws :rule_name parameters:( '[' head:local_value tail:( ',' ws local_value )* ']' )? ws expression:rule_expression 'end' ws
 end
 
 rule rule_expression
-  ws? @:choice
+  ws? choice
 end
 
 rule choice
-  head:creator tail:( '/' ws @:creator )+ <Choice> /
+  head:creator tail:( '/' ws creator )+ <Choice> /
   creator
 end
 
@@ -22,7 +22,7 @@ rule creator
 end
 
 rule code
-  ( ![{}] . / '{' code '}' )*
+  @:( ![{}] . / '{' code '}' )*
 end
 
 rule sequence
@@ -72,7 +72,7 @@ rule rule_call_label
 end
 
 rule rule_call
-  name:rule_name arguments:( '[' head:local_value tail:( ',' ws @:local_value )* ']' )? <RuleCall>
+  name:rule_name arguments:( '[' head:local_value tail:( ',' ws local_value )* ']' )? <RuleCall>
 end
 
 rule rule_name
@@ -94,7 +94,7 @@ rule function
 end
 
 rule value_list
-  head:value ws tail:( ',' ws @:value ws )*
+  head:value ws tail:( ',' ws value ws )*
 end
 
 rule value

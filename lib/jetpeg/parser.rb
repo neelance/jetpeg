@@ -213,7 +213,7 @@ module JetPEG
       @value_types = [InputRangeValueType::INSTANCE]
       
       @rules.each_value(&:return_type) # calculate all return types
-      @rules.each_value(&:realize_return_type) # realize recursive structures
+      @value_types.each { |type| type.realize if type.is_a? PointerValueType }
     end
     
     def parse_rule(rule_name, input, options = {})
