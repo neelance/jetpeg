@@ -255,10 +255,8 @@ module JetPEG
         rule_result_phi = DynamicPhi.new builder, referenced.rule_result_structure
 
         if referenced == rule
-          left_recursion = builder.icmp :eq, start_input, builder.rule_start_input
-          left_recursion_block = builder.create_block "left_recursion"
-          no_left_recursion_block = builder.create_block "no_left_recursion"
-          builder.cond left_recursion, left_recursion_block, no_left_recursion_block
+          left_recursion = builder.icmp :eq, start_input, builder.rule_start_input, "left_recursion"
+          left_recursion_block, no_left_recursion_block = builder.cond left_recursion
           
           builder.position_at_end left_recursion_block
           if builder.is_left_recursion

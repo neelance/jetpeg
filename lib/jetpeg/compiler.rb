@@ -92,6 +92,17 @@ module JetPEG
         values.zip(indices).inject(aggregate) { |a, (value, i)| insert_value a, value, i }
       end
       
+      def cond(condition, if_true = nil, if_false = nil)
+        if if_true.nil? and if_false.nil?
+          if_true = create_block "if_true"
+          if_false = create_block "if_false"
+          super condition, if_true, if_false
+          [if_true, if_false]
+        else
+          super
+        end
+      end
+      
       def malloc(type, name = "")
         if @malloc_counter
           old_value = self.load @malloc_counter
@@ -135,11 +146,8 @@ module JetPEG
         when :pointer
           return if llvm_type.element_type.kind != :struct or llvm_type.element_type.element_types.empty?
           
-          increment_counter_block = self.create_block "increment_counter"
-          continue_block = self.create_block "continue"
-          
-          not_null = self.icmp :ne, value, llvm_type.null, "not_null"
-          self.cond not_null, increment_counter_block, continue_block
+          pointer_is_null = self.icmp :eq, value, llvm_type.null, "pointer_is_null"
+          continue_block, increment_counter_block = self.cond pointer_is_null
           
           self.position_at_end increment_counter_block
           additional_use_counter = self.struct_gep value, 1, "additional_use_counter"
