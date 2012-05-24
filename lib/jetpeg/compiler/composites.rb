@@ -228,7 +228,7 @@ module JetPEG
         @referenced_name = data[:name].to_sym
         @arguments = data[:arguments] ? ([data[:arguments][:head]] + data[:arguments][:tail]) : []
         self.children = @arguments
-        @recursive = false
+        @recursion = false
       end
       
       def referenced
@@ -244,24 +244,46 @@ module JetPEG
         begin
           referenced.return_type
         rescue Recursion
-          @recursive = true
+          @recursion = true
+          rule.has_direct_recursion = true if referenced == rule
           PointerValueType.new referenced, parser.value_types
         end
       end
       
       def build(builder, start_input, modes, failed_block)
-        rule_result = referenced.call_internal_match_function builder, start_input, builder.add_failure_callback, modes, *@arguments.map(&:value), "rule_end_input"
-        
-        rule_end_input = builder.extract_value rule_result, 0
-        rule_successful = builder.icmp :ne, rule_end_input, LLVM_STRING.null_pointer, "rule_successful"
         successful_block = builder.create_block "rule_call_successful"
+        rule_result_phi = DynamicPhi.new builder, referenced.rule_result_structure
+
+        if referenced == rule
+          left_recursion = builder.icmp :eq, start_input, builder.rule_start_input
+          left_recursion_block = builder.create_block "left_recursion"
+          no_left_recursion_block = builder.create_block "no_left_recursion"
+          builder.cond left_recursion, left_recursion_block, no_left_recursion_block
+          
+          builder.position_at_end left_recursion_block
+          if builder.is_left_recursion
+            builder.build_use_counter_increment referenced.rule_result_structure, builder.left_recursion_last_result
+            rule_result_phi << builder.left_recursion_last_result
+            builder.br successful_block
+          else
+            builder.store LLVM::TRUE, builder.left_recursion_occurred
+            builder.br failed_block
+          end
+          
+          builder.position_at_end no_left_recursion_block
+        end
+        
+        call_rule_result = builder.call referenced.get_internal_match_function(builder.traced, false), start_input, builder.add_failure_callback, modes, *@arguments.map(&:value)
+        rule_result_phi << call_rule_result
+        
+        rule_successful = builder.icmp :ne, builder.extract_value(call_rule_result, 0), LLVM_STRING.null_pointer, "rule_successful"
         builder.cond rule_successful, successful_block, failed_block
         
         builder.position_at_end successful_block
+        rule_result = rule_result_phi.build
         return_value = return_type && builder.extract_value(rule_result, 1)
-        return_value = return_type.store_value builder, return_value if @recursive
-        
-        Result.new rule_end_input, return_value
+        return_value = return_type.store_value builder, return_value if @recursion
+        Result.new builder.extract_value(rule_result, 0), return_value
       end
       
       def ==(other)

@@ -61,7 +61,7 @@ module JetPEG
         end
       end
       
-      attr_accessor :traced, :add_failure_callback
+      attr_accessor :traced, :is_left_recursion, :left_recursion_occurred, :left_recursion_last_result, :rule_start_input, :add_failure_callback
       
       def init(mod, track_malloc)
         @mod = mod

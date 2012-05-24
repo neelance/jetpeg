@@ -173,19 +173,20 @@ class LabelsTests < Test::Unit::TestCase
     end
   end
   
-  def xtest_left_recursion_handling
+  def test_left_recursion_handling
     grammar = JetPEG::Compiler.compile_grammar "
       rule expr
-        l:expr '-' r:num { [l, r] } /
+        add:( l:expr '+' r:num ) /
+        sub:( l:expr '-' r:num ) /
         expr /
-        num
+        @:num
       end
       
       rule num
         [0-9]+
       end
     "
-    assert grammar.parse_rule(:expr, "1-2-3") == [["1", "2"], "3"]
+    assert grammar.parse_rule(:expr, "1-2-3") == { sub: { l: { sub: { l: "1", r: "2" } }, r: "3" } }
   end
   
 end
