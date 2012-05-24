@@ -113,13 +113,22 @@ module JetPEG
           
           if @has_direct_recursion
             if is_left_recursion
-              finished = builder.icmp :eq, end_result.input, builder.extract_value(builder.left_recursion_last_result, 0), "left_recursion_finished"
-              left_recursion_finished_block, left_recursion_not_finished_block = builder.cond finished
+              left_recursion_last_end_input = builder.extract_value(builder.left_recursion_last_result, 0)
+              left_recursion_finished = builder.icmp :eq, end_result.input, left_recursion_last_end_input, "left_recursion_finished"
+              left_recursion_finished_block, left_recursion_not_finished_block = builder.cond left_recursion_finished
               
               builder.position_at_end left_recursion_finished_block
               builder.ret result
               
               builder.position_at_end left_recursion_not_finished_block
+              left_recursion_failed = builder.icmp :ult, end_result.input, left_recursion_last_end_input, "left_recursion_failed"
+              left_recursion_failed, left_recursion_not_failed = builder.cond left_recursion_failed
+              
+              builder.position_at_end left_recursion_failed
+              builder.call return_type.free_function, end_result.return_value
+              builder.br failed_block
+              
+              builder.position_at_end left_recursion_not_failed
               recursion_result = builder.call @internal_match_functions[[traced, true]], *function.params.to_a[0..-2], result
               builder.call return_type.free_function, end_result.return_value
               builder.ret recursion_result
