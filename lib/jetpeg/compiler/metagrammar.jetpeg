@@ -3,7 +3,7 @@ rule grammar
 end
 
 rule parsing_rule
-  'rule' ws :rule_name parameters:( '[' head:local_value tail:( ',' ws local_value )* ']' )? ws expression:rule_expression 'end' ws
+  'rule' ws :rule_name parameters:( '[' local_value{ ',' ws }* ']' )? ws expression:rule_expression 'end' ws
 end
 
 rule rule_expression
@@ -42,9 +42,9 @@ end
 
 rule repetition
   expression:primary '?' ws <Optional> /
-  expression:primary '*->' until_expression:choice <Until> /
-  expression:primary '*' ws <ZeroOrMore> /
-  expression:primary '+' ws <OneOrMore> /
+  expression:primary '*->' until_expression:primary <Until> /
+  expression:primary ( '{' ws glue_expression:choice '}' )? '*' ws <ZeroOrMore> /
+  expression:primary ( '{' ws glue_expression:choice '}' )? '+' ws <OneOrMore> /
   primary ws
 end
 
@@ -72,7 +72,7 @@ rule rule_call_label
 end
 
 rule rule_call
-  name:rule_name arguments:( '[' head:local_value tail:( ',' ws local_value )* ']' )? <RuleCall>
+  name:rule_name arguments:( '[' local_value{ ',' ws }* ']' )? <RuleCall>
 end
 
 rule rule_name
@@ -91,14 +91,6 @@ rule function
   '$enter_mode' '[' name:quoted_string ',' ws expression:choice ']' <EnterModeFunction> /
   '$leave_mode' '[' name:quoted_string ',' ws expression:choice ']' <LeaveModeFunction> /
   '$in_mode' '[' name:quoted_string ']' <InModeFunction>
-end
-
-rule value_list
-  head:value ws tail:( ',' ws value ws )*
-end
-
-rule value
-  quoted_string
 end
 
 rule quoted_string

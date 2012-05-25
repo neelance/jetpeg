@@ -337,7 +337,7 @@ module JetPEG
     end
     
     def all_labels
-      @inner_type ? [nil] : []
+      [nil]
     end
     
     def build_read_function(builder, value, output_functions)

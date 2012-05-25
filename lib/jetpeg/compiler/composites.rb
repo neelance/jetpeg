@@ -102,28 +102,49 @@ module JetPEG
       def initialize(data)
         super()
         @expression = data[:expression]
-        self.children = [@expression]
+        @glue_expression = data[:glue_expression]
+        self.children = [@expression, @glue_expression].compact
       end
       
       def create_return_type
         @expression.return_type && ArrayValueType.new(@expression.return_type, "#{rule.rule_name}_loop", parser.value_types)
       end
       
-      def build(builder, start_input, modes, failed_block, start_return_value = nil)
+      def build(builder, start_input, modes, failed_block, start_return_value = :none)
         input = DynamicPhi.new builder, LLVM_STRING, "loop_input", start_input
-        return_value = DynamicPhi.new builder, return_type && return_type.llvm_type, "loop_return_value", start_return_value || (return_type && return_type.llvm_type.null)
+        return_value = DynamicPhi.new builder, (return_type && return_type.llvm_type), "loop_return_value", (start_return_value == :none ? (return_type && return_type.llvm_type.null) : start_return_value)
+        match_glue = DynamicPhi.new builder, (@glue_expression && LLVM::Int1), "match_glue", (start_return_value == :none ? LLVM::FALSE : LLVM::TRUE)
 
         loop_block = builder.create_block "repetition_loop"
+        glue_block = builder.create_block "repetition_glue"
+        expression_block = builder.create_block "repetition_expression"
         exit_block = builder.create_block "repetition_exit"
         builder.br loop_block
         
         builder.position_at_end loop_block
         input.build
         return_value.build
-        next_result = @expression.build builder, input, modes, exit_block
+        match_glue.build
+        
+        if @glue_expression
+          input_after_glue = DynamicPhi.new builder, LLVM_STRING, "loop_input_after_glue", input
+          builder.cond match_glue, glue_block, expression_block
+          
+          builder.position_at_end glue_block
+          glue_result = @glue_expression.build builder, input, modes, exit_block
+          input_after_glue << glue_result.input
+          builder.br expression_block
+          
+          builder.position_at_end expression_block
+          input_after_glue.build
+        else
+          input_after_glue = input
+        end
+        
+        next_result = @expression.build builder, input_after_glue, modes, exit_block
         input << next_result.input
         return_value << (return_type && return_type.create_array_value(builder, next_result.return_value, return_value))
-        
+        match_glue << LLVM::TRUE
         builder.br loop_block
         
         builder.position_at_end exit_block
@@ -226,7 +247,7 @@ module JetPEG
       def initialize(data)
         super()
         @referenced_name = data[:name].to_sym
-        @arguments = data[:arguments] ? ([data[:arguments][:head]] + data[:arguments][:tail]) : []
+        @arguments = data[:arguments] || []
         self.children = @arguments
         @recursion = false
       end

@@ -103,6 +103,28 @@ class ExpressionsTests < Test::Unit::TestCase
     assert !rule.parse("ababacac")
   end
   
+  def test_repetition_glue
+    rule = JetPEG::Compiler.compile_rule "'a'{ ',' }*"
+    assert rule.parse("")
+    assert rule.parse("a")
+    assert rule.parse("a,a,a")
+    assert !rule.parse("aa")
+    assert !rule.parse(",")
+    assert !rule.parse("a,a,")
+    assert !rule.parse(",a,a")
+    assert !rule.parse("a,,a")
+    
+    rule = JetPEG::Compiler.compile_rule "'a'{ ',' }+"
+    assert rule.parse("a")
+    assert rule.parse("a,a,a")
+    assert !rule.parse("aa")
+    assert !rule.parse("")
+    assert !rule.parse(",")
+    assert !rule.parse("a,a,")
+    assert !rule.parse(",a,a")
+    assert !rule.parse("a,,a")
+  end
+  
   def test_parenthesized_expression
     rule = JetPEG::Compiler.compile_rule "( 'a' ( ) 'b' )? 'c'"
     assert rule.parse("abc")

@@ -201,7 +201,7 @@ module JetPEG
       rules = data[:rules].each_with_object({}) do |element, h|
         expression = element[:expression]
         expression.rule_name = element[:rule_name].to_sym
-        expression.parameters = element[:parameters] ? ([element[:parameters][:head]] + element[:parameters][:tail]).map{ |p| Parameter.new p.name } : []
+        expression.parameters = (element[:parameters] || []).map{ |p| Parameter.new p.name }
         h[expression.rule_name] = expression
       end
       JitParser.new rules, filename
