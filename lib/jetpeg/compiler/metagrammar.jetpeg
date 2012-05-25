@@ -80,7 +80,9 @@ rule rule_name
 end
 
 rule terminal
-  quoted_string / character_class / anything_symbol
+  quoted_string <StringTerminal> /
+  '[' ( '^' inverted:$true )? selections:( character_class_range / character_class_single_character )+ ']' <CharacterClassTerminal> /
+  '.' <AnyCharacterTerminal>
 end
 
 rule function
@@ -94,27 +96,17 @@ rule function
 end
 
 rule quoted_string
-  (
-    '"' string:( !'"' ( "\\\\" / '\"' / . ) )* '"' /
-    "'" string:( !"'" ( "\\\\" / "\\'" / . ) )* "'" 
-  ) <StringTerminal>
-end
-
-rule character_class
-  '[' ( '^' inverted:$true )? selections:( character_class_range / character_class_single_character )+ ']' <CharacterClassTerminal>
+  '"' @:( !'"' ( "\\\\" / '\"' / . ) )* '"' /
+  "'" @:( !"'" ( "\\\\" / "\\'" / . ) )* "'"
 end
 
 rule character_class_single_character
-  '\\' char_element:. <CharacterClassEscapedCharacter> /
-  ( !']' ) char_element:. <CharacterClassSingleCharacter>
+  '\\' @:. <CharacterClassEscapedCharacter> /
+  ( !']' ) @:. <CharacterClassSingleCharacter>
 end
 
 rule character_class_range
   begin_char:character_class_single_character '-' end_char:character_class_single_character <CharacterClassRange>
-end
-
-rule anything_symbol
-  '.' <AnyCharacterTerminal>
 end
 
 rule keyword

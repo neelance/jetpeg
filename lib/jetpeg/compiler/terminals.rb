@@ -5,7 +5,7 @@ module JetPEG
       
       def initialize(data)
         super()
-        @string = data[:string].gsub(/\\./) { |str| Compiler.translate_escaped_character str[1] }
+        @string = data.gsub(/\\./) { |str| Compiler.translate_escaped_character str[1] }
       end
       
       def build(builder, start_input, modes, failed_block)
@@ -62,7 +62,7 @@ module JetPEG
       attr_reader :character
       
       def initialize(data)
-        @character = data[:char_element]
+        @character = data
       end
       
       def build(builder, start_input, input_char, successful_block, failed_block)
@@ -78,7 +78,7 @@ module JetPEG
     class CharacterClassEscapedCharacter < CharacterClassSingleCharacter
       def initialize(data)
         super
-        @character = Compiler.translate_escaped_character data[:char_element]
+        @character = Compiler.translate_escaped_character data
       end
     end
     
@@ -106,7 +106,7 @@ module JetPEG
     end
     
     class AnyCharacterTerminal < CharacterClassTerminal
-      SELECTIONS = [CharacterClassSingleCharacter.new({ char_element: "\0" })]
+      SELECTIONS = [CharacterClassSingleCharacter.new("\0")]
       
       def initialize(data)
         super({})

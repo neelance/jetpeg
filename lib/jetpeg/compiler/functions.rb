@@ -66,7 +66,7 @@ module JetPEG
     class ErrorFunction < ParsingExpression
       def initialize(data)
         super()
-        @message = data[:message].string
+        @message = data[:message]
       end
       
       def build(builder, start_input, modes, failed_block)
@@ -81,7 +81,7 @@ module JetPEG
     class ModeFunction < ParsingExpression
       def initialize(data)
         super()
-        @name = data[:name].string.to_sym
+        @name = data[:name].to_sym
         if data[:expression]
           @expression = data[:expression]
           self.children = [@expression]
