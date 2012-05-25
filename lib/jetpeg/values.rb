@@ -388,11 +388,11 @@ module JetPEG
     end
   end
     
-  class CreatorValueType < WrappingValueType
-    def initialize(inner_type, function, arguments, value_types)
+  class ObjectCreatorValueType < WrappingValueType
+    def initialize(inner_type, class_name, data, value_types)
       super inner_type, value_types
-      @function = function
-      @arguments = arguments
+      @class_name = class_name
+      @data = data
     end
     
     def all_labels
@@ -401,14 +401,77 @@ module JetPEG
     
     def build_read_function(builder, value, output_functions)
       builder.call @inner_type.read_function, value, *output_functions.values
-      mapped_arguments = @arguments.map { |arg|
-        case arg
-        when Integer then LLVM::Int64.from_i(arg) 
-        when String then builder.global_string_pointer(arg)
-        else raise
+      if @data
+        builder.call output_functions[:set_as_source]
+        @data.build builder, output_functions
+      end
+      builder.call output_functions[:make_object], builder.global_string_pointer(@class_name)
+    end
+  end
+  
+  module Compiler
+    class StringData
+      def initialize(data)
+        @string = data
+      end
+      
+      def build(builder, output_functions)
+        builder.call output_functions[:new_string], builder.global_string_pointer(@string)
+      end
+    end
+    
+    class HashData
+      def initialize(data)
+        @entries = data[:entries]
+      end
+      
+      def build(builder, output_functions)
+        @entries.each do |entry|
+          entry[:data].build builder, output_functions
+          builder.call output_functions[:make_label], builder.global_string_pointer(entry[:label])
         end
-      }
-      builder.call output_functions[@function], *mapped_arguments
+        builder.call output_functions[:merge_labels], LLVM::Int64.from_i(@entries.size)
+      end
+    end
+    
+    class ObjectData
+      def initialize(data)
+        @class_name = data[:class_name]
+        @data = data[:data]
+      end
+      
+      def build(builder, output_functions)
+        @data.build builder, output_functions
+        builder.call output_functions[:make_object], builder.global_string_pointer(@class_name)
+      end
+    end
+    
+    class LabelData
+      def initialize(data)
+        @name = data
+      end
+      
+      def build(builder, output_functions)
+        builder.call output_functions[:read_from_source], builder.global_string_pointer(@name)
+      end
+    end
+  end
+  
+  class ValueCreatorValueType < WrappingValueType
+    def initialize(inner_type, code, filename, line, value_types)
+      super inner_type, value_types
+      @code = code
+      @filename = filename
+      @line = line
+    end
+    
+    def all_labels
+      @inner_type ? [nil] : []
+    end
+    
+    def build_read_function(builder, value, output_functions)
+      builder.call @inner_type.read_function, value, *output_functions.values
+      builder.call output_functions[:make_value], builder.global_string_pointer(@code), builder.global_string_pointer(@filename), LLVM::Int64.from_i(@line)
     end
   end
 end

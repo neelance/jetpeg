@@ -54,15 +54,18 @@ module JetPEG
   end
   
   OUTPUT_INTERFACE_SIGNATURES = {
-    new_nil:         LLVM.Function([], LLVM.Void()),
-    new_input_range: LLVM.Function([LLVM_STRING, LLVM_STRING], LLVM.Void()),
-    new_boolean:     LLVM.Function([LLVM::Int1], LLVM.Void()),
-    make_label:      LLVM.Function([LLVM_STRING], LLVM.Void()),
-    merge_labels:    LLVM.Function([LLVM::Int64], LLVM.Void()),
-    make_array:      LLVM.Function([], LLVM.Void()),
-    make_object:     LLVM.Function([LLVM_STRING], LLVM.Void()),
-    make_value:      LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int64], LLVM.Void()),
-    add_failure:     LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int1], LLVM.Void())
+    new_nil:          LLVM.Function([], LLVM.Void()),
+    new_input_range:  LLVM.Function([LLVM_STRING, LLVM_STRING], LLVM.Void()),
+    new_boolean:      LLVM.Function([LLVM::Int1], LLVM.Void()),
+    new_string:       LLVM.Function([LLVM_STRING], LLVM.Void()),
+    make_label:       LLVM.Function([LLVM_STRING], LLVM.Void()),
+    merge_labels:     LLVM.Function([LLVM::Int64], LLVM.Void()),
+    make_array:       LLVM.Function([], LLVM.Void()),
+    make_value:       LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int64], LLVM.Void()),
+    make_object:      LLVM.Function([LLVM_STRING], LLVM.Void()),
+    set_as_source:    LLVM.Function([], LLVM.Void()),
+    read_from_source: LLVM.Function([LLVM_STRING], LLVM.Void()),
+    add_failure:      LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int1], LLVM.Void())
   }
   OUTPUT_FUNCTION_POINTERS = OUTPUT_INTERFACE_SIGNATURES.values.map { |fun_type| LLVM::Pointer(fun_type) }
   
@@ -106,30 +109,34 @@ module JetPEG
       end_ptr = start_ptr + input.size
       
       output_stack = []
+      temp_source = nil
       failure_position = 0
       failure_expectations = []
       failure_other_reasons = []
       output_functions = [
-        FFI::Function.new(:void, []) { # 0: new_nil
+        FFI::Function.new(:void, []) { # new_nil
           output_stack << nil
         },
-        FFI::Function.new(:void, [:pointer, :pointer]) { |from_ptr, to_ptr| # 1: new_input_range
+        FFI::Function.new(:void, [:pointer, :pointer]) { |from_ptr, to_ptr| # new_input_range
           range = (from_ptr.address - start_ptr.address)...(to_ptr.address - start_ptr.address)
           line = input[0, range.begin].count("\n")
           output_stack << StringWithPosition.new(input[range], range, line)
         },
-        FFI::Function.new(:void, [:bool]) { |value| # 2: new_boolean
+        FFI::Function.new(:void, [:bool]) { |value| # new_boolean
           output_stack << value
         },
-        FFI::Function.new(:void, [:string]) { |name| # 3: make_label
+        FFI::Function.new(:void, [:string]) { |value| # new_string
+          output_stack << value
+        },
+        FFI::Function.new(:void, [:string]) { |name| # make_label
           value = output_stack.pop
           output_stack << { name.to_sym => value }
         },
-        FFI::Function.new(:void, [:int64]) { |count| # 4: merge_labels
+        FFI::Function.new(:void, [:int64]) { |count| # merge_labels
           merged = output_stack.pop(count).compact.reduce(&:merge)
           output_stack << merged
         },
-        FFI::Function.new(:void, []) { # 5: make_array
+        FFI::Function.new(:void, []) { # make_array
           data = output_stack.pop
           array = []
           until data.nil?
@@ -138,17 +145,23 @@ module JetPEG
           end
           output_stack << array
         },
-        FFI::Function.new(:void, [:string]) { |class_name| # 6: make_object
-          data = output_stack.pop
-          object_class = class_name.split("::").map(&:to_sym).inject(options[:class_scope]) { |scope, name| scope.const_get(name) }
-          output_stack << object_class.new(data)
-        },
-        FFI::Function.new(:void, [:string, :string, :int64]) { |code, filename, line| # 7: make_value
+        FFI::Function.new(:void, [:string, :string, :int64]) { |code, filename, line| # make_value
           data = output_stack.pop
           scope = EvaluationScope.new data
           output_stack << scope.instance_eval(code, filename, line + 1)
         },
-        FFI::Function.new(:void, [:pointer, :string, :bool]) { |pos_ptr, reason, is_expectation| # 8: add_failure
+        FFI::Function.new(:void, [:string]) { |class_name| # make_object
+          data = output_stack.pop
+          object_class = class_name.split("::").map(&:to_sym).inject(options[:class_scope]) { |scope, name| scope.const_get(name) }
+          output_stack << object_class.new(data)
+        },
+        FFI::Function.new(:void, []) { # set_as_source
+          temp_source = output_stack.pop
+        },
+        FFI::Function.new(:void, [:string]) { |name| # read_from_source
+          output_stack << temp_source[name.to_sym]
+        },
+        FFI::Function.new(:void, [:pointer, :string, :bool]) { |pos_ptr, reason, is_expectation| # add_failure
           position = pos_ptr.address - start_ptr.address
           if position > failure_position
             failure_position = position

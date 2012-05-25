@@ -104,10 +104,11 @@ module JetPEG
       def initialize(data)
         super
         @class_name = data[:class_name]
+        @data = data[:data]
       end
 
       def create_return_type
-        CreatorValueType.new super, :make_object, [@class_name], parser.value_types
+        ObjectCreatorValueType.new super, @class_name, @data, parser.value_types
       end
     end
     
@@ -118,7 +119,7 @@ module JetPEG
       end
 
       def create_return_type
-        CreatorValueType.new super, :make_value, [@code, parser.filename, @code.line], parser.value_types
+        ValueCreatorValueType.new super, @code, parser.filename, @code.line, parser.value_types
       end
     end
   end

@@ -16,9 +16,16 @@ rule choice
 end
 
 rule creator
-  expression:sequence '<' class_name:( !'>' . )+ '>' ws <ObjectCreator> /
+  expression:sequence '<' class_name:alphanumeric_char+ ( ws :data )? '>' ws <ObjectCreator> /
   expression:sequence '{' :code '}' ws <ValueCreator> /
   sequence
+end
+
+rule data
+  quoted_string <StringData> /
+  '{' ws entries:( label:alphanumeric_char+ ':' ws :data ){ ',' ws }+ ws '}' <HashData> /
+  '<' class_name:alphanumeric_char+ ( ws :data )? '>' <ObjectData> /
+  '@' @:alphanumeric_char+ <LabelData>
 end
 
 rule code
