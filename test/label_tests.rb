@@ -133,8 +133,8 @@ class LabelsTests < Test::Unit::TestCase
     assert rule.parse("abc", class_scope: self.class) == TestClassA.new({ char: "b" })
     assert rule.parse("def", class_scope: self.class) == TestClassB.new({ char: "e" })
     
-    rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' <TestClassA { a: 'test1', b: <TestClassB 'test2'>, c: <TestClassB { r: @char }> }>"
-    assert rule.parse("abc", class_scope: self.class) == TestClassA.new({ a: "test1", b: TestClassB.new("test2"), c: TestClassB.new({ r: "b" }) })
+    rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' <TestClassA { a: 'test1', b: [ <TestClassB 'test2'>, <TestClassB { r: @char }> ] }>"
+    assert rule.parse("abc", class_scope: self.class) == TestClassA.new({ a: "test1", b: [ TestClassB.new("test2"), TestClassB.new({ r: "b" }) ] })
   end
   
   def test_value_creator

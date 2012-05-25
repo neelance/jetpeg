@@ -434,6 +434,25 @@ module JetPEG
       end
     end
     
+    class ArrayData
+      def initialize(data)
+        @entries = data[:entries]
+      end
+      
+      def build(builder, output_functions)
+        @entries.reverse_each do |entry|
+          entry.build builder, output_functions
+          builder.call output_functions[:make_label], builder.global_string_pointer("value")
+        end
+        builder.call output_functions[:new_nil]
+        @entries.size.times do
+          builder.call output_functions[:make_label], builder.global_string_pointer("previous")
+          builder.call output_functions[:merge_labels], LLVM::Int64.from_i(2)
+        end
+        builder.call output_functions[:make_array]
+      end
+    end
+    
     class ObjectData
       def initialize(data)
         @class_name = data[:class_name]
