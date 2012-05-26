@@ -420,6 +420,16 @@ module JetPEG
       end
     end
     
+    class BooleanData
+      def initialize(data)
+        @value = data[:value]
+      end
+      
+      def build(builder, output_functions)
+        builder.call output_functions[:new_boolean], (@value ? LLVM::TRUE : LLVM::FALSE)
+      end
+    end
+    
     class HashData
       def initialize(data)
         @entries = data[:entries]
