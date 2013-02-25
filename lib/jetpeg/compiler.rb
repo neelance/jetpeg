@@ -49,18 +49,6 @@ module JetPEG
   
   module Compiler
     class Builder < LLVM::Builder
-      class LazyBlock
-        def initialize(function, name)
-          @function = function
-          @name = name
-        end
-        
-        def to_ptr
-          @block ||= @function.basic_blocks.append @name
-          @block.to_ptr
-        end
-      end
-      
       attr_accessor :traced, :is_left_recursion, :left_recursion_occurred, :left_recursion_last_result, :rule_start_input, :add_failure_callback
       
       def init(mod, track_malloc)
@@ -77,7 +65,7 @@ module JetPEG
       end
       
       def create_block(name)
-        LazyBlock.new self.insert_block.parent, name
+        self.insert_block.parent.basic_blocks.append name
       end
       
       def create_struct(llvm_type)

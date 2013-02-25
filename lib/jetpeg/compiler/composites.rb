@@ -116,8 +116,6 @@ module JetPEG
         match_glue = DynamicPhi.new builder, (@glue_expression && LLVM::Int1), "match_glue", (start_return_value == :none ? LLVM::FALSE : LLVM::TRUE)
 
         loop_block = builder.create_block "repetition_loop"
-        glue_block = builder.create_block "repetition_glue"
-        expression_block = builder.create_block "repetition_expression"
         exit_block = builder.create_block "repetition_exit"
         builder.br loop_block
         
@@ -127,6 +125,8 @@ module JetPEG
         match_glue.build
         
         if @glue_expression
+          glue_block = builder.create_block "repetition_glue"
+          expression_block = builder.create_block "repetition_expression"
           input_after_glue = DynamicPhi.new builder, LLVM_STRING, "loop_input_after_glue", input
           builder.cond match_glue, glue_block, expression_block
           
