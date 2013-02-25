@@ -3,24 +3,24 @@ require 'ffi'
 $: << "."
 $: << "lib"
 
-class StdLib
-  class MallInfo < FFI::Struct
-    layout :arena, :int,
-           :ordblks, :int,
-           :smblks, :int,
-           :hblks, :int,
-           :hblkhd, :int,
-           :usmblks, :int,
-           :fsmblks, :int,
-           :uordblks, :int,
-           :fordblks, :int,
-           :keepcost, :int
-  end
+# class StdLib
+#   class MallInfo < FFI::Struct
+#     layout :arena, :int,
+#            :ordblks, :int,
+#            :smblks, :int,
+#            :hblks, :int,
+#            :hblkhd, :int,
+#            :usmblks, :int,
+#            :fsmblks, :int,
+#            :uordblks, :int,
+#            :fordblks, :int,
+#            :keepcost, :int
+#   end
   
-  extend FFI::Library
-  ffi_lib 'ffi'
-  attach_function 'mallinfo', [], MallInfo.by_value
-end
+#   extend FFI::Library
+#   ffi_lib 'ffi'
+#   attach_function 'mallinfo', [], MallInfo.by_value
+# end
 
 Rake::TestTask.new :test do |t|
   #t.pattern = 'test/*.rb'
@@ -47,35 +47,35 @@ task :profile do
   exit!
 end
 
-task :memory_leak_test do
-  require "jetpeg"
+# task :memory_leak_test do
+#   require "jetpeg"
   
-  previous_memory = 0
-  zeros_counter = 0
+#   previous_memory = 0
+#   zeros_counter = 0
   
-  parser = JetPEG.load "lib/jetpeg/compiler/metagrammar.jetpeg"
-  JetPEG::Parser.default_options[:raise_on_failure] = false
-  JetPEG::Parser.default_options[:track_malloc] = true
+#   parser = JetPEG.load "lib/jetpeg/compiler/metagrammar.jetpeg"
+#   JetPEG::Parser.default_options[:raise_on_failure] = false
+#   JetPEG::Parser.default_options[:track_malloc] = true
   
-  10000.times do |i|
-    parser[:grammar].match(IO.read("lib/jetpeg/compiler/metagrammar.jetpeg"), output: :realized, class_scope: JetPEG::Compiler)
+#   10000.times do |i|
+#     parser[:grammar].match(IO.read("lib/jetpeg/compiler/metagrammar.jetpeg"), output: :realized, class_scope: JetPEG::Compiler)
     
-    GC.start
-    current_memory = StdLib.mallinfo[:uordblks]
-    max_memory = current_memory > previous_memory ? current_memory : previous_memory
-    diff = max_memory - previous_memory
+#     GC.start
+#     current_memory = StdLib.mallinfo[:uordblks]
+#     max_memory = current_memory > previous_memory ? current_memory : previous_memory
+#     diff = max_memory - previous_memory
     
-    puts "#{i}: #{current_memory} / #{diff}"
-    zeros_counter += 1 if diff == 0
-    if i > 50 && zeros_counter > i / 2
-      puts "No direct memory leak."
-      exit!
-    end
+#     puts "#{i}: #{current_memory} / #{diff}"
+#     zeros_counter += 1 if diff == 0
+#     if i > 50 && zeros_counter > i / 2
+#       puts "No direct memory leak."
+#       exit!
+#     end
 
-    previous_memory = max_memory
-  end
-  puts "Memory leak!"
-end
+#     previous_memory = max_memory
+#   end
+#   puts "Memory leak!"
+# end
 
 task :benchmark do
   require "benchmark"
