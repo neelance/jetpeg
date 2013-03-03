@@ -80,24 +80,49 @@ module JetPEG
       end
       
       def match_function
-        @match_function ||= @mod.functions.add("#{@rule_name}_match", [LLVM_STRING, LLVM_STRING, *OUTPUT_FUNCTION_POINTERS], LLVM::Int1).tap { |f| f.linkage = :external }
+        if @match_function.nil?
+          @match_function = @mod.functions.add "#{@rule_name}_match", [LLVM_STRING, LLVM_STRING, *OUTPUT_FUNCTION_POINTERS], LLVM::Int1
+          @match_function.linkage = :external
+        
+          entry_block = @match_function.basic_blocks.append "rule_entry"
+          successful_block = @match_function.basic_blocks.append "rule_successful"
+          failed_block = @match_function.basic_blocks.append "rule_failed"
+          start_ptr, end_ptr, *output_functions = @match_function.params.to_a
+          
+          builder = Compiler::Builder.new
+          builder.position_at_end entry_block
+          rule_result = builder.call internal_match_function(false, false), start_ptr, OUTPUT_FUNCTION_POINTERS.last.null, @mode_struct.null
+          rule_end_input = builder.extract_value rule_result, 0
+          return_value = builder.extract_value rule_result, 1
+          successful = builder.icmp :eq, rule_end_input, end_ptr
+          builder.cond successful, successful_block, failed_block
+          
+          builder.position_at_end successful_block
+          builder.call return_type.read_function, return_value, *output_functions if return_type
+          builder.call return_type.free_function, return_value if return_type
+          builder.ret LLVM::TRUE
+          
+          builder.position_at_end failed_block
+          builder.call return_type.free_function, return_value if return_type
+          rule_result = builder.call internal_match_function(true, false), start_ptr, output_functions.last, @mode_struct.null
+          return_value = builder.extract_value rule_result, 1
+          builder.call return_type.free_function, return_value if return_type
+          builder.ret LLVM::FALSE
+          builder.dispose
+        end
+        @match_function
       end
 
       def internal_match_function(traced, is_left_recursion)
-        @internal_match_functions[[traced, is_left_recursion]] ||= begin
+        if @internal_match_functions[[traced, is_left_recursion]].nil?
           parameter_llvm_types = @parameters.map(&:value_type).map(&:llvm_type)
-          @mod.functions.add("#{@rule_name}_internal_match", [LLVM_STRING, OUTPUT_FUNCTION_POINTERS.last, @mode_struct] + parameter_llvm_types + (is_left_recursion ? [rule_result_structure] : []), rule_result_structure).tap { |f| f.linkage = :private }
-        end
-      end
-      
-      def build_functions(builder)
-        [false, true].repeated_permutation(2) do |traced, is_left_recursion|
-          next if is_left_recursion and not @has_direct_recursion
+          function = @mod.functions.add "#{@rule_name}_internal_match", [LLVM_STRING, OUTPUT_FUNCTION_POINTERS.last, @mode_struct] + parameter_llvm_types + (is_left_recursion ? [rule_result_structure] : []), rule_result_structure
+          function.linkage = :private
+          @internal_match_functions[[traced, is_left_recursion]] = function
 
-          function = internal_match_function traced, is_left_recursion
           entry = function.basic_blocks.append "entry"
+          builder = Compiler::Builder.new
           builder.position_at_end entry
-  
           builder.traced = traced
           builder.is_left_recursion = is_left_recursion
           builder.rule_start_input = function.params[0]
@@ -154,33 +179,9 @@ module JetPEG
           
           builder.position_at_end failed_block
           builder.ret rule_result_structure.null
+          builder.dispose
         end
-        
-        if @is_root
-          entry_block = match_function.basic_blocks.append "rule_entry"
-          successful_block = match_function.basic_blocks.append "rule_successful"
-          failed_block = match_function.basic_blocks.append "rule_failed"
-          start_ptr, end_ptr, *output_functions = match_function.params.to_a
-          
-          builder.position_at_end entry_block
-          rule_result = builder.call internal_match_function(false, false), start_ptr, OUTPUT_FUNCTION_POINTERS.last.null, @mode_struct.null
-          rule_end_input = builder.extract_value rule_result, 0
-          return_value = builder.extract_value rule_result, 1
-          successful = builder.icmp :eq, rule_end_input, end_ptr
-          builder.cond successful, successful_block, failed_block
-          
-          builder.position_at_end successful_block
-          builder.call return_type.read_function, return_value, *output_functions if return_type
-          builder.call return_type.free_function, return_value if return_type
-          builder.ret LLVM::TRUE
-          
-          builder.position_at_end failed_block
-          builder.call return_type.free_function, return_value if return_type
-          rule_result = builder.call internal_match_function(true, false), start_ptr, output_functions.last, @mode_struct.null
-          return_value = builder.extract_value rule_result, 1
-          builder.call return_type.free_function, return_value if return_type
-          builder.ret LLVM::FALSE
-        end
+        @internal_match_functions[[traced, is_left_recursion]]
       end
       
       def eql?(other)

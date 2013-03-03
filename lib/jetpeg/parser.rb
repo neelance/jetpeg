@@ -260,12 +260,7 @@ module JetPEG
 
       @rules.each_value { |rule| rule.set_runtime @mod, @mode_struct }
       @value_types.each { |type| type.set_runtime @mod, malloc_counter, free_counter }
-
-      builder = Compiler::Builder.new
-      @rules.each_value { |rule| rule.build_functions builder }
-      @value_types.each { |type| type.build_functions builder }
-      builder.dispose
-      
+      @rules.each_value { |rule| rule.match_function if rule.is_root }
       @mod.verify!
     end
     

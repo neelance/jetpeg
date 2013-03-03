@@ -33,25 +33,35 @@ module JetPEG
     end
     
     def read_function
-      @read_function ||= @mod.functions.add("read_value", [llvm_type, *OUTPUT_FUNCTION_POINTERS], LLVM.Void()).tap { |f| f.linkage = :private }
+      if @read_function.nil?
+        @read_function = @mod.functions.add "read_value", [llvm_type, *OUTPUT_FUNCTION_POINTERS], LLVM.Void()
+        @read_function.linkage = :private
+
+        entry = @read_function.basic_blocks.append "entry"
+        builder = Compiler::Builder.new
+        builder.position_at_end entry
+        value, *output_functions_array = @read_function.params.to_a
+        output_functions = Hash[*OUTPUT_INTERFACE_SIGNATURES.keys.zip(output_functions_array).flatten]
+        build_read_function builder, value, output_functions
+        builder.ret_void
+        builder.dispose
+      end
+      @read_function
     end
 
     def free_function
-      @free_function ||= @mod.functions.add("free_value", [llvm_type], LLVM.Void()).tap { |f| f.linkage = :private }
-    end
-    
-    def build_functions(builder)
-      entry = read_function.basic_blocks.append "entry"
-      builder.position_at_end entry
-      value, *output_functions_array = read_function.params.to_a
-      output_functions = Hash[*OUTPUT_INTERFACE_SIGNATURES.keys.zip(output_functions_array).flatten]
-      build_read_function builder, value, output_functions
-      builder.ret_void
-      
-      entry = free_function.basic_blocks.append "entry"
-      builder.position_at_end entry
-      build_free_function builder, free_function.params[0]
-      builder.ret_void
+      if @free_function.nil?
+        @free_function = @mod.functions.add "free_value", [llvm_type], LLVM.Void()
+        @free_function.linkage = :private
+
+        entry = @free_function.basic_blocks.append "entry"
+        builder = Compiler::Builder.new
+        builder.position_at_end entry
+        build_free_function builder, @free_function.params[0]
+        builder.ret_void
+        builder.dispose
+      end
+      @free_function
     end
   end
   
