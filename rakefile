@@ -58,7 +58,7 @@ end
 #   JetPEG::Parser.default_options[:track_malloc] = true
   
 #   10000.times do |i|
-#     parser[:grammar].match(IO.read("lib/jetpeg/compiler/metagrammar.jetpeg"), output: :realized, class_scope: JetPEG::Compiler)
+#     parser[:grammar].match(IO.read("lib/jetpeg/compiler/metagrammar.jetpeg"), class_scope: JetPEG::Compiler)
     
 #     GC.start
 #     current_memory = StdLib.mallinfo[:uordblks]
@@ -91,7 +91,7 @@ task :benchmark do
     end
 
     bm.report("building:") do
-      parser.root_rules << :grammar
+      parser[:grammar].is_root = true
       parser.build
       #JetPEG.write_typegraph "graph.dot", parser[:grammar].return_type.llvm_type
       #exit
@@ -112,7 +112,8 @@ end
 task :build_metagrammar_parser do
   require "jetpeg"
   parser = JetPEG.load File.join(File.dirname(__FILE__), "lib/jetpeg/compiler/metagrammar.jetpeg")
-  parser.root_rules = [:grammar, :rule_expression]
+  parser[:grammar].is_root = true
+  parser[:rule_expression].is_root = true
   parser.build
   parser.mod.write_bitcode File.join(File.dirname(__FILE__), "lib/jetpeg/compiler/metagrammar.jetpeg.bc")
 end

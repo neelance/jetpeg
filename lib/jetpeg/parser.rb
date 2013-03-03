@@ -213,7 +213,6 @@ module JetPEG
   
   class JitParser < Parser
     attr_reader :failure_reason, :filename, :value_types, :mode_names
-    attr_accessor :root_rules
     
     def initialize(rules, filename = "grammar")
       super(nil)
@@ -222,7 +221,7 @@ module JetPEG
       @rules.each_value { |rule| rule.parent = self }
       @filename = filename
 
-      @root_rules = [@rules.values.first.rule_name]
+      @rules.values.first.is_root = true
       @value_types = [InputRangeValueType::INSTANCE]
       
       @rules.each_value(&:return_type) # calculate all return types
@@ -230,8 +229,8 @@ module JetPEG
     end
     
     def parse_rule(rule_name, input, options = {})
-      if @mod.nil? or not @root_rules.include?(rule_name)
-        @root_rules << rule_name
+      if @mod.nil? or not @rules[rule_name].is_root
+        @rules[rule_name].is_root = true
         build options
       end
       
@@ -250,11 +249,20 @@ module JetPEG
       @mode_names = @rules.values.map(&:all_mode_names).flatten.uniq
       @mode_struct = LLVM::Type.struct(([LLVM::Int1] * @mode_names.size), true, "mode_struct")
       
+      malloc_counter = nil
+      free_counter = nil
+      if options[:track_malloc]
+        malloc_counter = mod.globals.add LLVM::Int64, :malloc_counter
+        malloc_counter.initializer = LLVM::Int64.from_i(0)
+        free_counter = mod.globals.add LLVM::Int64, :free_counter
+        free_counter.initializer = LLVM::Int64.from_i(0)
+      end
+
+      @rules.each_value { |rule| rule.set_runtime @mod, @mode_struct }
+      @value_types.each { |type| type.set_runtime @mod, malloc_counter, free_counter }
+
       builder = Compiler::Builder.new
-      builder.init @mod, options[:track_malloc]
-      @rules.each_value { |rule| rule.create_functions @mod, @root_rules.include?(rule.rule_name), @mode_struct }
-      @value_types.each { |type| type.create_functions @mod }
-      @rules.each_value { |rule| rule.build_functions builder, @root_rules.include?(rule.rule_name), @mode_struct }
+      @rules.each_value { |rule| rule.build_functions builder }
       @value_types.each { |type| type.build_functions builder }
       builder.dispose
       

@@ -51,19 +51,6 @@ module JetPEG
     class Builder < LLVM::Builder
       attr_accessor :traced, :is_left_recursion, :left_recursion_occurred, :left_recursion_last_result, :rule_start_input, :add_failure_callback
       
-      def init(mod, track_malloc)
-        @mod = mod
-        if track_malloc
-          @malloc_counter = @mod.globals.add LLVM::Int64, :malloc_counter
-          @malloc_counter.initializer = LLVM::Int64.from_i(0)
-          @free_counter = @mod.globals.add LLVM::Int64, :free_counter
-          @free_counter.initializer = LLVM::Int64.from_i(0)
-        else
-          @malloc_counter = nil
-          @free_counter = nil
-        end
-      end
-      
       def create_block(name)
         self.insert_block.parent.basic_blocks.append name
       end
@@ -89,24 +76,6 @@ module JetPEG
         else
           super
         end
-      end
-      
-      def malloc(type, name = "")
-        if @malloc_counter
-          old_value = self.load @malloc_counter
-          new_value = self.add old_value, LLVM::Int64.from_i(1)
-          self.store new_value, @malloc_counter
-        end
-        super
-      end
-      
-      def free(pointer)
-        if @free_counter
-          old_value = self.load @free_counter
-          new_value = self.add old_value, LLVM::Int64.from_i(1)
-          self.store new_value, @free_counter
-        end
-        super
       end
       
       def add_failure_reason(failed_block, position, reason, is_expectation = true)
@@ -170,15 +139,15 @@ module JetPEG
     end
 
     def self.compile_rule(code, filename = "grammar")
-      expression = metagrammar_parser.parse_rule :rule_expression, code, output: :realized, class_scope: self, raise_on_failure: true
+      expression = metagrammar_parser.parse_rule :rule_expression, code, class_scope: self, raise_on_failure: true
       expression.rule_name = :rule
-      JitParser.new({ "rule" => expression }, filename)
+      JitParser.new({ :rule => expression }, filename)
     rescue ParsingError => e
       raise CompilationError, "Syntax error in grammar: #{e}"
     end
     
     def self.compile_grammar(code, filename = "grammar")
-      data = metagrammar_parser.parse_rule :grammar, code, output: :realized, class_scope: self, raise_on_failure: true
+      data = metagrammar_parser.parse_rule :grammar, code, class_scope: self, raise_on_failure: true
       parser = load_parser data, filename
       parser
     rescue ParsingError => e

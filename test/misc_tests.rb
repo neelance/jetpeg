@@ -74,6 +74,6 @@ class MiscTests < Test::Unit::TestCase
   
   def test_metagrammar
     parser = JetPEG.load "lib/jetpeg/compiler/metagrammar.jetpeg"
-    assert parser.parse_rule(:grammar, IO.read("lib/jetpeg/compiler/metagrammar.jetpeg"), output: :realized, class_scope: JetPEG::Compiler)
+    assert parser.parse_rule(:grammar, IO.read("lib/jetpeg/compiler/metagrammar.jetpeg"), class_scope: JetPEG::Compiler)
   end
 end

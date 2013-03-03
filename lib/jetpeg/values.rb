@@ -1,6 +1,6 @@
 module JetPEG
   class ValueType
-    attr_reader :llvm_type, :child_types, :read_function, :free_function
+    attr_reader :llvm_type, :child_types
     
     def initialize(llvm_type, value_types)
       @llvm_type = llvm_type
@@ -23,26 +23,34 @@ module JetPEG
     def to_s
       self.class.to_s
     end
+
+    def set_runtime(mod, malloc_counter, free_counter)
+      @mod = mod
+      @malloc_counter = malloc_counter
+      @free_counter = free_counter
+      @read_function = nil
+      @free_function = nil
+    end
     
-    def create_functions(mod)
-      @read_function = mod.functions.add("read_value", [llvm_type, *OUTPUT_FUNCTION_POINTERS], LLVM.Void())
-      @read_function.linkage = :private
-      
-      @free_function = mod.functions.add("free_value", [llvm_type], LLVM.Void())
-      @free_function.linkage = :private
+    def read_function
+      @read_function ||= @mod.functions.add("read_value", [llvm_type, *OUTPUT_FUNCTION_POINTERS], LLVM.Void()).tap { |f| f.linkage = :private }
+    end
+
+    def free_function
+      @free_function ||= @mod.functions.add("free_value", [llvm_type], LLVM.Void()).tap { |f| f.linkage = :private }
     end
     
     def build_functions(builder)
-      entry = @read_function.basic_blocks.append "entry"
+      entry = read_function.basic_blocks.append "entry"
       builder.position_at_end entry
-      value, *output_functions_array = @read_function.params.to_a
+      value, *output_functions_array = read_function.params.to_a
       output_functions = Hash[*OUTPUT_INTERFACE_SIGNATURES.keys.zip(output_functions_array).flatten]
       build_read_function builder, value, output_functions
       builder.ret_void
       
-      entry = @free_function.basic_blocks.append "entry"
+      entry = free_function.basic_blocks.append "entry"
       builder.position_at_end entry
-      build_free_function builder, @free_function.params[0]
+      build_free_function builder, free_function.params[0]
       builder.ret_void
     end
   end
@@ -260,6 +268,11 @@ module JetPEG
       target_data = @target_struct.null
       target_data = builder.insert_value target_data, value, 0, "pointer_target_data"
       
+      if @malloc_counter
+        old_value = builder.load @malloc_counter
+        new_value = builder.add old_value, LLVM::Int64.from_i(1)
+        builder.store new_value, @malloc_counter
+      end
       ptr = builder.malloc @target_struct
       builder.store target_data, ptr
       ptr
@@ -304,6 +317,11 @@ module JetPEG
       builder.position_at_end follow_pointer_block
       target_value = builder.load builder.struct_gep value, 0, "target_value"
       builder.call @target.return_type.free_function, target_value
+      if @free_counter
+        old_value = builder.load @free_counter
+        new_value = builder.add old_value, LLVM::Int64.from_i(1)
+        builder.store new_value, @free_counter
+      end
       builder.free value
       builder.br continue_block
       
