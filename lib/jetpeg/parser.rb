@@ -54,15 +54,16 @@ module JetPEG
   end
   
   OUTPUT_INTERFACE_SIGNATURES = {
-    new_nil:          LLVM.Function([], LLVM.Void()),
-    new_input_range:  LLVM.Function([LLVM_STRING, LLVM_STRING], LLVM.Void()),
-    new_boolean:      LLVM.Function([LLVM::Int1], LLVM.Void()),
-    new_string:       LLVM.Function([LLVM_STRING], LLVM.Void()),
-    make_label:       LLVM.Function([LLVM_STRING], LLVM.Void()),
-    merge_labels:     LLVM.Function([LLVM::Int64], LLVM.Void()),
+    push_nil:         LLVM.Function([], LLVM.Void()),
+    push_input_range: LLVM.Function([LLVM_STRING, LLVM_STRING], LLVM.Void()),
+    push_boolean:     LLVM.Function([LLVM::Int1], LLVM.Void()),
+    push_string:      LLVM.Function([LLVM_STRING], LLVM.Void()),
+    pop:              LLVM.Function([], LLVM::Void()),
     make_array:       LLVM.Function([], LLVM.Void()),
     make_value:       LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int64], LLVM.Void()),
     make_object:      LLVM.Function([LLVM_STRING], LLVM.Void()),
+    make_label:       LLVM.Function([LLVM_STRING], LLVM.Void()),
+    merge_labels:     LLVM.Function([LLVM::Int64], LLVM.Void()),
     set_as_source:    LLVM.Function([], LLVM.Void()),
     read_from_source: LLVM.Function([LLVM_STRING], LLVM.Void()),
     add_failure:      LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int1], LLVM.Void())
@@ -114,27 +115,22 @@ module JetPEG
       failure_expectations = []
       failure_other_reasons = []
       output_functions = [
-        FFI::Function.new(:void, []) { # new_nil
+        FFI::Function.new(:void, []) { # push_nil
           output_stack << nil
         },
-        FFI::Function.new(:void, [:pointer, :pointer]) { |from_ptr, to_ptr| # new_input_range
+        FFI::Function.new(:void, [:pointer, :pointer]) { |from_ptr, to_ptr| # push_input_range
           range = (from_ptr.address - start_ptr.address)...(to_ptr.address - start_ptr.address)
           line = input[0, range.begin].count("\n")
           output_stack << StringWithPosition.new(input[range], range, line)
         },
-        FFI::Function.new(:void, [:bool]) { |value| # new_boolean
+        FFI::Function.new(:void, [:bool]) { |value| # push_boolean
           output_stack << value
         },
-        FFI::Function.new(:void, [:string]) { |value| # new_string
+        FFI::Function.new(:void, [:string]) { |value| # push_string
           output_stack << value
         },
-        FFI::Function.new(:void, [:string]) { |name| # make_label
-          value = output_stack.pop
-          output_stack << { name.to_sym => value }
-        },
-        FFI::Function.new(:void, [:int64]) { |count| # merge_labels
-          merged = output_stack.pop(count).compact.reduce(&:merge)
-          output_stack << merged
+        FFI::Function.new(:void, []) { # pop
+          output_stack.pop
         },
         FFI::Function.new(:void, []) { # make_array
           data = output_stack.pop
@@ -154,6 +150,14 @@ module JetPEG
           data = output_stack.pop
           object_class = class_name.split("::").map(&:to_sym).inject(options[:class_scope]) { |scope, name| scope.const_get(name) }
           output_stack << object_class.new(data)
+        },
+        FFI::Function.new(:void, [:string]) { |name| # make_label
+          value = output_stack.pop
+          output_stack << { name.to_sym => value }
+        },
+        FFI::Function.new(:void, [:int64]) { |count| # merge_labels
+          merged = output_stack.pop(count).compact.reduce(&:merge)
+          output_stack << merged
         },
         FFI::Function.new(:void, []) { # set_as_source
           temp_source = output_stack.pop

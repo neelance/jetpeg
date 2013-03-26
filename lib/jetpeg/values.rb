@@ -73,7 +73,7 @@ module JetPEG
     end
     
     def build_read_function(builder, value, output_functions)
-      builder.call output_functions[:new_input_range], builder.extract_value(value, 0), builder.extract_value(value, 1)
+      builder.call output_functions[:push_input_range], builder.extract_value(value, 0), builder.extract_value(value, 1)
     end
 
     def build_free_function(builder, value)
@@ -91,7 +91,7 @@ module JetPEG
     end
     
     def build_read_function(builder, value, output_functions)
-      builder.call output_functions[:new_boolean], builder.trunc(value, LLVM::Int1)
+      builder.call output_functions[:push_boolean], builder.trunc(value, LLVM::Int1)
     end
     
     def build_free_function(builder, value)
@@ -241,7 +241,7 @@ module JetPEG
       end
       
       builder.position_at_end nil_block
-      builder.call output_functions[:new_nil]
+      builder.call output_functions[:push_nil]
       builder.br end_block
       
       builder.position_at_end end_block
@@ -299,7 +299,7 @@ module JetPEG
       builder.cond builder.icmp(:eq, value, llvm_type.null), null_block, not_null_block
       
       builder.position_at_end null_block
-      builder.call output_functions[:new_nil]
+      builder.call output_functions[:push_nil]
       builder.br end_block
       
       builder.position_at_end not_null_block
@@ -444,7 +444,7 @@ module JetPEG
       end
       
       def build(builder, output_functions)
-        builder.call output_functions[:new_string], builder.global_string_pointer(@string)
+        builder.call output_functions[:push_string], builder.global_string_pointer(@string)
       end
     end
     
@@ -454,7 +454,7 @@ module JetPEG
       end
       
       def build(builder, output_functions)
-        builder.call output_functions[:new_boolean], (@value ? LLVM::TRUE : LLVM::FALSE)
+        builder.call output_functions[:push_boolean], (@value ? LLVM::TRUE : LLVM::FALSE)
       end
     end
     
@@ -482,7 +482,7 @@ module JetPEG
           entry.build builder, output_functions
           builder.call output_functions[:make_label], builder.global_string_pointer("value")
         end
-        builder.call output_functions[:new_nil]
+        builder.call output_functions[:push_nil]
         @entries.size.times do
           builder.call output_functions[:make_label], builder.global_string_pointer("previous")
           builder.call output_functions[:merge_labels], LLVM::Int64.from_i(2)
