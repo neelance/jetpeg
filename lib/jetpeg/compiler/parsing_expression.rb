@@ -126,7 +126,7 @@ module JetPEG
           builder.traced = traced
           builder.is_left_recursion = is_left_recursion
           builder.rule_start_input = function.params[0]
-          builder.output_functions = function.params.to_a[2...(2+OUTPUT_FUNCTION_POINTERS.size)]
+          builder.output_functions = Hash[*OUTPUT_INTERFACE_SIGNATURES.keys.zip(function.params.to_a[2, OUTPUT_FUNCTION_POINTERS.size]).flatten]
           builder.left_recursion_occurred = builder.alloca LLVM::Int1
           builder.store LLVM::FALSE, builder.left_recursion_occurred
           builder.left_recursion_last_result = function.params[-1]

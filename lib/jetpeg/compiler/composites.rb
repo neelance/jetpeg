@@ -292,7 +292,7 @@ module JetPEG
           builder.position_at_end no_left_recursion_block
         end
         
-        call_rule_result = builder.call referenced.internal_match_function(builder.traced, false), start_input, modes, *builder.output_functions, *@arguments.map(&:value)
+        call_rule_result = builder.call referenced.internal_match_function(builder.traced, false), start_input, modes, *builder.output_functions.values, *@arguments.map(&:value)
         rule_result_phi << call_rule_result
         
         rule_successful = builder.icmp :ne, builder.extract_value(call_rule_result, 0), LLVM_STRING.null_pointer, "rule_successful"
