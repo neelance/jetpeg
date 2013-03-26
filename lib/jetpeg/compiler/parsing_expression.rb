@@ -69,7 +69,7 @@ module JetPEG
       end
       
       def rule_result_structure
-        @rule_result_structure ||= LLVM::Type.struct([LLVM_STRING, return_type ? return_type.llvm_type : LLVM::Int8], true)
+        @rule_result_structure ||= LLVM::Type.struct([LLVM_STRING, return_type ? return_type.llvm_type : LLVM::Int8], false)
       end
 
       def set_runtime(mod, mode_struct)
@@ -91,7 +91,7 @@ module JetPEG
           
           builder = Compiler::Builder.new
           builder.position_at_end entry_block
-          rule_result = builder.call internal_match_function(false, false), start_ptr, OUTPUT_FUNCTION_POINTERS.last.null, @mode_struct.null
+          rule_result = builder.call internal_match_function(false, false), start_ptr, @mode_struct.null, output_functions.last
           rule_end_input = builder.extract_value rule_result, 0
           return_value = builder.extract_value rule_result, 1
           successful = builder.icmp :eq, rule_end_input, end_ptr
@@ -104,7 +104,7 @@ module JetPEG
           
           builder.position_at_end failed_block
           builder.call return_type.free_function, return_value if return_type
-          rule_result = builder.call internal_match_function(true, false), start_ptr, output_functions.last, @mode_struct.null
+          rule_result = builder.call internal_match_function(true, false), start_ptr, @mode_struct.null, output_functions.last
           return_value = builder.extract_value rule_result, 1
           builder.call return_type.free_function, return_value if return_type
           builder.ret LLVM::FALSE
@@ -116,7 +116,7 @@ module JetPEG
       def internal_match_function(traced, is_left_recursion)
         if @internal_match_functions[[traced, is_left_recursion]].nil?
           parameter_llvm_types = @parameters.map(&:value_type).map(&:llvm_type)
-          function = @mod.functions.add "#{@rule_name}_internal_match", [LLVM_STRING, OUTPUT_FUNCTION_POINTERS.last, @mode_struct] + parameter_llvm_types + (is_left_recursion ? [rule_result_structure] : []), rule_result_structure
+          function = @mod.functions.add "#{@rule_name}_internal_match", [LLVM_STRING, @mode_struct, OUTPUT_FUNCTION_POINTERS.last] + parameter_llvm_types + (is_left_recursion ? [rule_result_structure] : []), rule_result_structure
           function.linkage = :private
           @internal_match_functions[[traced, is_left_recursion]] = function
 
@@ -126,7 +126,7 @@ module JetPEG
           builder.traced = traced
           builder.is_left_recursion = is_left_recursion
           builder.rule_start_input = function.params[0]
-          builder.add_failure_callback = function.params[1]
+          builder.add_failure_callback = function.params[2]
           builder.left_recursion_occurred = builder.alloca LLVM::Int1
           builder.store LLVM::FALSE, builder.left_recursion_occurred
           builder.left_recursion_last_result = function.params[-1]
@@ -135,7 +135,7 @@ module JetPEG
           @parameters.each_with_index do |parameter, index|
             parameter.value = function.params[index + 3]
           end
-          end_result = build builder, function.params[0], function.params[2], failed_block
+          end_result = build builder, function.params[0], function.params[1], failed_block
           
           result = rule_result_structure.null
           result = builder.insert_value result, end_result.input, 0
