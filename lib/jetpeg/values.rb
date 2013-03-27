@@ -153,6 +153,8 @@ module JetPEG
   end
   
   class SequenceValueType < StructValueType
+    attr_reader :child_layouts
+
     def process_types(child_types)
       child_layouts = {}
       layout_types = []

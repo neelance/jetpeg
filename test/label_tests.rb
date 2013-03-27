@@ -6,7 +6,7 @@ JetPEG::Parser.default_options[:track_malloc] = true
 class LabelsTests < Test::Unit::TestCase
   def test_label
     rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' / 'def'"
-    result = rule.parse "abc", show_reader_stack: true
+    result = rule.parse "abc"
     assert result == { char: "b" }
     assert result[:char] == "b"
     assert result[:char] === "b"

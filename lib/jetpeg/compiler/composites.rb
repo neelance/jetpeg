@@ -49,7 +49,9 @@ module JetPEG
           
           builder.position_at_end successful_block
         end
-        
+
+        builder.call builder.output_functions[:merge_labels], LLVM::Int64.from_i(return_type.child_layouts.size) if return_type
+
         @children.each do |child|
           child.free_local_value builder
         end

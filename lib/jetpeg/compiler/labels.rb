@@ -40,11 +40,17 @@ module JetPEG
         
         if @capture_input
           builder.call @expression.return_type.free_function, expression_result.return_value if @expression.return_type
+          builder.call builder.output_functions[:pop] if @expression.return_type
           @value = @value_type.llvm_type.null
           @value = builder.insert_value @value, start_input, 0, "pos"
           @value = builder.insert_value @value, expression_result.input, 1, "pos"
+          builder.call builder.output_functions[:push_input_range], start_input, expression_result.input
         else
           @value = expression_result.return_value
+        end
+
+        if return_type.is_a? LabeledValueType
+          builder.call builder.output_functions[:make_label], builder.global_string_pointer(label_name.to_s)
         end
         
         Result.new expression_result.input, (@is_local ? nil : @value)

@@ -58,18 +58,20 @@ module JetPEG
     push_input_range: LLVM.Function([LLVM_STRING, LLVM_STRING], LLVM.Void()),
     push_boolean:     LLVM.Function([LLVM::Int1], LLVM.Void()),
     push_string:      LLVM.Function([LLVM_STRING], LLVM.Void()),
-    pop:              LLVM.Function([], LLVM::Void()),
+    push_array:       LLVM.Function([], LLVM.Void()),
+    pop:              LLVM.Function([], LLVM.Void()),
     make_array:       LLVM.Function([], LLVM.Void()),
     make_value:       LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int64], LLVM.Void()),
     make_object:      LLVM.Function([LLVM_STRING], LLVM.Void()),
     make_label:       LLVM.Function([LLVM_STRING], LLVM.Void()),
     merge_labels:     LLVM.Function([LLVM::Int64], LLVM.Void()),
+    append_to_array:  LLVM.Function([], LLVM.Void()),
     set_as_source:    LLVM.Function([], LLVM.Void()),
     read_from_source: LLVM.Function([LLVM_STRING], LLVM.Void()),
     add_failure:      LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int1], LLVM.Void())
   }
   OUTPUT_FUNCTION_POINTERS = OUTPUT_INTERFACE_SIGNATURES.values.map { |fun_type| LLVM::Pointer(fun_type) }
-  
+
   class Parser
     @@default_options = { raise_on_failure: true, class_scope: ::Object, bitcode_optimization: true, machine_code_optimization: 0, track_malloc: false }
     
@@ -129,6 +131,9 @@ module JetPEG
         FFI::Function.new(:void, [:string]) { |value| # push_string
           output_stack << value
         },
+        FFI::Function.new(:void, []) { # push_array
+          output_stack << []
+        },
         FFI::Function.new(:void, []) { # pop
           output_stack.pop
         },
@@ -156,8 +161,12 @@ module JetPEG
           output_stack << { name.to_sym => value }
         },
         FFI::Function.new(:void, [:int64]) { |count| # merge_labels
+          # raise if output_stack.size < count
           merged = output_stack.pop(count).compact.reduce(&:merge)
           output_stack << merged
+        },
+        FFI::Function.new(:void, []) { # append_to_array
+          output_stack.last << output_stack.pop
         },
         FFI::Function.new(:void, []) { # set_as_source
           temp_source = output_stack.pop
@@ -189,7 +198,8 @@ module JetPEG
       end
       success_value.dispose
       
-      output = output_stack.first || {} 
+      #puts output_stack.inspect if output_stack.size > 1
+      output = output_stack.last || {} 
       check_malloc_counter
       
       output
