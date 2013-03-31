@@ -87,6 +87,7 @@ module JetPEG
     def initialize(mod)
       @mod = mod
       @execution_engine = nil
+      @rules = nil
     end
     
     def parse(input, options = {})
@@ -123,65 +124,113 @@ module JetPEG
       output_functions = [
         FFI::Function.new(:void, []) { # push_nil
           output_stack << nil
+          #puts "push_nil:         #{output_stack.inspect}" if @rules
         },
         FFI::Function.new(:void, [:pointer, :pointer]) { |from_ptr, to_ptr| # push_input_range
           range = (from_ptr.address - start_ptr.address)...(to_ptr.address - start_ptr.address)
           line = input[0, range.begin].count("\n")
           output_stack << StringWithPosition.new(input[range], range, line)
+          #puts "push_input_range: #{output_stack.inspect}" if @rules
         },
         FFI::Function.new(:void, [:bool]) { |value| # push_boolean
           output_stack << value
+          #puts "push_boolean:     #{output_stack.inspect}" if @rules
         },
         FFI::Function.new(:void, [:string]) { |value| # push_string
           output_stack << value
+          #puts "push_string:      #{output_stack.inspect}" if @rules
         },
         FFI::Function.new(:void, [:bool]) { |append_current| # push_array
           array = []
-          array << stack.pop if append_current
+          array << output_stack.pop if append_current
           output_stack << array
+          #puts "push_array:       #{output_stack.inspect}" if @rules
         },
         FFI::Function.new(:void, []) { # pop
           output_stack.pop
+          #puts "pop:              #{output_stack.inspect}" if @rules
         },
         FFI::Function.new(:void, []) { # make_array
-          data = output_stack.pop
-          array = []
-          until data.nil?
-            array.unshift data[:value]
-            data = data[:previous]
+          begin
+            data = output_stack.pop
+            array = []
+            until data.nil?
+              array.unshift data[:value]
+              data = data[:previous]
+            end
+            output_stack << array
+            #puts "make_array:       #{output_stack.inspect}" if @rules
+          rescue Exception => e
+            #puts e, e.backtrace if @rules
+            exit! if @rules
           end
-          output_stack << array
         },
         FFI::Function.new(:void, [:string, :string, :int64]) { |code, filename, line| # make_value
-          data = output_stack.pop
-          scope = EvaluationScope.new data
-          output_stack << scope.instance_eval(code, filename, line + 1)
+          begin
+            data = output_stack.pop
+            scope = EvaluationScope.new data
+            output_stack << scope.instance_eval(code, filename, line + 1)
+            #puts "make_value:       #{output_stack.inspect}" if @rules
+          rescue Exception => e
+            #puts e, e.backtrace if @rules
+            exit! if @rules
+          end
         },
         FFI::Function.new(:void, [:string]) { |class_name| # make_object
-          data = output_stack.pop
-          object_class = class_name.split("::").map(&:to_sym).inject(options[:class_scope]) { |scope, name| scope.const_get(name) }
-          output_stack << object_class.new(data)
+          begin
+            data = output_stack.pop
+            object_class = class_name.split("::").map(&:to_sym).inject(options[:class_scope]) { |scope, name| scope.const_get(name) }
+            output_stack << object_class.new(data)
+            #puts "make_object:      #{output_stack.inspect}" if @rules
+          rescue Exception => e
+            #puts e, e.backtrace if @rules
+            exit! if @rules
+          end
         },
         FFI::Function.new(:void, [:string]) { |name| # make_label
-          value = output_stack.pop
-          output_stack << { name.to_sym => value }
+          begin
+            value = output_stack.pop
+            output_stack << { name.to_sym => value }
+            #puts "make_label:       #{output_stack.inspect}" if @rules
+          rescue Exception => e
+            #puts e, e.backtrace if @rules
+            exit! if @rules
+          end
         },
         FFI::Function.new(:void, [:int64]) { |count| # merge_labels
-          # raise if output_stack.size < count
-          merged = output_stack.pop(count).compact.reduce(&:merge)
-          output_stack << merged
+          begin
+            #puts "ERROR merge_labels" if @rules and output_stack.size < count
+            merged = output_stack.pop(count).compact.reduce(&:merge)
+            output_stack << merged
+            #puts "merge_labels: #{count}   #{output_stack.inspect}" if @rules
+          rescue Exception => e
+            #puts e, e.backtrace if @rules
+            exit! if @rules
+          end
         },
         FFI::Function.new(:void, []) { # append_to_array
-          output_stack.last << output_stack.pop
+          begin
+            entry = output_stack.pop
+            #puts "ERROR append_to_array #{output_stack.last.class}" if @rules and not output_stack.last.is_a? Array
+            output_stack.last << entry
+            #puts "append_to_array:  #{output_stack.inspect}" if @rules
+          rescue Exception => e
+            #puts e, e.backtrace if @rules
+            exit! if @rules
+          end
         },
         FFI::Function.new(:void, [:int64]) { |id| # store_local
           @locals[id] << output_stack.pop
+          #puts "store_local:      #{output_stack.inspect}" if @rules
+          ##puts "                  #{@locals.inspect}" if @rules
         },
         FFI::Function.new(:void, [:int64]) { |id| # load_local
-          output_stack.last << @locals[id].last
+          output_stack << @locals[id].last
+          #puts "load_local:       #{output_stack.inspect}" if @rules
         },
         FFI::Function.new(:void, [:int64]) { |id| # delete_local
           @locals[id].pop
+          ##puts "delete_local:     #{@locals.inspect}" if @rules
         },
         FFI::Function.new(:void, []) { # set_as_source
           temp_source = output_stack.pop
@@ -213,7 +262,7 @@ module JetPEG
       end
       success_value.dispose
       
-      #puts output_stack.inspect if output_stack.size > 1
+      #puts output_stack.inspect if output_stack.size > 1 and @rules
       output = output_stack.last || {} 
       check_malloc_counter
       

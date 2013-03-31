@@ -41,6 +41,7 @@ module JetPEG
           if child.return_type or child.has_local_value?
             current_fail_cleanup_block = builder.create_block "sequence_fail_cleanup"
             builder.position_at_end current_fail_cleanup_block
+            builder.call builder.output_functions[:pop] if child.return_type
             builder.call child.return_type.free_function, current_result.return_value if child.return_type
             child.free_local_value builder
             builder.br previous_fail_cleanup_block
@@ -50,7 +51,8 @@ module JetPEG
           builder.position_at_end successful_block
         end
 
-        builder.call builder.output_functions[:merge_labels], LLVM::Int64.from_i(return_type.child_layouts.size) if return_type
+        count = @children.count { |child| child.return_type }
+        builder.call builder.output_functions[:merge_labels], LLVM::Int64.from_i(count) if count > 1
 
         @children.each do |child|
           child.free_local_value builder
@@ -82,6 +84,7 @@ module JetPEG
           next_child_block = index < @children.size - 1 ? builder.create_block("next_choice_child") : failed_block
           
           child_result = child.build(builder, start_input, modes, next_child_block)
+          builder.call builder.output_functions[:push_nil] if return_type and child.return_type.nil?
           input_phi << child_result.input
           return_value_phi << (return_type && return_type.create_choice_value(builder, index, child_result))
           
@@ -119,6 +122,7 @@ module JetPEG
 
         loop_block = builder.create_block "repetition_loop"
         exit_block = builder.create_block "repetition_exit"
+        builder.call builder.output_functions[:push_array], LLVM::FALSE if return_type && start_return_value == :none
         builder.br loop_block
         
         builder.position_at_end loop_block
@@ -144,6 +148,7 @@ module JetPEG
         end
         
         next_result = @expression.build builder, input_after_glue, modes, exit_block
+        builder.call builder.output_functions[:append_to_array] if return_type
         input << next_result.input
         return_value << (return_type && return_type.create_array_value(builder, next_result.return_value, return_value))
         match_glue << LLVM::TRUE
@@ -157,6 +162,7 @@ module JetPEG
     class OneOrMore < ZeroOrMore
       def build(builder, start_input, modes, failed_block)
         result = @expression.build builder, start_input, modes, failed_block
+        builder.call builder.output_functions[:push_array], LLVM::TRUE if return_type
         return_value = return_type && return_type.create_array_value(builder, result.return_value, return_type.llvm_type.null)
         super builder, result.input, modes, failed_block, return_value
       end
@@ -186,6 +192,7 @@ module JetPEG
         
         input = DynamicPhi.new builder, LLVM_STRING, "loop_input", start_input
         return_value = DynamicPhi.new builder, return_type && return_type.llvm_type, "loop_return_value", return_type && return_type.llvm_type.null
+        builder.call builder.output_functions[:push_array], LLVM::FALSE if return_type
         builder.br loop1_block
         
         builder.position_at_end loop1_block
@@ -193,10 +200,12 @@ module JetPEG
         return_value.build
         
         until_result = @until_expression.build builder, input, modes, loop2_block
+        builder.call builder.output_functions[:append_to_array] if return_type
         builder.br exit_block
         
         builder.position_at_end loop2_block
         next_result = @expression.build builder, input, modes, until_failed_block
+        builder.call builder.output_functions[:append_to_array] if return_type
         input << next_result.input
         return_value << (return_type && return_type.create_array_value(builder, @choice_type.create_choice_value(builder, 0, next_result), return_value))
         builder.br loop1_block
@@ -220,6 +229,7 @@ module JetPEG
       def build(builder, start_input, modes, failed_block)
         result = @expression.build builder, start_input, modes, failed_block
         builder.call @expression.return_type.free_function, result.return_value if @expression.return_type
+        builder.call builder.output_functions[:pop] if @expression.return_type
         Result.new start_input
       end
     end
@@ -236,6 +246,7 @@ module JetPEG
   
         result = @expression.build builder, start_input, modes, lookahead_failed_block
         builder.call @expression.return_type.free_function, result.return_value if @expression.return_type
+        builder.call builder.output_functions[:pop] if @expression.return_type
         builder.br failed_block
         
         builder.position_at_end lookahead_failed_block

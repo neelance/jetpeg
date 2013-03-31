@@ -52,6 +52,10 @@ module JetPEG
         if return_type.is_a? LabeledValueType
           builder.call builder.output_functions[:make_label], builder.global_string_pointer(label_name.to_s)
         end
+
+        if @is_local
+          builder.call builder.output_functions[:store_local], LLVM::Int64.from_i(self.object_id)
+        end
         
         Result.new expression_result.input, (@is_local ? nil : @value)
       end
@@ -67,6 +71,7 @@ module JetPEG
       
       def free_local_value(builder)
         builder.call @value_type.free_function, @value if @is_local
+        builder.call builder.output_functions[:delete_local], LLVM::Int64.from_i(self.object_id) if @is_local
       end
     end
     
@@ -101,7 +106,8 @@ module JetPEG
       
       def build(builder, start_input, modes, failed_block)
         builder.build_use_counter_increment local_label.value_type, local_label.value
-        
+        builder.call builder.output_functions[:load_local], LLVM::Int64.from_i(local_label.object_id)
+
         Result.new start_input, value
       end
     end
@@ -116,6 +122,16 @@ module JetPEG
       def create_return_type
         ObjectCreatorValueType.new super, @class_name, @data, parser.value_types
       end
+
+      def build(builder, start_input, modes, failed_block)
+        result = super
+        if @data
+          builder.call builder.output_functions[:set_as_source]
+          @data.build builder, builder.output_functions
+        end
+        builder.call builder.output_functions[:make_object], builder.global_string_pointer(@class_name)
+        result
+      end
     end
     
     class ValueCreator < Label
@@ -126,6 +142,12 @@ module JetPEG
 
       def create_return_type
         ValueCreatorValueType.new super, @code, parser.filename, @code.line, parser.value_types
+      end
+
+      def build(builder, start_input, modes, failed_block)
+        result = super
+        builder.call builder.output_functions[:make_value], builder.global_string_pointer(@code), builder.global_string_pointer(parser.filename), LLVM::Int64.from_i(@code.line)
+        result
       end
     end
   end

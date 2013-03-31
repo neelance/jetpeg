@@ -157,17 +157,17 @@ class LabelsTests < Test::Unit::TestCase
     assert rule.parse("abc") == { result1: [{ char: "b" }], result2: [{ char: "b" }] }
   end
   
-  def test_parameters
-    grammar = JetPEG::Compiler.compile_grammar "
-      rule test
-        %a:. test2[%a]
-      end
-      rule test2[%v]
-        result:%v
-      end
-    "
-    assert grammar.parse_rule(:test, "a") == { result: "a" }
-  end
+  # def test_parameters
+  #   grammar = JetPEG::Compiler.compile_grammar "
+  #     rule test
+  #       %a:. test2[%a]
+  #     end
+  #     rule test2[%v]
+  #       result:%v
+  #     end
+  #   "
+  #   assert grammar.parse_rule(:test, "a") == { result: "a" }
+  # end
   
   def test_undefined_local_label_error
     assert_raise JetPEG::CompilationError do
@@ -176,20 +176,20 @@ class LabelsTests < Test::Unit::TestCase
     end
   end
   
-  def test_left_recursion_handling
-    grammar = JetPEG::Compiler.compile_grammar "
-      rule expr
-        add:( l:expr '+' r:num ) /
-        sub:( l:expr '-' r:num ) /
-        expr /
-        @:num
-      end
+  # def test_left_recursion_handling
+  #   grammar = JetPEG::Compiler.compile_grammar "
+  #     rule expr
+  #       add:( l:expr '+' r:num ) /
+  #       sub:( l:expr '-' r:num ) /
+  #       expr /
+  #       @:num
+  #     end
       
-      rule num
-        [0-9]+
-      end
-    "
-    assert grammar.parse_rule(:expr, "1-2-3") == { sub: { l: { sub: { l: "1", r: "2" } }, r: "3" } }
-  end
+  #     rule num
+  #       [0-9]+
+  #     end
+  #   "
+  #   assert grammar.parse_rule(:expr, "1-2-3") == { sub: { l: { sub: { l: "1", r: "2" } }, r: "3" } }
+  # end
   
 end

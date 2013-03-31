@@ -98,7 +98,7 @@ module JetPEG
           builder.cond successful, successful_block, failed_block
           
           builder.position_at_end successful_block
-          builder.call return_type.read_function, return_value, *output_functions if return_type
+          # builder.call return_type.read_function, return_value, *output_functions if return_type
           builder.call return_type.free_function, return_value if return_type
           builder.ret LLVM::TRUE
           

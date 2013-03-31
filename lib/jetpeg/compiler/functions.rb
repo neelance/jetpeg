@@ -10,6 +10,7 @@ module JetPEG
       end
       
       def build(builder, start_input, modes, failed_block)
+        builder.call builder.output_functions[:push_boolean], LLVM::TRUE
         Result.new start_input, LLVM::Int64.from_i(1)
       end
     end
@@ -24,6 +25,7 @@ module JetPEG
       end
       
       def build(builder, start_input, modes, failed_block)
+        builder.call builder.output_functions[:push_boolean], LLVM::FALSE
         Result.new start_input, LLVM::Int64.from_i(0)
       end
     end
