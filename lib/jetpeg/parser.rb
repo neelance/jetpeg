@@ -58,7 +58,7 @@ module JetPEG
     push_input_range: LLVM.Function([LLVM_STRING, LLVM_STRING], LLVM.Void()),
     push_boolean:     LLVM.Function([LLVM::Int1], LLVM.Void()),
     push_string:      LLVM.Function([LLVM_STRING], LLVM.Void()),
-    push_array:       LLVM.Function([], LLVM.Void()),
+    push_array:       LLVM.Function([LLVM::Int1], LLVM.Void()),
     pop:              LLVM.Function([], LLVM.Void()),
     make_array:       LLVM.Function([], LLVM.Void()),
     make_value:       LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int64], LLVM.Void()),
@@ -135,8 +135,10 @@ module JetPEG
         FFI::Function.new(:void, [:string]) { |value| # push_string
           output_stack << value
         },
-        FFI::Function.new(:void, []) { # push_array
-          output_stack << []
+        FFI::Function.new(:void, [:bool]) { |append_current| # push_array
+          array = []
+          array << stack.pop if append_current
+          output_stack << array
         },
         FFI::Function.new(:void, []) { # pop
           output_stack.pop
