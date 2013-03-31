@@ -23,7 +23,7 @@ module JetPEG
         
         if @value_type.nil? || label_name == AT_SYMBOL
           @capture_input = true
-          @value_type = InputRangeValueType::INSTANCE
+          @value_type = true
         end
         
         if @is_local
@@ -31,7 +31,7 @@ module JetPEG
         elsif label_name.nil? || label_name == AT_SYMBOL
           @value_type
         else
-          LabeledValueType.new @value_type, label_name, parser.value_types
+          true
         end
       end
       
@@ -43,12 +43,10 @@ module JetPEG
           builder.call builder.output_functions[:push_input_range], start_input, expression_result
         end
 
-        if return_type.is_a? LabeledValueType
-          builder.call builder.output_functions[:make_label], builder.global_string_pointer(label_name.to_s)
-        end
-
         if @is_local
           builder.call builder.output_functions[:store_local], LLVM::Int64.from_i(self.object_id)
+        elsif not label_name.nil? and label_name != AT_SYMBOL
+          builder.call builder.output_functions[:make_label], builder.global_string_pointer(label_name.to_s)
         end
         
         expression_result
@@ -108,7 +106,8 @@ module JetPEG
       end
 
       def create_return_type
-        ObjectCreatorValueType.new super, @class_name, @data, parser.value_types
+        super
+        true
       end
 
       def build(builder, start_input, modes, failed_block)
@@ -129,7 +128,8 @@ module JetPEG
       end
 
       def create_return_type
-        ValueCreatorValueType.new super, @code, parser.filename, @code.line, parser.value_types
+        super
+        true
       end
 
       def build(builder, start_input, modes, failed_block)

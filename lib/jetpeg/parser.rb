@@ -290,7 +290,7 @@ module JetPEG
   end
   
   class JitParser < Parser
-    attr_reader :failure_reason, :filename, :value_types, :mode_names
+    attr_reader :failure_reason, :filename, :mode_names
     
     def initialize(rules, filename = "grammar")
       super(nil)
@@ -300,7 +300,6 @@ module JetPEG
       @filename = filename
 
       @rules.values.first.is_root = true
-      @value_types = [InputRangeValueType::INSTANCE]
       
       @rules.each_value(&:return_type) # calculate all return types
     end

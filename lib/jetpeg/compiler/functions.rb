@@ -6,7 +6,7 @@ module JetPEG
       end
       
       def create_return_type
-        BooleanValueType.new parser.value_types 
+        true
       end
       
       def build(builder, start_input, modes, failed_block)
@@ -21,7 +21,7 @@ module JetPEG
       end
       
       def create_return_type
-        BooleanValueType.new parser.value_types
+        true
       end
       
       def build(builder, start_input, modes, failed_block)

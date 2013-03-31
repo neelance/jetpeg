@@ -18,11 +18,7 @@ module JetPEG
         child_types = @children.map(&:return_type)
         return nil if not child_types.any?
         
-        type = SequenceValueType.new child_types, "#{rule.rule_name}_sequence", parser.value_types
-        labels = type.all_labels
-        raise CompilationError.new("Invalid mix of return values (#{labels.map(&:inspect).join(', ')}).", rule) if labels.include?(nil) and labels.size != 1
-        labels.uniq.each { |name| raise CompilationError.new("Duplicate label \"#{name}\".", rule) if labels.count(name) > 1 }
-        type
+        true
       end
       
       def build(builder, start_input, modes, failed_block)
@@ -69,7 +65,7 @@ module JetPEG
         @slots = {}
         child_types = @children.map(&:return_type)
         return nil if not child_types.any?
-        ChoiceValueType.new child_types, "#{rule.rule_name}_choice_return_value", parser.value_types
+        true
       end
       
       def build(builder, start_input, modes, failed_block)
@@ -107,7 +103,7 @@ module JetPEG
       end
       
       def create_return_type
-        @expression.return_type && ArrayValueType.new(@expression.return_type, "#{rule.rule_name}_loop", parser.value_types)
+        @expression.return_type
       end
       
       def build(builder, start_input, modes, failed_block, start_return_value = :none)
@@ -171,8 +167,7 @@ module JetPEG
         loop_type = @expression.return_type
         until_type = @until_expression.return_type
         return nil if loop_type.nil? and until_type.nil?
-        @choice_type = ChoiceValueType.new([loop_type, until_type], "#{rule.rule_name}_until_choice", parser.value_types)
-        ArrayValueType.new(@choice_type, "#{rule.rule_name}_until_array", parser.value_types)
+        true
       end
       
       def build(builder, start_input, modes, failed_block)
@@ -265,13 +260,13 @@ module JetPEG
         rescue Recursion
           @recursion = true
           rule.has_direct_recursion = true if referenced == rule
-          PointerValueType.new referenced, parser.value_types
+          true
         end
       end
       
       def build(builder, start_input, modes, failed_block)
         successful_block = builder.create_block "rule_call_successful"
-        rule_result_phi = DynamicPhi.new builder, referenced.rule_result_structure
+        rule_result_phi = DynamicPhi.new builder, LLVM_STRING
 
         if referenced == rule
           left_recursion = builder.icmp :eq, start_input, builder.rule_start_input, "left_recursion"
@@ -289,15 +284,14 @@ module JetPEG
           builder.position_at_end no_left_recursion_block
         end
         
-        call_rule_result = builder.call referenced.internal_match_function(builder.traced, false), start_input, modes, *builder.output_functions.values, *@arguments.map(&:value)
+        call_rule_result = builder.call referenced.internal_match_function(builder.traced, false), start_input, modes, *builder.output_functions.values
         rule_result_phi << call_rule_result
         
-        rule_successful = builder.icmp :ne, builder.extract_value(call_rule_result, 0), LLVM_STRING.null_pointer, "rule_successful"
+        rule_successful = builder.icmp :ne, call_rule_result, LLVM_STRING.null, "rule_successful"
         builder.cond rule_successful, successful_block, failed_block
         
         builder.position_at_end successful_block
-        rule_result = rule_result_phi.build
-        builder.extract_value(rule_result, 0)
+        rule_result_phi.build
       end
       
       def ==(other)
