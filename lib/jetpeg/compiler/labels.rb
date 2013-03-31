@@ -39,14 +39,11 @@ module JetPEG
         expression_result = @expression.build builder, start_input, modes, failed_block
         
         if @capture_input
-          builder.call @expression.return_type.free_function, expression_result.return_value if @expression.return_type
           builder.call builder.output_functions[:pop] if @expression.return_type
           @value = @value_type.llvm_type.null
           @value = builder.insert_value @value, start_input, 0, "pos"
-          @value = builder.insert_value @value, expression_result.input, 1, "pos"
-          builder.call builder.output_functions[:push_input_range], start_input, expression_result.input
-        else
-          @value = expression_result.return_value
+          @value = builder.insert_value @value, expression_result, 1, "pos"
+          builder.call builder.output_functions[:push_input_range], start_input, expression_result
         end
 
         if return_type.is_a? LabeledValueType
@@ -57,7 +54,7 @@ module JetPEG
           builder.call builder.output_functions[:store_local], LLVM::Int64.from_i(self.object_id)
         end
         
-        Result.new expression_result.input, (@is_local ? nil : @value)
+        expression_result
       end
       
       def get_local_label(name)
@@ -70,7 +67,6 @@ module JetPEG
       end
       
       def free_local_value(builder)
-        builder.call @value_type.free_function, @value if @is_local
         builder.call builder.output_functions[:delete_local], LLVM::Int64.from_i(self.object_id) if @is_local
       end
     end
@@ -100,15 +96,10 @@ module JetPEG
         local_label.value_type
       end
       
-      def value
-        local_label.value
-      end
-      
       def build(builder, start_input, modes, failed_block)
-        builder.build_use_counter_increment local_label.value_type, local_label.value
         builder.call builder.output_functions[:load_local], LLVM::Int64.from_i(local_label.object_id)
 
-        Result.new start_input, value
+        start_input
       end
     end
     

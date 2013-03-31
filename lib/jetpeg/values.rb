@@ -221,7 +221,6 @@ module JetPEG
     def create_choice_value(builder, index, entry_result)
       struct = llvm_type.null
       struct = builder.insert_value struct, LLVM::Int64.from_i(index), 0
-      struct = insert_value builder, struct, entry_result.return_value, index if entry_result.return_value
       struct
     end
     

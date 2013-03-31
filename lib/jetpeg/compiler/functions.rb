@@ -11,7 +11,7 @@ module JetPEG
       
       def build(builder, start_input, modes, failed_block)
         builder.call builder.output_functions[:push_boolean], LLVM::TRUE
-        Result.new start_input, LLVM::Int64.from_i(1)
+        start_input
       end
     end
     
@@ -26,7 +26,7 @@ module JetPEG
       
       def build(builder, start_input, modes, failed_block)
         builder.call builder.output_functions[:push_boolean], LLVM::FALSE
-        Result.new start_input, LLVM::Int64.from_i(0)
+        start_input
       end
     end
     
@@ -61,7 +61,7 @@ module JetPEG
         builder.cond successful, end_check_block, builder.add_failure_reason(failed_block, start_input, "$match failed", false) # TODO better failure message
         
         builder.position_at_end exit_block
-        Result.new input
+        input
       end
     end
     
@@ -76,7 +76,7 @@ module JetPEG
 
         dummy_block = builder.create_block "error_dummy"
         builder.position_at_end dummy_block
-        Result.new start_input
+        start_input
       end
     end
     
@@ -115,7 +115,7 @@ module JetPEG
         in_mode = builder.extract_value modes, parser.mode_names.index(@name), "in_mode_#{@name}"
         builder.cond in_mode, successful_block, failed_block
         builder.position_at_end successful_block
-        Result.new start_input
+        start_input
       end
     end
   end

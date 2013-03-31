@@ -282,10 +282,10 @@ module JetPEG
     end
     
     def check_malloc_counter
-      return if @mod.globals[:malloc_counter].nil?
-      malloc_count = @execution_engine.pointer_to_global(@mod.globals[:malloc_counter]).read_int64
-      free_count = @execution_engine.pointer_to_global(@mod.globals[:free_counter]).read_int64
-      raise "Internal error: Memory leak (#{malloc_count - free_count})." if malloc_count != free_count
+      # return if @mod.globals[:malloc_counter].nil?
+      # malloc_count = @execution_engine.pointer_to_global(@mod.globals[:malloc_counter]).read_int64
+      # free_count = @execution_engine.pointer_to_global(@mod.globals[:free_counter]).read_int64
+      # raise "Internal error: Memory leak (#{malloc_count - free_count})." if malloc_count != free_count
     end
   end
   

@@ -121,8 +121,6 @@ module JetPEG
     class Recursion < RuntimeError
     end
     
-    Result = Struct.new :input, :return_value
-    
     @@metagrammar_parser = nil
     
     def self.metagrammar_parser
