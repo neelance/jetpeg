@@ -66,6 +66,9 @@ module JetPEG
     make_label:       LLVM.Function([LLVM_STRING], LLVM.Void()),
     merge_labels:     LLVM.Function([LLVM::Int64], LLVM.Void()),
     append_to_array:  LLVM.Function([], LLVM.Void()),
+    store_local:      LLVM.Function([LLVM::Int64], LLVM.Void()),
+    load_local:       LLVM.Function([LLVM::Int64], LLVM.Void()),
+    delete_local:     LLVM.Function([LLVM::Int64], LLVM.Void()),
     set_as_source:    LLVM.Function([], LLVM.Void()),
     read_from_source: LLVM.Function([LLVM_STRING], LLVM.Void()),
     add_failure:      LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int1], LLVM.Void())
@@ -112,6 +115,7 @@ module JetPEG
       end_ptr = start_ptr + input.size
       
       output_stack = []
+      @locals = Hash.new { |hash, key| hash[key] = [] }
       temp_source = nil
       failure_position = 0
       failure_expectations = []
@@ -167,6 +171,15 @@ module JetPEG
         },
         FFI::Function.new(:void, []) { # append_to_array
           output_stack.last << output_stack.pop
+        },
+        FFI::Function.new(:void, [:int64]) { |id| # store_local
+          @locals[id] << output_stack.pop
+        },
+        FFI::Function.new(:void, [:int64]) { |id| # load_local
+          output_stack.last << @locals[id].last
+        },
+        FFI::Function.new(:void, [:int64]) { |id| # delete_local
+          @locals[id].pop
         },
         FFI::Function.new(:void, []) { # set_as_source
           temp_source = output_stack.pop
