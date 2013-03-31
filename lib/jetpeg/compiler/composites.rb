@@ -12,10 +12,10 @@ module JetPEG
         end
       end
   
-      def create_return_type
-        return @children.first.return_type if @children.size == 1
+      def calculate_has_return_value
+        return @children.first.has_return_value if @children.size == 1
 
-        child_types = @children.map(&:return_type)
+        child_types = @children.map(&:has_return_value)
         return nil if not child_types.any?
         
         true
@@ -25,17 +25,15 @@ module JetPEG
         return @children.first.build builder, start_input, modes, failed_block if @children.size == 1
         
         input = start_input
-        
         previous_fail_cleanup_block = failed_block
         @children.each_with_index do |child, index|
-          current_result = child.build builder, input, modes, previous_fail_cleanup_block
-          input = current_result
+          input = child.build builder, input, modes, previous_fail_cleanup_block
         
           successful_block = builder.insert_block
-          if child.return_type or child.has_local_value?
+          if child.has_return_value or child.has_local_value?
             current_fail_cleanup_block = builder.create_block "sequence_fail_cleanup"
             builder.position_at_end current_fail_cleanup_block
-            builder.call builder.output_functions[:pop] if child.return_type
+            builder.call builder.output_functions[:pop] if child.has_return_value
             child.free_local_value builder
             builder.br previous_fail_cleanup_block
             previous_fail_cleanup_block = current_fail_cleanup_block
@@ -44,7 +42,7 @@ module JetPEG
           builder.position_at_end successful_block
         end
 
-        count = @children.count { |child| child.return_type }
+        count = @children.count { |child| child.has_return_value }
         builder.call builder.output_functions[:merge_labels], LLVM::Int64.from_i(count) if count > 1
 
         @children.each do |child|
@@ -61,9 +59,9 @@ module JetPEG
         self.children = data[:children] || ([data[:head]] + data[:tail])
       end
       
-      def create_return_type
+      def calculate_has_return_value
         @slots = {}
-        child_types = @children.map(&:return_type)
+        child_types = @children.map(&:has_return_value)
         return nil if not child_types.any?
         true
       end
@@ -75,9 +73,8 @@ module JetPEG
         @children.each_with_index do |child, index|
           next_child_block = index < @children.size - 1 ? builder.create_block("next_choice_child") : failed_block
           
-          child_result = child.build(builder, start_input, modes, next_child_block)
-          builder.call builder.output_functions[:push_nil] if return_type and child.return_type.nil?
-          input_phi << child_result
+          input_phi << child.build(builder, start_input, modes, next_child_block)
+          builder.call builder.output_functions[:push_nil] if has_return_value and child.has_return_value.nil?
           
           builder.br choice_successful_block
           builder.position_at_end next_child_block
@@ -102,17 +99,17 @@ module JetPEG
         self.children = [@expression, @glue_expression].compact
       end
       
-      def create_return_type
-        @expression.return_type
+      def calculate_has_return_value
+        @expression.has_return_value
       end
       
-      def build(builder, start_input, modes, failed_block, start_return_value = :none)
+      def build(builder, start_input, modes, failed_block, one_or_more = false)
         input = DynamicPhi.new builder, LLVM_STRING, "loop_input", start_input
-        match_glue = DynamicPhi.new builder, (@glue_expression && LLVM::Int1), "match_glue", (start_return_value == :none ? LLVM::FALSE : LLVM::TRUE)
+        match_glue = DynamicPhi.new builder, (@glue_expression && LLVM::Int1), "match_glue", (one_or_more ? LLVM::TRUE : LLVM::FALSE)
 
         loop_block = builder.create_block "repetition_loop"
         exit_block = builder.create_block "repetition_exit"
-        builder.call builder.output_functions[:push_array], LLVM::FALSE if return_type && start_return_value == :none
+        builder.call builder.output_functions[:push_array], LLVM::FALSE if has_return_value and not one_or_more
         builder.br loop_block
         
         builder.position_at_end loop_block
@@ -126,8 +123,7 @@ module JetPEG
           builder.cond match_glue, glue_block, expression_block
           
           builder.position_at_end glue_block
-          glue_result = @glue_expression.build builder, input, modes, exit_block
-          input_after_glue << glue_result
+          input_after_glue << @glue_expression.build(builder, input, modes, exit_block)
           builder.br expression_block
           
           builder.position_at_end expression_block
@@ -136,9 +132,8 @@ module JetPEG
           input_after_glue = input
         end
         
-        next_result = @expression.build builder, input_after_glue, modes, exit_block
-        builder.call builder.output_functions[:append_to_array] if return_type
-        input << next_result
+        input << @expression.build(builder, input_after_glue, modes, exit_block)
+        builder.call builder.output_functions[:append_to_array] if has_return_value
         match_glue << LLVM::TRUE
         builder.br loop_block
         
@@ -149,9 +144,9 @@ module JetPEG
     
     class OneOrMore < ZeroOrMore
       def build(builder, start_input, modes, failed_block)
-        result = @expression.build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:push_array], LLVM::TRUE if return_type
-        super builder, result, modes, failed_block, true
+        input = @expression.build builder, start_input, modes, failed_block
+        builder.call builder.output_functions[:push_array], LLVM::TRUE if has_return_value
+        super builder, input, modes, failed_block, true
       end
     end
     
@@ -163,9 +158,9 @@ module JetPEG
         self.children = [@expression, @until_expression]
       end
       
-      def create_return_type
-        loop_type = @expression.return_type
-        until_type = @until_expression.return_type
+      def calculate_has_return_value
+        loop_type = @expression.has_return_value
+        until_type = @until_expression.has_return_value
         return nil if loop_type.nil? and until_type.nil?
         true
       end
@@ -177,27 +172,26 @@ module JetPEG
         exit_block = builder.create_block "until_exit"
         
         input = DynamicPhi.new builder, LLVM_STRING, "loop_input", start_input
-        builder.call builder.output_functions[:push_array], LLVM::FALSE if return_type
+        builder.call builder.output_functions[:push_array], LLVM::FALSE if has_return_value
         builder.br loop1_block
         
         builder.position_at_end loop1_block
         input.build
         
-        until_result = @until_expression.build builder, input, modes, loop2_block
-        builder.call builder.output_functions[:append_to_array] if return_type
+        until_end_input = @until_expression.build builder, input, modes, loop2_block
+        builder.call builder.output_functions[:append_to_array] if has_return_value
         builder.br exit_block
         
         builder.position_at_end loop2_block
-        next_result = @expression.build builder, input, modes, until_failed_block
-        builder.call builder.output_functions[:append_to_array] if return_type
-        input << next_result
+        input << @expression.build(builder, input, modes, until_failed_block)
+        builder.call builder.output_functions[:append_to_array] if has_return_value
         builder.br loop1_block
         
         builder.position_at_end until_failed_block
         builder.br failed_block
         
         builder.position_at_end exit_block
-        until_result
+        until_end_input
       end
     end
     
@@ -210,7 +204,7 @@ module JetPEG
   
       def build(builder, start_input, modes, failed_block)
         @expression.build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:pop] if @expression.return_type
+        builder.call builder.output_functions[:pop] if @expression.has_return_value
         start_input
       end
     end
@@ -226,7 +220,7 @@ module JetPEG
         lookahead_failed_block = builder.create_block "lookahead_failed"
   
         @expression.build builder, start_input, modes, lookahead_failed_block
-        builder.call builder.output_functions[:pop] if @expression.return_type
+        builder.call builder.output_functions[:pop] if @expression.has_return_value
         builder.br failed_block
         
         builder.position_at_end lookahead_failed_block
@@ -254,9 +248,9 @@ module JetPEG
         end
       end
       
-      def create_return_type
+      def calculate_has_return_value
         begin
-          referenced.return_type
+          referenced.has_return_value
         rescue Recursion
           @recursion = true
           rule.has_direct_recursion = true if referenced == rule
@@ -266,7 +260,7 @@ module JetPEG
       
       def build(builder, start_input, modes, failed_block)
         successful_block = builder.create_block "rule_call_successful"
-        rule_result_phi = DynamicPhi.new builder, LLVM_STRING
+        rule_end_input_phi = DynamicPhi.new builder, LLVM_STRING
 
         if referenced == rule
           left_recursion = builder.icmp :eq, start_input, builder.rule_start_input, "left_recursion"
@@ -274,7 +268,7 @@ module JetPEG
           
           builder.position_at_end left_recursion_block
           if builder.is_left_recursion
-            rule_result_phi << builder.left_recursion_last_result
+            rule_end_input_phi << builder.left_recursion_previous_end_input
             builder.br successful_block
           else
             builder.store LLVM::TRUE, builder.left_recursion_occurred
@@ -284,14 +278,14 @@ module JetPEG
           builder.position_at_end no_left_recursion_block
         end
         
-        call_rule_result = builder.call referenced.internal_match_function(builder.traced, false), start_input, modes, *builder.output_functions.values
-        rule_result_phi << call_rule_result
+        call_end_input = builder.call referenced.internal_match_function(builder.traced, false), start_input, modes, *builder.output_functions.values
+        rule_end_input_phi << call_end_input
         
-        rule_successful = builder.icmp :ne, call_rule_result, LLVM_STRING.null, "rule_successful"
+        rule_successful = builder.icmp :ne, call_end_input, LLVM_STRING.null, "rule_successful"
         builder.cond rule_successful, successful_block, failed_block
         
         builder.position_at_end successful_block
-        rule_result_phi.build
+        rule_end_input_phi.build
       end
       
       def ==(other)
@@ -306,8 +300,8 @@ module JetPEG
         self.children = [@expression] if @expression
       end
       
-      def create_return_type
-        @expression && @expression.return_type
+      def calculate_has_return_value
+        @expression && @expression.has_return_value
       end
       
       def build(builder, start_input, modes, failed_block)

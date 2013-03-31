@@ -3,7 +3,7 @@ module JetPEG
     class Label < ParsingExpression
       AT_SYMBOL = "@".to_sym
       
-      attr_reader :label_name, :value_type, :value
+      attr_reader :label_name
       
       def initialize(data)
         super()
@@ -11,36 +11,18 @@ module JetPEG
         @expression = data[:expression]
         self.children = [@expression]
         @is_local = data[:is_local]
-        @capture_input = false
-        @value_type = nil
-        @value = nil
       end
       
-      def create_return_type
-        @value_type = begin
-          @expression.return_type
-        end
-        
-        if @value_type.nil? || label_name == AT_SYMBOL
-          @capture_input = true
-          @value_type = true
-        end
-        
-        if @is_local
-          nil
-        elsif label_name.nil? || label_name == AT_SYMBOL
-          @value_type
-        else
-          true
-        end
+      def calculate_has_return_value
+        !@is_local
       end
       
       def build(builder, start_input, modes, failed_block)
-        expression_result = @expression.build builder, start_input, modes, failed_block
+        expression_end_input = @expression.build builder, start_input, modes, failed_block
         
-        if @capture_input
-          builder.call builder.output_functions[:pop] if @expression.return_type
-          builder.call builder.output_functions[:push_input_range], start_input, expression_result
+        if not @expression.has_return_value or label_name == AT_SYMBOL
+          builder.call builder.output_functions[:pop] if @expression.has_return_value
+          builder.call builder.output_functions[:push_input_range], start_input, expression_end_input
         end
 
         if @is_local
@@ -49,7 +31,7 @@ module JetPEG
           builder.call builder.output_functions[:make_label], builder.global_string_pointer(label_name.to_s)
         end
         
-        expression_result
+        expression_end_input
       end
       
       def get_local_label(name)
@@ -87,8 +69,8 @@ module JetPEG
         @local_label
       end
       
-      def create_return_type
-        local_label.value_type
+      def calculate_has_return_value
+        true
       end
       
       def build(builder, start_input, modes, failed_block)
@@ -98,44 +80,48 @@ module JetPEG
       end
     end
     
-    class ObjectCreator < Label
+    class ObjectCreator < ParsingExpression
       def initialize(data)
-        super
+        super()
+        @expression = data[:expression]
+        self.children = [@expression]
         @class_name = data[:class_name]
         @data = data[:data]
       end
 
-      def create_return_type
-        super
+      def calculate_has_return_value
         true
       end
 
       def build(builder, start_input, modes, failed_block)
-        result = super
+        end_input = @expression.build builder, start_input, modes, failed_block
+        builder.call builder.output_functions[:push_nil] if not @expression.has_return_value
         if @data
           builder.call builder.output_functions[:set_as_source]
           @data.build builder
         end
         builder.call builder.output_functions[:make_object], builder.global_string_pointer(@class_name)
-        result
+        end_input
       end
     end
     
-    class ValueCreator < Label
+    class ValueCreator < ParsingExpression
       def initialize(data)
-        super
+        super()
+        @expression = data[:expression]
+        self.children = [@expression]
         @code = data[:code]
       end
 
-      def create_return_type
-        super
+      def calculate_has_return_value
         true
       end
 
       def build(builder, start_input, modes, failed_block)
-        result = super
+        end_input = @expression.build builder, start_input, modes, failed_block
+        builder.call builder.output_functions[:push_nil] if not @expression.has_return_value
         builder.call builder.output_functions[:make_value], builder.global_string_pointer(@code), builder.global_string_pointer(parser.filename), LLVM::Int64.from_i(@code.line)
-        result
+        end_input
       end
     end
   end

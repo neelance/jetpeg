@@ -48,7 +48,7 @@ module JetPEG
       end
     end
     
-    class Label
+    module LeftmostPrimaryExpression
       def get_leftmost_primary
         if @expression.is_a? Primary
           @expression
@@ -65,6 +65,18 @@ module JetPEG
           @expression.replace_leftmost_primary replacement
         end
       end
+    end
+
+    class Label
+      include LeftmostPrimaryExpression
+    end
+
+    class ObjectCreator
+      include LeftmostPrimaryExpression
+    end
+
+    class ValueCreator
+      include LeftmostPrimaryExpression
     end
   end
 end

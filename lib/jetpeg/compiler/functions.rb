@@ -5,7 +5,7 @@ module JetPEG
         super()
       end
       
-      def create_return_type
+      def calculate_has_return_value
         true
       end
       
@@ -20,7 +20,7 @@ module JetPEG
         super()
       end
       
-      def create_return_type
+      def calculate_has_return_value
         true
       end
       

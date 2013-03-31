@@ -8,8 +8,8 @@ module JetPEG
         @parameters = []
         @is_root = false
         @children = []
-        @return_type = :pending
-        @return_type_recursion = false
+        @has_return_value = :pending
+        @has_return_value_recursion = false
         @local_label_source = nil
         @has_direct_recursion = false
       end
@@ -31,20 +31,20 @@ module JetPEG
         @rule_name ? self : parent.rule
       end
       
-      def return_type
-        if @return_type == :pending
-          raise Recursion.new if @return_type_recursion
+      def has_return_value
+        if @has_return_value == :pending
+          raise Recursion.new if @has_return_value_recursion
           begin
-            @return_type_recursion = true
-            @return_type = create_return_type
+            @has_return_value_recursion = true
+            @has_return_value = calculate_has_return_value
           ensure
-            @return_type_recursion = false
+            @has_return_value_recursion = false
           end
         end
-        @return_type
+        @has_return_value
       end
       
-      def create_return_type
+      def calculate_has_return_value
         nil
       end
       
@@ -117,36 +117,35 @@ module JetPEG
           builder.output_functions = Hash[*OUTPUT_INTERFACE_SIGNATURES.keys.zip(function.params.to_a[2, OUTPUT_FUNCTION_POINTERS.size]).flatten]
           builder.left_recursion_occurred = builder.alloca LLVM::Int1
           builder.store LLVM::FALSE, builder.left_recursion_occurred
-          builder.left_recursion_last_result = function.params[-1]
+          builder.left_recursion_previous_end_input = function.params[-1]
           
           failed_block = builder.create_block "failed"
           end_input = build builder, function.params[0], function.params[1], failed_block
           
           if @has_direct_recursion
             if is_left_recursion
-              left_recursion_last_end_input = builder.left_recursion_last_result
-              left_recursion_finished = builder.icmp :eq, end_input, left_recursion_last_end_input, "left_recursion_finished"
+              left_recursion_finished = builder.icmp :eq, end_input, builder.left_recursion_previous_end_input, "left_recursion_finished"
               left_recursion_finished_block, left_recursion_not_finished_block = builder.cond left_recursion_finished
               
               builder.position_at_end left_recursion_finished_block
               builder.ret end_input
               
               builder.position_at_end left_recursion_not_finished_block
-              left_recursion_failed = builder.icmp :ult, end_input, left_recursion_last_end_input, "left_recursion_failed"
+              left_recursion_failed = builder.icmp :ult, end_input, builder.left_recursion_previous_end_input, "left_recursion_failed"
               left_recursion_failed, left_recursion_not_failed = builder.cond left_recursion_failed
               
               builder.position_at_end left_recursion_failed
               builder.br failed_block
               
               builder.position_at_end left_recursion_not_failed
-              recursion_result = builder.call internal_match_function(traced, true), *function.params.to_a[0..-2], end_input
-              builder.ret recursion_result
+              recursion_end_input = builder.call(internal_match_function(traced, true), *function.params.to_a[0..-2], end_input)
+              builder.ret recursion_end_input
             else
               left_recursion_occurred_block, no_left_recursion_occurred_block = builder.cond builder.load(builder.left_recursion_occurred, "left_recursion_occurred")
               
               builder.position_at_end left_recursion_occurred_block
-              recursion_result = builder.call internal_match_function(traced, true), *function.params, end_input
-              builder.ret recursion_result
+              recursion_end_input = builder.call internal_match_function(traced, true), *function.params, end_input
+              builder.ret recursion_end_input
               
               builder.position_at_end no_left_recursion_occurred_block
               builder.ret end_input
@@ -181,7 +180,7 @@ module JetPEG
     end
     
     class EmptyParsingExpression < ParsingExpression
-      def create_return_type
+      def calculate_has_return_value
         nil
       end
       
