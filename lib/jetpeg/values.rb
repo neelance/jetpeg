@@ -41,16 +41,11 @@ module JetPEG
       end
       
       def build(builder)
-        @entries.reverse_each do |entry|
+        builder.call builder.output_functions[:push_array], LLVM::FALSE
+        @entries.each do |entry|
           entry.build builder
-          builder.call builder.output_functions[:make_label], builder.global_string_pointer("value")
+          builder.call builder.output_functions[:append_to_array]
         end
-        builder.call builder.output_functions[:push_nil]
-        @entries.size.times do
-          builder.call builder.output_functions[:make_label], builder.global_string_pointer("previous")
-          builder.call builder.output_functions[:merge_labels], LLVM::Int64.from_i(2)
-        end
-        builder.call builder.output_functions[:make_array]
       end
     end
     

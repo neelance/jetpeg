@@ -59,13 +59,12 @@ module JetPEG
     push_boolean:     LLVM.Function([LLVM::Int1], LLVM.Void()),
     push_string:      LLVM.Function([LLVM_STRING], LLVM.Void()),
     push_array:       LLVM.Function([LLVM::Int1], LLVM.Void()),
-    pop:              LLVM.Function([], LLVM.Void()),
-    make_array:       LLVM.Function([], LLVM.Void()),
-    make_value:       LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int64], LLVM.Void()),
-    make_object:      LLVM.Function([LLVM_STRING], LLVM.Void()),
+    append_to_array:  LLVM.Function([], LLVM.Void()),
     make_label:       LLVM.Function([LLVM_STRING], LLVM.Void()),
     merge_labels:     LLVM.Function([LLVM::Int64], LLVM.Void()),
-    append_to_array:  LLVM.Function([], LLVM.Void()),
+    make_value:       LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int64], LLVM.Void()),
+    make_object:      LLVM.Function([LLVM_STRING], LLVM.Void()),
+    pop:              LLVM.Function([], LLVM.Void()),
     store_local:      LLVM.Function([LLVM::Int64], LLVM.Void()),
     load_local:       LLVM.Function([LLVM::Int64], LLVM.Void()),
     delete_local:     LLVM.Function([LLVM::Int64], LLVM.Void()),
@@ -146,20 +145,33 @@ module JetPEG
           output_stack << array
           #puts "push_array:       #{output_stack.inspect}" if @rules
         },
-        FFI::Function.new(:void, []) { # pop
-          output_stack.pop
-          #puts "pop:              #{output_stack.inspect}" if @rules
-        },
-        FFI::Function.new(:void, []) { # make_array
+        FFI::Function.new(:void, []) { # append_to_array
           begin
-            data = output_stack.pop
-            array = []
-            until data.nil?
-              array.unshift data[:value]
-              data = data[:previous]
-            end
-            output_stack << array
-            #puts "make_array:       #{output_stack.inspect}" if @rules
+            entry = output_stack.pop
+            #puts "ERROR append_to_array #{output_stack.last.class}" if @rules and not output_stack.last.is_a? Array
+            output_stack.last << entry
+            #puts "append_to_array:  #{output_stack.inspect}" if @rules
+          rescue Exception => e
+            #puts e, e.backtrace if @rules
+            exit! if @rules
+          end
+        },
+        FFI::Function.new(:void, [:string]) { |name| # make_label
+          begin
+            value = output_stack.pop
+            output_stack << { name.to_sym => value }
+            #puts "make_label:       #{output_stack.inspect}" if @rules
+          rescue Exception => e
+            #puts e, e.backtrace if @rules
+            exit! if @rules
+          end
+        },
+        FFI::Function.new(:void, [:int64]) { |count| # merge_labels
+          begin
+            #puts "ERROR merge_labels" if @rules and output_stack.size < count
+            merged = output_stack.pop(count).compact.reduce(&:merge)
+            output_stack << merged
+            #puts "merge_labels: #{count}   #{output_stack.inspect}" if @rules
           rescue Exception => e
             #puts e, e.backtrace if @rules
             exit! if @rules
@@ -187,37 +199,9 @@ module JetPEG
             exit! if @rules
           end
         },
-        FFI::Function.new(:void, [:string]) { |name| # make_label
-          begin
-            value = output_stack.pop
-            output_stack << { name.to_sym => value }
-            #puts "make_label:       #{output_stack.inspect}" if @rules
-          rescue Exception => e
-            #puts e, e.backtrace if @rules
-            exit! if @rules
-          end
-        },
-        FFI::Function.new(:void, [:int64]) { |count| # merge_labels
-          begin
-            #puts "ERROR merge_labels" if @rules and output_stack.size < count
-            merged = output_stack.pop(count).compact.reduce(&:merge)
-            output_stack << merged
-            #puts "merge_labels: #{count}   #{output_stack.inspect}" if @rules
-          rescue Exception => e
-            #puts e, e.backtrace if @rules
-            exit! if @rules
-          end
-        },
-        FFI::Function.new(:void, []) { # append_to_array
-          begin
-            entry = output_stack.pop
-            #puts "ERROR append_to_array #{output_stack.last.class}" if @rules and not output_stack.last.is_a? Array
-            output_stack.last << entry
-            #puts "append_to_array:  #{output_stack.inspect}" if @rules
-          rescue Exception => e
-            #puts e, e.backtrace if @rules
-            exit! if @rules
-          end
+        FFI::Function.new(:void, []) { # pop
+          output_stack.pop
+          #puts "pop:              #{output_stack.inspect}" if @rules
         },
         FFI::Function.new(:void, [:int64]) { |id| # store_local
           @locals[id] << output_stack.pop
