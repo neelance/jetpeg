@@ -40,9 +40,6 @@ module JetPEG
         
         if @capture_input
           builder.call builder.output_functions[:pop] if @expression.return_type
-          @value = @value_type.llvm_type.null
-          @value = builder.insert_value @value, start_input, 0, "pos"
-          @value = builder.insert_value @value, expression_result, 1, "pos"
           builder.call builder.output_functions[:push_input_range], start_input, expression_result
         end
 
@@ -118,7 +115,7 @@ module JetPEG
         result = super
         if @data
           builder.call builder.output_functions[:set_as_source]
-          @data.build builder, builder.output_functions
+          @data.build builder
         end
         builder.call builder.output_functions[:make_object], builder.global_string_pointer(@class_name)
         result

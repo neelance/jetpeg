@@ -303,7 +303,6 @@ module JetPEG
       @value_types = [InputRangeValueType::INSTANCE]
       
       @rules.each_value(&:return_type) # calculate all return types
-      @value_types.each { |type| type.realize if type.is_a? PointerValueType }
     end
     
     def parse_rule(rule_name, input, options = {})
@@ -337,7 +336,6 @@ module JetPEG
       end
 
       @rules.each_value { |rule| rule.set_runtime @mod, @mode_struct }
-      @value_types.each { |type| type.set_runtime @mod, malloc_counter, free_counter }
       @rules.each_value { |rule| rule.match_function if rule.is_root }
       @mod.verify!
     end

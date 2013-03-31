@@ -279,7 +279,6 @@ module JetPEG
           
           builder.position_at_end left_recursion_block
           if builder.is_left_recursion
-            builder.build_use_counter_increment referenced.rule_result_structure, builder.left_recursion_last_result
             rule_result_phi << builder.left_recursion_last_result
             builder.br successful_block
           else

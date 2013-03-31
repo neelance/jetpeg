@@ -55,18 +55,6 @@ module JetPEG
         self.insert_block.parent.basic_blocks.append name
       end
       
-      def create_struct(llvm_type)
-        llvm_type.null
-      end
-      
-      def extract_values(aggregate, count)
-        count.times.map { |i| extract_value aggregate, i }
-      end
-      
-      def insert_values(aggregate, values, indices)
-        values.zip(indices).inject(aggregate) { |a, (value, i)| insert_value a, value, i }
-      end
-      
       def cond(condition, if_true = nil, if_false = nil)
         if if_true.nil? and if_false.nil?
           if_true = create_block "if_true"
@@ -88,33 +76,6 @@ module JetPEG
         self.br failed_block
         self.position_at_end initial_block
         failure_reason_block
-      end
-      
-      def build_use_counter_increment(type, value)
-        llvm_type = type.is_a?(ValueType) ? type.llvm_type : type
-        case llvm_type.kind
-        when :struct
-          llvm_type.element_types.each_with_index do |element_type, i|
-            next if not [:struct, :pointer].include? element_type.kind
-            element = self.extract_value value, i
-            build_use_counter_increment element_type, element
-          end
-          
-        when :pointer
-          return if llvm_type.element_type.kind != :struct or llvm_type.element_type.element_types.empty?
-          
-          pointer_is_null = self.icmp :eq, value, llvm_type.null, "pointer_is_null"
-          continue_block, increment_counter_block = self.cond pointer_is_null
-          
-          self.position_at_end increment_counter_block
-          additional_use_counter = self.struct_gep value, 1, "additional_use_counter"
-          old_counter_value = self.load additional_use_counter
-          new_counter_value = self.add old_counter_value, LLVM::Int64.from_i(1)
-          self.store new_counter_value, additional_use_counter
-          self.br continue_block
-
-          self.position_at_end continue_block
-        end
       end
     end
     
@@ -184,5 +145,4 @@ require "jetpeg/compiler/composites"
 require "jetpeg/compiler/labels"
 require "jetpeg/compiler/functions"
 
-require "jetpeg/compiler/optimizations/ruby_side_struct"
 require "jetpeg/compiler/optimizations/leftmost_primary_rewrite"
