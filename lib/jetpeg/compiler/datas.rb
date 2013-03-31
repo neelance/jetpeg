@@ -1,5 +1,4 @@
 module JetPEG
-
   module Compiler
     class StringData
       def initialize(data)
@@ -71,5 +70,4 @@ module JetPEG
       end
     end
   end
-
 end

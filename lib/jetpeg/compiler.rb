@@ -136,13 +136,13 @@ module JetPEG
 end
 
 require "jetpeg/parser"
-require "jetpeg/values"
 
 require "jetpeg/compiler/tools"
 require "jetpeg/compiler/parsing_expression"
 require "jetpeg/compiler/terminals"
 require "jetpeg/compiler/composites"
 require "jetpeg/compiler/labels"
+require "jetpeg/compiler/datas"
 require "jetpeg/compiler/functions"
 
 require "jetpeg/compiler/optimizations/leftmost_primary_rewrite"

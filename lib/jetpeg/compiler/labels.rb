@@ -27,7 +27,7 @@ module JetPEG
 
         if @is_local
           builder.call builder.output_functions[:store_local], LLVM::Int64.from_i(self.object_id)
-        elsif not label_name.nil? and label_name != AT_SYMBOL
+        elsif label_name != AT_SYMBOL
           builder.call builder.output_functions[:make_label], builder.global_string_pointer(label_name.to_s)
         end
         
@@ -49,8 +49,8 @@ module JetPEG
     end
     
     class RuleCallLabel < Label
-      def label_name
-        @expression.referenced_name
+      def initialize(data)
+        super name: data[:expression].referenced_name, expression: data[:expression]
       end
     end
     

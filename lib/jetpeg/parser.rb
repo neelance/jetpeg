@@ -146,58 +146,31 @@ module JetPEG
           #puts "push_array:       #{output_stack.inspect}" if @rules
         },
         FFI::Function.new(:void, []) { # append_to_array
-          begin
-            entry = output_stack.pop
-            #puts "ERROR append_to_array #{output_stack.last.class}" if @rules and not output_stack.last.is_a? Array
-            output_stack.last << entry
-            #puts "append_to_array:  #{output_stack.inspect}" if @rules
-          rescue Exception => e
-            #puts e, e.backtrace if @rules
-            exit! if @rules
-          end
+          entry = output_stack.pop
+          output_stack.last << entry
+          #puts "append_to_array:  #{output_stack.inspect}" if @rules
         },
         FFI::Function.new(:void, [:string]) { |name| # make_label
-          begin
-            value = output_stack.pop
-            output_stack << { name.to_sym => value }
-            #puts "make_label:       #{output_stack.inspect}" if @rules
-          rescue Exception => e
-            #puts e, e.backtrace if @rules
-            exit! if @rules
-          end
+          value = output_stack.pop
+          output_stack << { name.to_sym => value }
+          #puts "make_label:       #{output_stack.inspect}" if @rules
         },
         FFI::Function.new(:void, [:int64]) { |count| # merge_labels
-          begin
-            #puts "ERROR merge_labels" if @rules and output_stack.size < count
-            merged = output_stack.pop(count).compact.reduce(&:merge)
-            output_stack << merged
-            #puts "merge_labels: #{count}   #{output_stack.inspect}" if @rules
-          rescue Exception => e
-            #puts e, e.backtrace if @rules
-            exit! if @rules
-          end
+          merged = output_stack.pop(count).compact.reduce(&:merge)
+          output_stack << merged
+          #puts "merge_labels: #{count}   #{output_stack.inspect}" if @rules
         },
         FFI::Function.new(:void, [:string, :string, :int64]) { |code, filename, line| # make_value
-          begin
-            data = output_stack.pop
-            scope = EvaluationScope.new data
-            output_stack << scope.instance_eval(code, filename, line + 1)
-            #puts "make_value:       #{output_stack.inspect}" if @rules
-          rescue Exception => e
-            #puts e, e.backtrace if @rules
-            exit! if @rules
-          end
+          data = output_stack.pop
+          scope = EvaluationScope.new data
+          output_stack << scope.instance_eval(code, filename, line + 1)
+          #puts "make_value:       #{output_stack.inspect}" if @rules
         },
         FFI::Function.new(:void, [:string]) { |class_name| # make_object
-          begin
-            data = output_stack.pop
-            object_class = class_name.split("::").map(&:to_sym).inject(options[:class_scope]) { |scope, name| scope.const_get(name) }
-            output_stack << object_class.new(data)
-            #puts "make_object:      #{output_stack.inspect}" if @rules
-          rescue Exception => e
-            #puts e, e.backtrace if @rules
-            exit! if @rules
-          end
+          data = output_stack.pop
+          object_class = class_name.split("::").map(&:to_sym).inject(options[:class_scope]) { |scope, name| scope.const_get(name) }
+          output_stack << object_class.new(data)
+          #puts "make_object:      #{output_stack.inspect}" if @rules
         },
         FFI::Function.new(:void, []) { # pop
           output_stack.pop
@@ -206,7 +179,7 @@ module JetPEG
         FFI::Function.new(:void, [:int64]) { |id| # store_local
           @locals[id] << output_stack.pop
           #puts "store_local:      #{output_stack.inspect}" if @rules
-          ##puts "                  #{@locals.inspect}" if @rules
+          #puts "                  #{@locals.inspect}" if @rules
         },
         FFI::Function.new(:void, [:int64]) { |id| # load_local
           output_stack << @locals[id].last
@@ -214,7 +187,7 @@ module JetPEG
         },
         FFI::Function.new(:void, [:int64]) { |id| # delete_local
           @locals[id].pop
-          ##puts "delete_local:     #{@locals.inspect}" if @rules
+          #puts "delete_local:     #{@locals.inspect}" if @rules
         },
         FFI::Function.new(:void, []) { # set_as_source
           temp_source = output_stack.pop
@@ -246,7 +219,6 @@ module JetPEG
       end
       success_value.dispose
       
-      #puts output_stack.inspect if output_stack.size > 1 and @rules
       output = output_stack.last || {} 
       check_malloc_counter
       
@@ -266,10 +238,10 @@ module JetPEG
     end
     
     def check_malloc_counter
-      # return if @mod.globals[:malloc_counter].nil?
-      # malloc_count = @execution_engine.pointer_to_global(@mod.globals[:malloc_counter]).read_int64
-      # free_count = @execution_engine.pointer_to_global(@mod.globals[:free_counter]).read_int64
-      # raise "Internal error: Memory leak (#{malloc_count - free_count})." if malloc_count != free_count
+      return if @mod.globals[:malloc_counter].nil?
+      malloc_count = @execution_engine.pointer_to_global(@mod.globals[:malloc_counter]).read_int64
+      free_count = @execution_engine.pointer_to_global(@mod.globals[:free_counter]).read_int64
+      raise "Internal error: Memory leak (#{malloc_count - free_count})." if malloc_count != free_count
     end
   end
   
@@ -285,7 +257,7 @@ module JetPEG
 
       @rules.values.first.is_root = true
       
-      @rules.each_value(&:has_return_value) # calculate all return types
+      @rules.each_value(&:has_return_value) # sanity check
     end
     
     def parse_rule(rule_name, input, options = {})
