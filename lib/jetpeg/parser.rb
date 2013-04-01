@@ -121,81 +121,81 @@ module JetPEG
       failure_expectations = []
       failure_other_reasons = []
       output_functions = [
-        FFI::Function.new(:void, []) { # push_nil
+        new_checked_ffi_function(:void, []) { # push_nil
           output_stack << nil
           #puts "push_nil:         #{output_stack.inspect}" if @rules
         },
-        FFI::Function.new(:void, [:pointer, :pointer]) { |from_ptr, to_ptr| # push_input_range
+        new_checked_ffi_function(:void, [:pointer, :pointer]) { |from_ptr, to_ptr| # push_input_range
           range = (from_ptr.address - start_ptr.address)...(to_ptr.address - start_ptr.address)
           line = input[0, range.begin].count("\n")
           output_stack << StringWithPosition.new(input[range], range, line)
           #puts "push_input_range: #{output_stack.inspect}" if @rules
         },
-        FFI::Function.new(:void, [:bool]) { |value| # push_boolean
+        new_checked_ffi_function(:void, [:bool]) { |value| # push_boolean
           output_stack << value
           #puts "push_boolean:     #{output_stack.inspect}" if @rules
         },
-        FFI::Function.new(:void, [:string]) { |value| # push_string
+        new_checked_ffi_function(:void, [:string]) { |value| # push_string
           output_stack << value
           #puts "push_string:      #{output_stack.inspect}" if @rules
         },
-        FFI::Function.new(:void, [:bool]) { |append_current| # push_array
+        new_checked_ffi_function(:void, [:bool]) { |append_current| # push_array
           array = []
           array << output_stack.pop if append_current
           output_stack << array
           #puts "push_array:       #{output_stack.inspect}" if @rules
         },
-        FFI::Function.new(:void, []) { # append_to_array
+        new_checked_ffi_function(:void, []) { # append_to_array
           entry = output_stack.pop
           output_stack.last << entry
           #puts "append_to_array:  #{output_stack.inspect}" if @rules
         },
-        FFI::Function.new(:void, [:string]) { |name| # make_label
+        new_checked_ffi_function(:void, [:string]) { |name| # make_label
           value = output_stack.pop
           output_stack << { name.to_sym => value }
           #puts "make_label:       #{output_stack.inspect}" if @rules
         },
-        FFI::Function.new(:void, [:int64]) { |count| # merge_labels
+        new_checked_ffi_function(:void, [:int64]) { |count| # merge_labels
           merged = output_stack.pop(count).compact.reduce(&:merge)
           output_stack << merged
           #puts "merge_labels: #{count}   #{output_stack.inspect}" if @rules
         },
-        FFI::Function.new(:void, [:string, :string, :int64]) { |code, filename, line| # make_value
+        new_checked_ffi_function(:void, [:string, :string, :int64]) { |code, filename, line| # make_value
           data = output_stack.pop
           scope = EvaluationScope.new data
           output_stack << scope.instance_eval(code, filename, line + 1)
           #puts "make_value:       #{output_stack.inspect}" if @rules
         },
-        FFI::Function.new(:void, [:string]) { |class_name| # make_object
+        new_checked_ffi_function(:void, [:string]) { |class_name| # make_object
           data = output_stack.pop
           object_class = class_name.split("::").map(&:to_sym).inject(options[:class_scope]) { |scope, name| scope.const_get(name) }
           output_stack << object_class.new(data)
           #puts "make_object:      #{output_stack.inspect}" if @rules
         },
-        FFI::Function.new(:void, []) { # pop
+        new_checked_ffi_function(:void, []) { # pop
           output_stack.pop
           #puts "pop:              #{output_stack.inspect}" if @rules
         },
-        FFI::Function.new(:void, [:int64]) { |id| # store_local
+        new_checked_ffi_function(:void, [:int64]) { |id| # store_local
           @locals[id] << output_stack.pop
           #puts "store_local:      #{output_stack.inspect}" if @rules
           #puts "                  #{@locals.inspect}" if @rules
         },
-        FFI::Function.new(:void, [:int64]) { |id| # load_local
+        new_checked_ffi_function(:void, [:int64]) { |id| # load_local
           output_stack << @locals[id].last
           #puts "load_local:       #{output_stack.inspect}" if @rules
         },
-        FFI::Function.new(:void, [:int64]) { |id| # delete_local
+        new_checked_ffi_function(:void, [:int64]) { |id| # delete_local
           @locals[id].pop
           #puts "delete_local:     #{@locals.inspect}" if @rules
         },
-        FFI::Function.new(:void, []) { # set_as_source
+        new_checked_ffi_function(:void, []) { # set_as_source
           temp_source = output_stack.pop
         },
-        FFI::Function.new(:void, [:string]) { |name| # read_from_source
+        new_checked_ffi_function(:void, [:string]) { |name| # read_from_source
           output_stack << temp_source[name.to_sym]
         },
-        FFI::Function.new(:void, [:pointer, :string, :bool]) { |pos_ptr, reason, is_expectation| # add_failure
+        new_checked_ffi_function(:void, [:pointer, :string, :bool]) { |pos_ptr, reason, is_expectation| # add_failure
           position = pos_ptr.address - start_ptr.address
           if position > failure_position
             failure_position = position
@@ -208,7 +208,7 @@ module JetPEG
           end
         }
       ]
-      
+
       success_value = @execution_engine.run_function @mod.functions["#{rule_name}_match"], start_ptr, end_ptr, *output_functions
       if not success_value.to_b
         success_value.dispose
@@ -225,6 +225,17 @@ module JetPEG
       output
     end
     
+    def new_checked_ffi_function(parameter_types, return_type)
+      FFI::Function.new(parameter_types, return_type) { |*args|
+        begin
+          yield(*args)
+        rescue Exception => e
+          puts e, e.backtrace
+          exit!
+        end
+      }
+    end
+
     def stats
       block_counts = @mod.functions.map { |f| f.basic_blocks.size }
       instruction_counts = @mod.functions.map { |f| f.basic_blocks.map { |b| b.instructions.to_a.size } }

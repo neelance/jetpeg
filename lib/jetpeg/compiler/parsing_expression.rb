@@ -180,6 +180,10 @@ module JetPEG
     end
     
     class EmptyParsingExpression < ParsingExpression
+      def initialize(data = nil)
+        super()
+      end
+
       def calculate_has_return_value
         nil
       end

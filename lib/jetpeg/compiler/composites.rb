@@ -85,12 +85,6 @@ module JetPEG
       end
     end
     
-    class Optional < Choice
-      def initialize(data)
-        super(children: [data[:expression], EmptyParsingExpression.new])
-      end
-    end
-    
     class Repetition < ParsingExpression
       def initialize(data)
         super()

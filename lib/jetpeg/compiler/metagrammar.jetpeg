@@ -50,7 +50,7 @@ rule lookahead
 end
 
 rule repetition
-  expression:primary '?' ws <Optional> /
+  expression:primary '?' ws <Choice { children: [ @expression, <EmptyParsingExpression { }> ] }> /
   expression:primary '*->' until_expression:primary <Until> /
   expression:primary ( '{' ws glue_expression:choice '}' )? ( '*' at_least_once:$false / '+' at_least_once:$true ) ws <Repetition> /
   primary ws
