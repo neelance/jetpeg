@@ -31,7 +31,7 @@ module JetPEG
     
     class Sequence
       def get_leftmost_primary
-        if @children.first.is_a? Primary
+        if @children.first.is_primary
           @children.first
         else
           @children.first.get_leftmost_primary
@@ -39,7 +39,7 @@ module JetPEG
       end
       
       def replace_leftmost_primary(replacement)
-        if @children.first.is_a? Primary
+        if @children.first.is_primary
           @children[0] = replacement
           replacement.parent = self
         else
@@ -50,7 +50,7 @@ module JetPEG
     
     module LeftmostPrimaryExpression
       def get_leftmost_primary
-        if @expression.is_a? Primary
+        if @expression.is_primary
           @expression
         else
           @expression.get_leftmost_primary
@@ -58,7 +58,7 @@ module JetPEG
       end
       
       def replace_leftmost_primary(replacement)
-        if @expression.is_a? Primary
+        if @expression.is_primary
           @expression = replacement
           replacement.parent = self
         else

@@ -93,7 +93,7 @@ task :benchmark do
     bm.report("building:") do
       parser[:grammar].is_root = true
       parser.build
-      #JetPEG.write_typegraph "graph.dot", parser[:grammar].has_return_value.llvm_type
+      #JetPEG.write_typegraph "graph.dot", parser[:grammar].has_return_value?.llvm_type
       #exit
     end
     

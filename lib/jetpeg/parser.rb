@@ -253,7 +253,7 @@ module JetPEG
 
       @rules.values.first.is_root = true
       
-      @rules.each_value(&:has_return_value) # sanity check
+      @rules.each_value(&:has_return_value?) # sanity check
     end
     
     def parse_rule(rule_name, input, options = {})

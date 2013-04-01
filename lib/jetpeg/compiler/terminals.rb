@@ -1,6 +1,6 @@
 module JetPEG
   module Compiler
-    class StringTerminal < Primary
+    class StringTerminal < ParsingExpression
       attr_reader :string
       
       def initialize(data)
@@ -19,13 +19,17 @@ module JetPEG
         end
         end_input
       end
+
+      def is_primary
+        true
+      end
       
       def ==(other)
         other.is_a?(StringTerminal) && other.string == @string
       end
     end
     
-    class CharacterClassTerminal < Primary
+    class CharacterClassTerminal < ParsingExpression
       attr_reader :selections, :inverted
       
       def initialize(data)
@@ -51,6 +55,10 @@ module JetPEG
         
         end_input = builder.gep start_input, LLVM::Int(1), "new_input"
         end_input
+      end
+
+      def is_primary
+        true
       end
       
       def ==(other)

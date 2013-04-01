@@ -13,15 +13,15 @@ module JetPEG
         @is_local = data[:is_local]
       end
       
-      def calculate_has_return_value
+      def calculate_has_return_value?
         !@is_local
       end
       
       def build(builder, start_input, modes, failed_block)
         expression_end_input = @expression.build builder, start_input, modes, failed_block
         
-        if not @expression.has_return_value or label_name == AT_SYMBOL
-          builder.call builder.output_functions[:pop] if @expression.has_return_value
+        if not @expression.has_return_value? or label_name == AT_SYMBOL
+          builder.call builder.output_functions[:pop] if @expression.has_return_value?
           builder.call builder.output_functions[:push_input_range], start_input, expression_end_input
         end
 
@@ -69,7 +69,7 @@ module JetPEG
         @local_label
       end
       
-      def calculate_has_return_value
+      def calculate_has_return_value?
         true
       end
       
@@ -89,13 +89,13 @@ module JetPEG
         @data = data[:data]
       end
 
-      def calculate_has_return_value
+      def calculate_has_return_value?
         true
       end
 
       def build(builder, start_input, modes, failed_block)
         end_input = @expression.build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:push_nil] if not @expression.has_return_value
+        builder.call builder.output_functions[:push_nil] if not @expression.has_return_value?
         if @data
           builder.call builder.output_functions[:set_as_source]
           @data.build builder
@@ -113,13 +113,13 @@ module JetPEG
         @code = data[:code]
       end
 
-      def calculate_has_return_value
+      def calculate_has_return_value?
         true
       end
 
       def build(builder, start_input, modes, failed_block)
         end_input = @expression.build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:push_nil] if not @expression.has_return_value
+        builder.call builder.output_functions[:push_nil] if not @expression.has_return_value?
         builder.call builder.output_functions[:make_value], builder.global_string_pointer(@code), builder.global_string_pointer(parser.filename), LLVM::Int64.from_i(@code.line)
         end_input
       end

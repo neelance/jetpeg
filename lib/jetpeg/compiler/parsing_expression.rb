@@ -31,12 +31,12 @@ module JetPEG
         @rule_name ? self : parent.rule
       end
       
-      def has_return_value
+      def has_return_value?
         if @has_return_value == :pending
           raise Recursion.new if @has_return_value_recursion
           begin
             @has_return_value_recursion = true
-            @has_return_value = calculate_has_return_value
+            @has_return_value = calculate_has_return_value?
           ensure
             @has_return_value_recursion = false
           end
@@ -44,8 +44,8 @@ module JetPEG
         @has_return_value
       end
       
-      def calculate_has_return_value
-        nil
+      def calculate_has_return_value?
+        false
       end
       
       def get_local_label(name)
@@ -168,6 +168,10 @@ module JetPEG
       def hash
         0 # no hash used for Array.uniq, always eql?
       end
+
+      def is_primary
+        false
+      end
     end
     
     class Parameter
@@ -183,17 +187,10 @@ module JetPEG
       def initialize(data = nil)
         super()
       end
-
-      def calculate_has_return_value
-        nil
-      end
       
       def build(builder, start_input, modes, failed_block)
         start_input
       end
-    end
-        
-    class Primary < ParsingExpression
     end
   end
 end
