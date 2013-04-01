@@ -121,66 +121,66 @@ module JetPEG
       failure_expectations = []
       failure_other_reasons = []
       output_functions = [
-        new_checked_ffi_function(:push_nil, :void, []) {
+        new_checked_ffi_function(:push_nil, [], :void) {
           output_stack << nil
         },
-        new_checked_ffi_function(:push_input_range, :void, [:pointer, :pointer]) { |from_ptr, to_ptr|
+        new_checked_ffi_function(:push_input_range, [:pointer, :pointer], :void) { |from_ptr, to_ptr|
           range = (from_ptr.address - start_ptr.address)...(to_ptr.address - start_ptr.address)
           line = input[0, range.begin].count("\n")
           output_stack << StringWithPosition.new(input[range], range, line)
         },
-        new_checked_ffi_function(:push_boolean, :void, [:bool]) { |value|
+        new_checked_ffi_function(:push_boolean, [:bool], :void) { |value|
           output_stack << value
         },
-        new_checked_ffi_function(:push_string, :void, [:string]) { |value|
+        new_checked_ffi_function(:push_string, [:string], :void) { |value|
           output_stack << value
         },
-        new_checked_ffi_function(:push_array, :void, [:bool]) { |append_current|
+        new_checked_ffi_function(:push_array, [:bool], :void) { |append_current|
           array = []
           array << output_stack.pop if append_current
           output_stack << array
         },
-        new_checked_ffi_function(:append_to_array, :void, []) {
+        new_checked_ffi_function(:append_to_array, [], :void) {
           entry = output_stack.pop
           output_stack.last << entry
         },
-        new_checked_ffi_function(:make_label, :void, [:string]) { |name|
+        new_checked_ffi_function(:make_label, [:string], :void) { |name|
           value = output_stack.pop
           output_stack << { name.to_sym => value }
         },
-        new_checked_ffi_function(:merge_labels, :void, [:int64]) { |count|
+        new_checked_ffi_function(:merge_labels, [:int64], :void) { |count|
           merged = output_stack.pop(count).compact.reduce(&:merge)
           output_stack << merged
         },
-        new_checked_ffi_function(:make_value, :void, [:string, :string, :int64]) { |code, filename, line|
+        new_checked_ffi_function(:make_value, [:string, :string, :int64], :void) { |code, filename, line|
           data = output_stack.pop
           scope = EvaluationScope.new data
           output_stack << scope.instance_eval(code, filename, line + 1)
         },
-        new_checked_ffi_function(:make_object, :void, [:string]) { |class_name|
+        new_checked_ffi_function(:make_object, [:string], :void) { |class_name|
           data = output_stack.pop
           object_class = class_name.split("::").map(&:to_sym).inject(options[:class_scope]) { |scope, name| scope.const_get(name) }
           output_stack << object_class.new(data)
         },
-        new_checked_ffi_function(:pop, :void, []) {
+        new_checked_ffi_function(:pop, [], :void) {
           output_stack.pop
         },
-        new_checked_ffi_function(:store_local, :void, [:int64]) { |id|
+        new_checked_ffi_function(:store_local, [:int64], :void) { |id|
           @locals[id] << output_stack.pop
         },
-        new_checked_ffi_function(:load_local, :void, [:int64]) { |id|
+        new_checked_ffi_function(:load_local, [:int64], :void) { |id|
           output_stack << @locals[id].last
         },
-        new_checked_ffi_function(:delete_local, :void, [:int64]) { |id|
+        new_checked_ffi_function(:delete_local, [:int64], :void) { |id|
           @locals[id].pop
         },
-        new_checked_ffi_function(:set_as_source, :void, []) {
+        new_checked_ffi_function(:set_as_source, [], :void) {
           temp_source = output_stack.pop
         },
-        new_checked_ffi_function(:read_from_source, :void, [:string]) { |name|
+        new_checked_ffi_function(:read_from_source, [:string], :void) { |name|
           output_stack << temp_source[name.to_sym]
         },
-        new_checked_ffi_function(:add_failure, :void, [:pointer, :string, :bool]) { |pos_ptr, reason, is_expectation|
+        new_checked_ffi_function(:add_failure, [:pointer, :string, :bool], :void) { |pos_ptr, reason, is_expectation|
           position = pos_ptr.address - start_ptr.address
           if position > failure_position
             failure_position = position
@@ -211,7 +211,7 @@ module JetPEG
     end
     
     def new_checked_ffi_function(name, parameter_types, return_type)
-      FFI::Function.new(parameter_types, return_type) { |*args|
+      FFI::Function.new(return_type, parameter_types) { |*args|
         begin
           yield(*args)
         rescue Exception => e
