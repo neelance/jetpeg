@@ -52,8 +52,7 @@ end
 rule repetition
   expression:primary '?' ws <Optional> /
   expression:primary '*->' until_expression:primary <Until> /
-  expression:primary ( '{' ws glue_expression:choice '}' )? '*' ws <ZeroOrMore> /
-  expression:primary ( '{' ws glue_expression:choice '}' )? '+' ws <OneOrMore> /
+  expression:primary ( '{' ws glue_expression:choice '}' )? ( '*' at_least_once:$false / '+' at_least_once:$true ) ws <Repetition> /
   primary ws
 end
 

@@ -91,11 +91,12 @@ module JetPEG
       end
     end
     
-    class ZeroOrMore < ParsingExpression
+    class Repetition < ParsingExpression
       def initialize(data)
         super()
         @expression = data[:expression]
         @glue_expression = data[:glue_expression]
+        @at_least_once = data[:at_least_once]
         self.children = [@expression, @glue_expression].compact
       end
       
@@ -103,53 +104,45 @@ module JetPEG
         @expression.has_return_value
       end
       
-      def build(builder, start_input, modes, failed_block, one_or_more = false)
-        input = DynamicPhi.new builder, LLVM_STRING, "loop_input", start_input
-        match_glue = DynamicPhi.new builder, (@glue_expression && LLVM::Int1), "match_glue", (one_or_more ? LLVM::TRUE : LLVM::FALSE)
-
+      def build(builder, start_input, modes, failed_block)
+        first_failed_block = builder.create_block "repetition_first_failed"
         loop_block = builder.create_block "repetition_loop"
+        break_block = builder.create_block "repetition_break"
         exit_block = builder.create_block "repetition_exit"
-        builder.call builder.output_functions[:push_array], LLVM::FALSE if has_return_value and not one_or_more
+        
+        loop_input = DynamicPhi.new builder, LLVM_STRING, "loop_input"
+        exit_input = DynamicPhi.new builder, LLVM_STRING, "exit_input"
+
+        loop_input << @expression.build(builder, start_input, modes, @at_least_once ? failed_block : first_failed_block)
+        builder.call builder.output_functions[:push_array], LLVM::TRUE if has_return_value
         builder.br loop_block
         
         builder.position_at_end loop_block
-        input.build
-        match_glue.build
-        
-        if @glue_expression
-          glue_block = builder.create_block "repetition_glue"
-          expression_block = builder.create_block "repetition_expression"
-          input_after_glue = DynamicPhi.new builder, LLVM_STRING, "loop_input_after_glue", input
-          builder.cond match_glue, glue_block, expression_block
-          
-          builder.position_at_end glue_block
-          input_after_glue << @glue_expression.build(builder, input, modes, exit_block)
-          builder.br expression_block
-          
-          builder.position_at_end expression_block
-          input_after_glue.build
-        else
-          input_after_glue = input
-        end
-        
-        input << @expression.build(builder, input_after_glue, modes, exit_block)
+        loop_input.build
+        input = loop_input
+
+        input = @glue_expression.build(builder, input, modes, break_block) if @glue_expression
+        builder.call builder.output_functions[:pop] if @glue_expression and @glue_expression.has_return_value
+
+        loop_input << @expression.build(builder, input, modes, break_block)
         builder.call builder.output_functions[:append_to_array] if has_return_value
-        match_glue << LLVM::TRUE
+
         builder.br loop_block
         
+        builder.position_at_end first_failed_block
+        builder.call builder.output_functions[:push_array], LLVM::FALSE if has_return_value
+        exit_input << start_input
+        builder.br exit_block
+
+        builder.position_at_end break_block
+        exit_input << loop_input
+        builder.br exit_block
+
         builder.position_at_end exit_block
-        input
+        exit_input.build
       end
     end
-    
-    class OneOrMore < ZeroOrMore
-      def build(builder, start_input, modes, failed_block)
-        input = @expression.build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:push_array], LLVM::TRUE if has_return_value
-        super builder, input, modes, failed_block, true
-      end
-    end
-    
+
     class Until < ParsingExpression
       def initialize(data)
         super()
