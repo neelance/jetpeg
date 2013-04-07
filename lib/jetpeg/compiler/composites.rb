@@ -17,8 +17,6 @@ module JetPEG
       end
       
       def build(builder, start_input, modes, failed_block)
-        return @children.first.build builder, start_input, modes, failed_block if @children.size == 1
-        
         input = start_input
         previous_fail_cleanup_block = failed_block
         @children.each_with_index do |child, index|

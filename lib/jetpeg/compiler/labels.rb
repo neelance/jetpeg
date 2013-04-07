@@ -26,7 +26,7 @@ module JetPEG
         end
 
         if @is_local
-          builder.call builder.output_functions[:store_local], LLVM::Int64.from_i(self.object_id)
+          builder.call builder.output_functions[:push_local]
         elsif label_name != AT_SYMBOL
           builder.call builder.output_functions[:make_label], builder.global_string_pointer(label_name.to_s)
         end
@@ -34,9 +34,12 @@ module JetPEG
         expression_end_input
       end
       
-      def get_local_label(name)
-        return self if @is_local and @label_name == name
-        super
+      def get_local_label(name, stack_index)
+        if @is_local
+          return stack_index if @label_name == name
+          return super name, stack_index + 1
+        end
+        super name, stack_index
       end
       
       def has_local_value?
@@ -44,7 +47,7 @@ module JetPEG
       end
       
       def free_local_value(builder)
-        builder.call builder.output_functions[:delete_local], LLVM::Int64.from_i(self.object_id) if @is_local
+        builder.call builder.output_functions[:pop_locals], LLVM::Int64.from_i(1) if @is_local
       end
     end
     
@@ -61,21 +64,17 @@ module JetPEG
       def initialize(data)
         super()
         @name = data[:name] && data[:name].to_sym
+        @local_label = nil
       end
-      
-      def local_label
-        @local_label ||= get_local_label @name
-        raise CompilationError.new("Undefined local value \"%#{name}\".", rule) if @local_label.nil?
-        @local_label
-      end
-      
+
       def calculate_has_return_value?
         true
       end
       
       def build(builder, start_input, modes, failed_block)
-        builder.call builder.output_functions[:load_local], LLVM::Int64.from_i(local_label.object_id)
-
+        index = get_local_label @name, 0
+        raise CompilationError.new("Undefined local value \"%#{name}\".", rule) if index.nil?
+        builder.call builder.output_functions[:load_local2], LLVM::Int64.from_i(index)
         start_input
       end
     end
