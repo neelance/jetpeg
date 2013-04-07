@@ -165,7 +165,7 @@ module JetPEG
         new_checked_ffi_function(:pop, [], :void) {
           output_stack.pop
         },
-        new_checked_ffi_function(:locals_push, [], :void) { ||
+        new_checked_ffi_function(:locals_push, [], :void) {
           locals_stack.push output_stack.pop
         },
         new_checked_ffi_function(:locals_load, [:int64], :void) { |index|
@@ -295,7 +295,7 @@ module JetPEG
       self
     end
     
-    def get_local_label(stack_index, index)
+    def get_local_label(name, stack_index)
       nil
     end
     

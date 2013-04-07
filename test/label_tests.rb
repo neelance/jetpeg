@@ -157,17 +157,17 @@ class LabelsTests < Test::Unit::TestCase
     assert rule.parse("abc") == { result1: [{ char: "b" }], result2: [{ char: "b" }] }
   end
   
-  # def test_parameters
-  #   grammar = JetPEG::Compiler.compile_grammar "
-  #     rule test
-  #       %a:. test2[%a]
-  #     end
-  #     rule test2[%v]
-  #       result:%v
-  #     end
-  #   "
-  #   assert grammar.parse_rule(:test, "a") == { result: "a" }
-  # end
+  def test_parameters
+    grammar = JetPEG::Compiler.compile_grammar "
+      rule test
+        %a:. %b:. test2[%a, %b]
+      end
+      rule test2[%v, %w]
+        result1:%v result2:%w
+      end
+    "
+    assert grammar.parse_rule(:test, "ab") == { result1: "a", result2: "b" }
+  end
   
   def test_undefined_local_label_error
     assert_raise JetPEG::CompilationError do

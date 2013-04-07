@@ -48,12 +48,12 @@ module JetPEG
         false
       end
       
-      def get_local_label(stack_index, index)
-        # @parameters.each do |parameter|
-        #   return parameter if parameter.name == name
-        # end
+      def get_local_label(name, stack_index)
+        @parameters.each_with_index do |parameter, param_index|
+          return stack_index + param_index if parameter.name == name
+        end
         @local_label_source ||= parent
-        @local_label_source.get_local_label stack_index, index
+        @local_label_source.get_local_label name, stack_index
       end
       
       def has_local_value?
