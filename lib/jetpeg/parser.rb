@@ -65,12 +65,9 @@ module JetPEG
     make_value:       LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int64], LLVM.Void()),
     make_object:      LLVM.Function([LLVM_STRING], LLVM.Void()),
     pop:              LLVM.Function([], LLVM.Void()),
-    store_local:      LLVM.Function([LLVM::Int64], LLVM.Void()),
-    load_local:       LLVM.Function([LLVM::Int64], LLVM.Void()),
-    delete_local:     LLVM.Function([LLVM::Int64], LLVM.Void()),
-    push_local:       LLVM.Function([], LLVM.Void()),
-    pop_locals:       LLVM.Function([LLVM::Int64], LLVM.Void()),
-    load_local2:      LLVM.Function([LLVM::Int64], LLVM.Void()),
+    locals_push:      LLVM.Function([], LLVM.Void()),
+    locals_load:      LLVM.Function([LLVM::Int64], LLVM.Void()),
+    locals_pop:       LLVM.Function([], LLVM.Void()),
     set_as_source:    LLVM.Function([], LLVM.Void()),
     read_from_source: LLVM.Function([LLVM_STRING], LLVM.Void()),
     add_failure:      LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int1], LLVM.Void())
@@ -119,7 +116,6 @@ module JetPEG
       
       output_stack = []
       locals_stack = []
-      @locals = Hash.new { |hash, key| hash[key] = [] }
       temp_source = nil
       failure_position = 0
       failure_expectations = []
@@ -169,25 +165,14 @@ module JetPEG
         new_checked_ffi_function(:pop, [], :void) {
           output_stack.pop
         },
-        new_checked_ffi_function(:store_local, [:int64], :void) { |id|
-          local = output_stack.pop
-          @locals[id] << local
-          locals_stack.push local
-        },
-        new_checked_ffi_function(:load_local, [:int64], :void) { |id|
-          output_stack << @locals[id].last
-        },
-        new_checked_ffi_function(:delete_local, [:int64], :void) { |id|
-          @locals[id].pop
-        },
-        new_checked_ffi_function(:push_local, [], :void) { ||
+        new_checked_ffi_function(:locals_push, [], :void) { ||
           locals_stack.push output_stack.pop
         },
-        new_checked_ffi_function(:pop_locals, [:int64], :void) { |count|
-          locals_stack.pop count
-        },
-        new_checked_ffi_function(:load_local2, [:int64], :void) { |index|
+        new_checked_ffi_function(:locals_load, [:int64], :void) { |index|
           output_stack << locals_stack[-1 - index]
+        },
+        new_checked_ffi_function(:locals_pop, [], :void) { |count|
+          locals_stack.pop
         },
         new_checked_ffi_function(:set_as_source, [], :void) {
           temp_source = output_stack.pop

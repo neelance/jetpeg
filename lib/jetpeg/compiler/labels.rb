@@ -26,7 +26,7 @@ module JetPEG
         end
 
         if @is_local
-          builder.call builder.output_functions[:push_local]
+          builder.call builder.output_functions[:locals_push]
         elsif label_name != AT_SYMBOL
           builder.call builder.output_functions[:make_label], builder.global_string_pointer(label_name.to_s)
         end
@@ -47,7 +47,7 @@ module JetPEG
       end
       
       def free_local_value(builder)
-        builder.call builder.output_functions[:pop_locals], LLVM::Int64.from_i(1) if @is_local
+        builder.call builder.output_functions[:locals_pop] if @is_local
       end
     end
     
@@ -74,7 +74,7 @@ module JetPEG
       def build(builder, start_input, modes, failed_block)
         index = get_local_label @name, 0
         raise CompilationError.new("Undefined local value \"%#{name}\".", rule) if index.nil?
-        builder.call builder.output_functions[:load_local2], LLVM::Int64.from_i(index)
+        builder.call builder.output_functions[:locals_load], LLVM::Int64.from_i(index)
         start_input
       end
     end
