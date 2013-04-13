@@ -115,7 +115,7 @@ module JetPEG
     
     def self.load_parser(data, filename)
       rules = data[:rules].each_with_object({}) do |element, h|
-        expression = element[:expression]
+        expression = element[:child]
         expression.rule_name = element[:rule_name].to_sym
         expression.parameters = (element[:parameters] || []).map{ |p| Parameter.new p.data[:name] }
         h[expression.rule_name] = expression

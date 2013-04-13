@@ -52,7 +52,7 @@ module JetPEG
         leftmost_primaries = children.map(&:get_leftmost_primary).uniq
         if leftmost_primaries.size == 1 and not leftmost_primaries.first.nil?
           label_name = self.object_id.to_s
-          local_label = Label.new expression: leftmost_primaries.first, is_local: true, name: label_name
+          local_label = Label.new child: leftmost_primaries.first, is_local: true, name: label_name
           local_value = LocalValue.new name: label_name
           
           children.each { |child| child.replace_leftmost_primary local_value }
@@ -93,7 +93,7 @@ module JetPEG
     class Repetition < ParsingExpression
       def initialize(data)
         super
-        @expression = data[:expression]
+        @expression = data[:child]
         @glue_expression = data[:glue_expression]
         @at_least_once = data[:at_least_once]
         self.children = [@expression, @glue_expression].compact
@@ -147,7 +147,7 @@ module JetPEG
     class Until < ParsingExpression
       def initialize(data)
         super
-        @expression = data[:expression]
+        @expression = data[:child]
         @until_expression = data[:until_expression]
         self.children = [@expression, @until_expression]
       end
@@ -184,7 +184,7 @@ module JetPEG
     class PositiveLookahead < ParsingExpression
       def initialize(data)
         super
-        @expression = data[:expression]
+        @expression = data[:child]
         self.children = [@expression]
       end
   
@@ -198,7 +198,7 @@ module JetPEG
     class NegativeLookahead < ParsingExpression
       def initialize(data)
         super
-        @expression = data[:expression]
+        @expression = data[:child]
         self.children = [@expression]
       end
   
@@ -215,11 +215,8 @@ module JetPEG
     end
     
     class RuleCall < ParsingExpression
-      attr_reader :referenced_name
-      
       def initialize(data)
         super
-        @referenced_name = data[:name].to_sym
         @arguments = data[:arguments] || []
         self.children = @arguments
         @recursion = false
@@ -227,9 +224,9 @@ module JetPEG
       
       def referenced
         @referenced ||= begin
-          referenced = parser[@referenced_name]
-          raise CompilationError.new("Undefined rule \"#{@referenced_name}\".", rule) if referenced.nil?
-          raise CompilationError.new("Wrong argument count for rule \"#{@referenced_name}\".", rule) if referenced.parameters.size != @arguments.size
+          referenced = parser[@data[:name].to_sym]
+          raise CompilationError.new("Undefined rule \"#{@data[:name]}\".", rule) if referenced.nil?
+          raise CompilationError.new("Wrong argument count for rule \"#{@data[:name]}\".", rule) if referenced.parameters.size != @arguments.size
           referenced
         end
       end
@@ -285,7 +282,7 @@ module JetPEG
     class ParenthesizedExpression < ParsingExpression
       def initialize(data)
         super
-        @expression = data[:expression]
+        @expression = data[:child]
         self.children = [@expression] if @expression
       end
       

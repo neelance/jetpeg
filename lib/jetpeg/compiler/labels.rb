@@ -3,7 +3,7 @@ module JetPEG
     class Label < ParsingExpression
       def initialize(data)
         super
-        @expression = data[:expression]
+        @expression = data[:child]
         self.children = [@expression]
       end
       
@@ -47,7 +47,7 @@ module JetPEG
     
     class RuleCallLabel < Label
       def initialize(data)
-        super name: data[:expression].referenced_name.to_s, expression: data[:expression]
+        super name: data[:child].data[:name], child: data[:child]
       end
     end
     
@@ -67,7 +67,7 @@ module JetPEG
     class ObjectCreator < ParsingExpression
       def initialize(data)
         super
-        @expression = data[:expression]
+        @expression = data[:child]
         self.children = [@expression]
       end
 
@@ -90,7 +90,7 @@ module JetPEG
     class ValueCreator < ParsingExpression
       def initialize(data)
         super
-        @expression = data[:expression]
+        @expression = data[:child]
         self.children = [@expression]
       end
 

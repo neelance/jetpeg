@@ -3,7 +3,7 @@ rule grammar
 end
 
 rule parsing_rule
-  'rule' ws :rule_name parameters:( '[' local_value{ ',' ws }* ']' )? ws expression:rule_expression 'end' ws
+  'rule' ws :rule_name parameters:( '[' local_value{ ',' ws }* ']' )? ws child:rule_expression 'end' ws
 end
 
 rule rule_expression
@@ -16,8 +16,8 @@ rule choice
 end
 
 rule creator
-  expression:sequence '<' class_name:alphanumeric_char+ ( ws :data )? '>' ws <ObjectCreator> /
-  expression:sequence '{' :code '}' ws <ValueCreator> /
+  child:sequence '<' class_name:alphanumeric_char+ ( ws :data )? '>' ws <ObjectCreator> /
+  child:sequence '{' :code '}' ws <ValueCreator> /
   sequence
 end
 
@@ -39,20 +39,20 @@ rule sequence
 end
 
 rule labeled
-  ( '%' is_local:$true )? name:( '@' / alpha_char alphanumeric_char* ) ':' expression:lookahead <Label> /
+  ( '%' is_local:$true )? name:( '@' / alpha_char alphanumeric_char* ) ':' child:lookahead <Label> /
   lookahead
 end
 
 rule lookahead
-  '&' expression:repetition <PositiveLookahead> /
-  '!' expression:repetition <NegativeLookahead> /
+  '&' child:repetition <PositiveLookahead> /
+  '!' child:repetition <NegativeLookahead> /
   repetition
 end
 
 rule repetition
-  expression:primary '?' ws <Choice { children: [ @expression, <EmptyParsingExpression { }> ] }> /
-  expression:primary '*->' until_expression:primary <Until> /
-  expression:primary ( '{' ws glue_expression:choice '}' )? ( '*' at_least_once:$false / '+' at_least_once:$true ) ws <Repetition> /
+  child:primary '?' ws <Choice { children: [ @child, <EmptyParsingExpression { }> ] }> /
+  child:primary '*->' until_expression:primary <Until> /
+  child:primary ( '{' ws glue_expression:choice '}' )? ( '*' at_least_once:$false / '+' at_least_once:$true ) ws <Repetition> /
   primary ws
 end
 
@@ -67,7 +67,7 @@ rule primary
 end
 
 rule parenthesized_expression
-  '(' ws expression:choice? ')' <ParenthesizedExpression>
+  '(' ws child:choice? ')' <ParenthesizedExpression>
 end
 
 rule local_value
@@ -75,7 +75,7 @@ rule local_value
 end
 
 rule rule_call_label
-  ":" expression:rule_call <RuleCallLabel> /
+  ":" child:rule_call <RuleCallLabel> /
   rule_call
 end
 
@@ -98,8 +98,8 @@ rule function
   '$false' <FalseFunction> /
   '$match' '[' string:local_value ']' <MatchFunction> /
   '$error' '[' message:quoted_string ']' <ErrorFunction> /
-  '$enter_mode' '[' name:quoted_string ',' ws expression:choice ']' <EnterModeFunction> /
-  '$leave_mode' '[' name:quoted_string ',' ws expression:choice ']' <LeaveModeFunction> /
+  '$enter_mode' '[' name:quoted_string ',' ws child:choice ']' <EnterModeFunction> /
+  '$leave_mode' '[' name:quoted_string ',' ws child:choice ']' <LeaveModeFunction> /
   '$in_mode' '[' name:quoted_string ']' <InModeFunction>
 end
 

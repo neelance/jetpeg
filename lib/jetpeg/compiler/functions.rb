@@ -71,8 +71,8 @@ module JetPEG
       def initialize(data)
         super
         @name = data[:name].to_sym
-        if data[:expression]
-          @expression = data[:expression]
+        if data[:child]
+          @expression = data[:child]
           self.children = [@expression]
         end
       end
