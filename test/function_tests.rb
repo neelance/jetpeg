@@ -22,15 +22,15 @@ class FunctionTests < Test::Unit::TestCase
     assert rule.parser.failure_reason.other_reasons == ["test"]
   end
   
-  # def test_match_function
-  #   rule = JetPEG::Compiler.compile_rule "%a:( . . ) $match[%a]"
-  #   assert rule.parse("abab")
-  #   assert rule.parse("cdcd")
-  #   assert !rule.parse("a")
-  #   assert !rule.parse("ab")
-  #   assert !rule.parse("aba")
-  #   assert !rule.parse("abaX")
-  # end
+  def test_match_function
+    rule = JetPEG::Compiler.compile_rule "%a:( . . ) $match[%a]"
+    assert rule.parse("abab")
+    assert rule.parse("cdcd")
+    assert !rule.parse("a")
+    assert !rule.parse("ab")
+    assert !rule.parse("aba")
+    assert !rule.parse("abaX")
+  end
   
   def test_modes
     grammar = JetPEG::Compiler.compile_grammar "

@@ -68,6 +68,7 @@ module JetPEG
     locals_push:      LLVM.Function([], LLVM.Void()),
     locals_load:      LLVM.Function([LLVM::Int64], LLVM.Void()),
     locals_pop:       LLVM.Function([], LLVM.Void()),
+    match:            LLVM.Function([LLVM_STRING], LLVM_STRING),
     set_as_source:    LLVM.Function([], LLVM.Void()),
     read_from_source: LLVM.Function([LLVM_STRING], LLVM.Void()),
     add_failure:      LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int1], LLVM.Void())
@@ -173,6 +174,14 @@ module JetPEG
         },
         new_checked_ffi_function(:locals_pop, [], :void) { |count|
           locals_stack.pop
+        },
+        new_checked_ffi_function(:match, [:pointer], :pointer) { |input_ptr|
+          expected = output_stack.pop
+          if input[input_ptr.address - start_ptr.address, expected.length] == expected
+            input_ptr + expected.length
+          else
+            LLVM_STRING.null
+          end
         },
         new_checked_ffi_function(:set_as_source, [], :void) {
           temp_source = output_stack.pop

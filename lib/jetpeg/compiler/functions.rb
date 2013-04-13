@@ -23,37 +23,16 @@ module JetPEG
     end
     
     class MatchFunction < ParsingExpression
-      def initialize(data)
-        super
-        @string = data[:string]
-        self.children = [@string]
-      end
-
       def build(builder, start_input, modes, failed_block)
-        expected_begin = builder.extract_value @string.value, 0
-        expected_end = builder.extract_value @string.value, 1
-        input = DynamicPhi.new builder, LLVM_STRING, "match_input", start_input
-        expected = DynamicPhi.new builder, LLVM_STRING, "match_expected", expected_begin
-        
-        end_check_block = builder.create_block "match_end_check"
-        char_check_block = builder.create_block "match_char_check"
         exit_block = builder.create_block "match_exit"
-        builder.br end_check_block
 
-        builder.position_at_end end_check_block
-        input.build
-        expected.build
-        at_end = builder.icmp :eq, expected, expected_end, "at_end"
-        builder.cond at_end, exit_block, char_check_block
-        
-        builder.position_at_end char_check_block
-        successful = builder.icmp :eq, builder.load(input), builder.load(expected), "failed"
-        input << builder.gep(input, LLVM::Int(1), "new_input")
-        expected << builder.gep(expected, LLVM::Int(1), "new_expected")
-        builder.cond successful, end_check_block, builder.add_failure_reason(failed_block, start_input, "$match failed", false) # TODO better failure message
+        @data[:child].build builder, start_input, modes, failed_block
+        end_input = builder.call builder.output_functions[:match], start_input
+        successful = builder.icmp :ne, end_input, LLVM_STRING.null, "match_successful"
+        builder.cond successful, exit_block, builder.add_failure_reason(failed_block, start_input, "$match failed", false) # TODO better failure message
         
         builder.position_at_end exit_block
-        input
+        end_input
       end
     end
     
@@ -68,38 +47,29 @@ module JetPEG
     end
     
     class ModeFunction < ParsingExpression
-      def initialize(data)
-        super
-        @name = data[:name].to_sym
-        if data[:child]
-          @expression = data[:child]
-          self.children = [@expression]
-        end
-      end
-      
       def all_mode_names
-        super + [@name]
+        super + [@data[:name]]
       end
     end
     
     class EnterModeFunction < ModeFunction      
       def build(builder, start_input, modes, failed_block)
-        new_modes = builder.insert_value modes, LLVM::TRUE, parser.mode_names.index(@name)
-        @expression.build builder, start_input, new_modes, failed_block
+        new_modes = builder.insert_value modes, LLVM::TRUE, parser.mode_names.index(@data[:name])
+        @data[:child].build builder, start_input, new_modes, failed_block
       end
     end
     
     class LeaveModeFunction < ModeFunction
       def build(builder, start_input, modes, failed_block)
-        new_modes = builder.insert_value modes, LLVM::FALSE, parser.mode_names.index(@name)
-        @expression.build builder, start_input, new_modes, failed_block
+        new_modes = builder.insert_value modes, LLVM::FALSE, parser.mode_names.index(@data[:name])
+        @data[:child].build builder, start_input, new_modes, failed_block
       end
     end
     
     class InModeFunction < ModeFunction
       def build(builder, start_input, modes, failed_block)
         successful_block = builder.create_block "in_mode_successful"
-        in_mode = builder.extract_value modes, parser.mode_names.index(@name), "in_mode_#{@name}"
+        in_mode = builder.extract_value modes, parser.mode_names.index(@data[:name]), "in_mode_#{@data[:name]}"
         builder.cond in_mode, successful_block, failed_block
         builder.position_at_end successful_block
         start_input

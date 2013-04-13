@@ -96,7 +96,7 @@ end
 rule function
   '$true' <TrueFunction> /
   '$false' <FalseFunction> /
-  '$match' '[' string:local_value ']' <MatchFunction> /
+  '$match' '[' child:local_value ']' <MatchFunction> /
   '$error' '[' message:quoted_string ']' <ErrorFunction> /
   '$enter_mode' '[' name:quoted_string ',' ws child:choice ']' <EnterModeFunction> /
   '$leave_mode' '[' name:quoted_string ',' ws child:choice ']' <LeaveModeFunction> /
