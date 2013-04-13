@@ -2,7 +2,7 @@ module JetPEG
   module Compiler
     class Sequence < ParsingExpression
       def initialize(data)
-        super()
+        super
         self.children = data[:children] || ([data[:head]] + data[:tail])
         
         previous_child = nil
@@ -63,7 +63,7 @@ module JetPEG
       end
 
       def initialize(data)
-        super()
+        super
         self.children = data[:children] || ([data[:head]] + data[:tail])
       end
       
@@ -92,7 +92,7 @@ module JetPEG
     
     class Repetition < ParsingExpression
       def initialize(data)
-        super()
+        super
         @expression = data[:expression]
         @glue_expression = data[:glue_expression]
         @at_least_once = data[:at_least_once]
@@ -146,7 +146,7 @@ module JetPEG
 
     class Until < ParsingExpression
       def initialize(data)
-        super()
+        super
         @expression = data[:expression]
         @until_expression = data[:until_expression]
         self.children = [@expression, @until_expression]
@@ -183,7 +183,7 @@ module JetPEG
     
     class PositiveLookahead < ParsingExpression
       def initialize(data)
-        super()
+        super
         @expression = data[:expression]
         self.children = [@expression]
       end
@@ -197,7 +197,7 @@ module JetPEG
     
     class NegativeLookahead < ParsingExpression
       def initialize(data)
-        super()
+        super
         @expression = data[:expression]
         self.children = [@expression]
       end
@@ -218,7 +218,7 @@ module JetPEG
       attr_reader :referenced_name
       
       def initialize(data)
-        super()
+        super
         @referenced_name = data[:name].to_sym
         @arguments = data[:arguments] || []
         self.children = @arguments
@@ -280,15 +280,11 @@ module JetPEG
       def is_primary
         true
       end
-      
-      def ==(other)
-        other.is_a?(RuleCall) && other.referenced_name == @referenced_name
-      end
     end
     
     class ParenthesizedExpression < ParsingExpression
       def initialize(data)
-        super()
+        super
         @expression = data[:expression]
         self.children = [@expression] if @expression
       end

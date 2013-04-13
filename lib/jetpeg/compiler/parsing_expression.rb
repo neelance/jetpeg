@@ -1,9 +1,11 @@
 module JetPEG
   module Compiler
     class ParsingExpression
-      attr_accessor :parent, :children, :rule_name, :parameters, :is_root, :local_label_source, :has_direct_recursion
+      attr_accessor :data, :parent, :rule_name, :parameters, :is_root, :local_label_source, :has_direct_recursion
+      attr_reader :children
       
-      def initialize
+      def initialize(data)
+        @data = data
         @rule_name = nil
         @parameters = []
         @is_root = false
@@ -160,6 +162,10 @@ module JetPEG
         end
         @internal_match_functions[[traced, is_left_recursion]]
       end
+
+      def ==(other)
+        self.class == other.class && self.data == other.data
+      end
       
       def eql?(other)
         self == other
@@ -172,7 +178,7 @@ module JetPEG
       def is_primary
         false
       end
-      
+
       def get_leftmost_primary
         if @children.empty?
           nil
@@ -207,7 +213,7 @@ module JetPEG
     
     class EmptyParsingExpression < ParsingExpression
       def initialize(data = nil)
-        super()
+        super
       end
       
       def build(builder, start_input, modes, failed_block)

@@ -6,7 +6,7 @@ module JetPEG
       attr_reader :label_name
       
       def initialize(data)
-        super()
+        super
         @label_name = data[:name] && data[:name].to_sym
         @expression = data[:expression]
         self.children = [@expression]
@@ -62,7 +62,7 @@ module JetPEG
       attr_writer :local_label
       
       def initialize(data)
-        super()
+        super
         @name = data[:name] && data[:name].to_sym
         @local_label = nil
       end
@@ -81,7 +81,7 @@ module JetPEG
     
     class ObjectCreator < ParsingExpression
       def initialize(data)
-        super()
+        super
         @expression = data[:expression]
         self.children = [@expression]
         @class_name = data[:class_name]
@@ -106,7 +106,7 @@ module JetPEG
     
     class ValueCreator < ParsingExpression
       def initialize(data)
-        super()
+        super
         @expression = data[:expression]
         self.children = [@expression]
         @code = data[:code]

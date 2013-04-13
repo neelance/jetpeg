@@ -2,7 +2,7 @@ module JetPEG
   module Compiler
     class TrueFunction < ParsingExpression
       def initialize(data)
-        super()
+        super
       end
       
       def calculate_has_return_value?
@@ -17,7 +17,7 @@ module JetPEG
     
     class FalseFunction < ParsingExpression
       def initialize(data)
-        super()
+        super
       end
       
       def calculate_has_return_value?
@@ -32,7 +32,7 @@ module JetPEG
     
     class MatchFunction < ParsingExpression
       def initialize(data)
-        super()
+        super
         @string = data[:string]
         self.children = [@string]
       end
@@ -67,7 +67,7 @@ module JetPEG
     
     class ErrorFunction < ParsingExpression
       def initialize(data)
-        super()
+        super
         @message = data[:message]
       end
       
@@ -82,7 +82,7 @@ module JetPEG
     
     class ModeFunction < ParsingExpression
       def initialize(data)
-        super()
+        super
         @name = data[:name].to_sym
         if data[:expression]
           @expression = data[:expression]
