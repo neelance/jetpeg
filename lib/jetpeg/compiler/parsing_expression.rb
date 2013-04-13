@@ -1,7 +1,7 @@
 module JetPEG
   module Compiler
     class ParsingExpression
-      attr_accessor :parent, :rule_name, :parameters, :is_root, :local_label_source, :has_direct_recursion
+      attr_accessor :parent, :children, :rule_name, :parameters, :is_root, :local_label_source, :has_direct_recursion
       
       def initialize
         @rule_name = nil
@@ -171,6 +171,28 @@ module JetPEG
 
       def is_primary
         false
+      end
+      
+      def get_leftmost_primary
+        if @children.empty?
+          nil
+        elsif @children.first.is_primary
+          @children.first
+        else
+          @children.first.get_leftmost_primary
+        end
+      end
+      
+      def replace_leftmost_primary(replacement)
+        if @children.empty?
+          raise
+        elsif @children.first.is_primary
+          @children[0] = replacement
+          @expression = replacement
+          replacement.parent = self
+        else
+          @children.first.replace_leftmost_primary replacement
+        end
       end
     end
     

@@ -47,6 +47,21 @@ module JetPEG
     end
     
     class Choice < ParsingExpression
+      def self.new(data)
+        children = data[:children] || ([data[:head]] + data[:tail])
+        leftmost_primaries = children.map(&:get_leftmost_primary).uniq
+        if leftmost_primaries.size == 1 and not leftmost_primaries.first.nil?
+          label_name = self.object_id.to_s
+          local_label = Label.new expression: leftmost_primaries.first, is_local: true, name: label_name
+          local_value = LocalValue.new name: label_name
+          
+          children.each { |child| child.replace_leftmost_primary local_value }
+          return Sequence.new children: [local_label, Choice.new(children: children)]
+        end
+        
+        super
+      end
+
       def initialize(data)
         super()
         self.children = data[:children] || ([data[:head]] + data[:tail])
