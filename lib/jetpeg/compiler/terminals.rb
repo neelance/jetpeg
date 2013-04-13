@@ -68,13 +68,5 @@ module JetPEG
         builder.cond successful, successful_block, builder.add_failure_reason(failed_block, start_input, expectation)
       end
     end
-    
-    class AnyCharacterTerminal < CharacterClassTerminal
-      SELECTIONS = [CharacterClassSingleCharacter.new("\0")]
-      
-      def initialize(data)
-        super({ selections: SELECTIONS, inverted: true })
-      end
-    end
   end
 end

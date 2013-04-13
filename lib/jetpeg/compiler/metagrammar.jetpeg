@@ -90,7 +90,7 @@ end
 rule terminal
   quoted_string <StringTerminal> /
   '[' ( '^' inverted:$true )? selections:( character_class_range / character_class_single_character )+ ']' <CharacterClassTerminal> /
-  '.' <AnyCharacterTerminal>
+  '.' <CharacterClassTerminal { selections: [ <CharacterClassEscapedCharacter "0"> ], inverted: true }>
 end
 
 rule function
