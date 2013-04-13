@@ -6,10 +6,20 @@ module JetPEG
       
       def initialize(data)
         @data = data
+        children = []
+        children << data[:child] if data and data[:child]
+        children.concat data[:children] if data and data[:children]
+        self.children = children
+
+        previous_child = nil
+        @children.each do |child|
+          child.local_label_source = previous_child
+          previous_child = child
+        end
+        
         @rule_name = nil
         @parameters = []
         @is_root = false
-        @children = []
         @has_return_value = :pending
         @has_return_value_recursion = false
         @local_label_source = nil

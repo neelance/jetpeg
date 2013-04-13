@@ -11,7 +11,7 @@ rule rule_expression
 end
 
 rule choice
-  head:creator tail:( '/' ws creator )+ <Choice> /
+  child:creator children:( '/' ws creator )+ <Choice> /
   creator
 end
 
@@ -88,9 +88,9 @@ rule rule_name
 end
 
 rule terminal
-  quoted_string <StringTerminal> /
+  content:quoted_string <StringTerminal> /
   '[' ( '^' inverted:$true )? selections:( character_class_range / character_class_single_character )+ ']' <CharacterClassTerminal> /
-  '.' <CharacterClassTerminal { selections: [ <CharacterClassEscapedCharacter "0"> ], inverted: true }>
+  '.' <CharacterClassTerminal { selections: [ <CharacterClassEscapedCharacter { character: "0" }> ], inverted: true }>
 end
 
 rule function
@@ -109,8 +109,8 @@ rule quoted_string
 end
 
 rule character_class_single_character
-  '\\' @:. <CharacterClassEscapedCharacter> /
-  ( !']' ) @:. <CharacterClassSingleCharacter>
+  '\\' character:. <CharacterClassEscapedCharacter> /
+  ( !']' ) character:. <CharacterClassSingleCharacter>
 end
 
 rule character_class_range

@@ -1,17 +1,6 @@
 module JetPEG
   module Compiler
     class Sequence < ParsingExpression
-      def initialize(data)
-        super
-        self.children = data[:children] || ([data[:head]] + data[:tail])
-        
-        previous_child = nil
-        @children.each do |child|
-          child.local_label_source = previous_child
-          previous_child = child
-        end
-      end
-  
       def calculate_has_return_value?
         @children.any?(&:has_return_value?)
       end
@@ -48,7 +37,7 @@ module JetPEG
     
     class Choice < ParsingExpression
       def self.new(data)
-        children = data[:children] || ([data[:head]] + data[:tail])
+        children = data[:child] ? ([data[:child]] + data[:children]) : data[:children]
         leftmost_primaries = children.map(&:get_leftmost_primary).uniq
         if leftmost_primaries.size == 1 and not leftmost_primaries.first.nil?
           label_name = self.object_id.to_s
@@ -60,11 +49,6 @@ module JetPEG
         end
         
         super
-      end
-
-      def initialize(data)
-        super
-        self.children = data[:children] || ([data[:head]] + data[:tail])
       end
       
       def calculate_has_return_value?
@@ -182,31 +166,19 @@ module JetPEG
     end
     
     class PositiveLookahead < ParsingExpression
-      def initialize(data)
-        super
-        @expression = data[:child]
-        self.children = [@expression]
-      end
-  
       def build(builder, start_input, modes, failed_block)
-        @expression.build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:pop] if @expression.has_return_value?
+        @data[:child].build builder, start_input, modes, failed_block
+        builder.call builder.output_functions[:pop] if @data[:child].has_return_value?
         start_input
       end
     end
     
     class NegativeLookahead < ParsingExpression
-      def initialize(data)
-        super
-        @expression = data[:child]
-        self.children = [@expression]
-      end
-  
       def build(builder, start_input, modes, failed_block)
         lookahead_failed_block = builder.create_block "lookahead_failed"
   
-        @expression.build builder, start_input, modes, lookahead_failed_block
-        builder.call builder.output_functions[:pop] if @expression.has_return_value?
+        @data[:child].build builder, start_input, modes, lookahead_failed_block
+        builder.call builder.output_functions[:pop] if @data[:child].has_return_value?
         builder.br failed_block
         
         builder.position_at_end lookahead_failed_block
@@ -280,19 +252,13 @@ module JetPEG
     end
     
     class ParenthesizedExpression < ParsingExpression
-      def initialize(data)
-        super
-        @expression = data[:child]
-        self.children = [@expression] if @expression
-      end
-      
       def calculate_has_return_value?
-        @expression && @expression.has_return_value?
+        @data[:child] && @data[:child].has_return_value?
       end
       
       def build(builder, start_input, modes, failed_block)
-        return start_input if @expression.nil?
-        @expression.build builder, start_input, modes, failed_block
+        return start_input if @data[:child].nil?
+        @data[:child].build builder, start_input, modes, failed_block
       end
     end
   end

@@ -65,19 +65,13 @@ module JetPEG
     end
     
     class ObjectCreator < ParsingExpression
-      def initialize(data)
-        super
-        @expression = data[:child]
-        self.children = [@expression]
-      end
-
       def calculate_has_return_value?
         true
       end
 
       def build(builder, start_input, modes, failed_block)
-        end_input = @expression.build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:push_nil] if not @expression.has_return_value?
+        end_input = @data[:child].build builder, start_input, modes, failed_block
+        builder.call builder.output_functions[:push_nil] if not @data[:child].has_return_value?
         if @data[:data]
           builder.call builder.output_functions[:set_as_source]
           @data[:data].build builder
@@ -88,19 +82,13 @@ module JetPEG
     end
     
     class ValueCreator < ParsingExpression
-      def initialize(data)
-        super
-        @expression = data[:child]
-        self.children = [@expression]
-      end
-
       def calculate_has_return_value?
         true
       end
 
       def build(builder, start_input, modes, failed_block)
-        end_input = @expression.build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:push_nil] if not @expression.has_return_value?
+        end_input = @data[:child].build builder, start_input, modes, failed_block
+        builder.call builder.output_functions[:push_nil] if not @data[:child].has_return_value?
         builder.call builder.output_functions[:make_value], builder.global_string_pointer(@data[:code]), builder.global_string_pointer(parser.filename), LLVM::Int64.from_i(@data[:code].line)
         end_input
       end

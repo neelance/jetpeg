@@ -2,7 +2,7 @@ module JetPEG
   module Compiler
     class StringTerminal < ParsingExpression
       def build(builder, start_input, modes, failed_block)
-        string = @data.gsub(/\\./) { |str| Compiler.translate_escaped_character str[1] }
+        string = @data[:content].gsub(/\\./) { |str| Compiler.translate_escaped_character str[1] }
         end_input = string.chars.inject(start_input) do |input, char|
           successful = builder.icmp :eq, builder.load(input), LLVM::Int8.from_i(char.ord), "failed"
           next_char_block = builder.create_block "string_terminal_next_char"
@@ -46,25 +46,25 @@ module JetPEG
     
     class CharacterClassSingleCharacter < ParsingExpression
       def build(builder, start_input, input_char, successful_block, failed_block)
-        successful = builder.icmp :eq, input_char, LLVM::Int8.from_i(data.ord), "matching"
-        builder.cond successful, successful_block, builder.add_failure_reason(failed_block, start_input, data)
+        successful = builder.icmp :eq, input_char, LLVM::Int8.from_i(@data[:character].ord), "matching"
+        builder.cond successful, successful_block, builder.add_failure_reason(failed_block, start_input, @data[:character])
       end
     end
     
     class CharacterClassEscapedCharacter < CharacterClassSingleCharacter
       def initialize(data)
-        super Compiler.translate_escaped_character(data)
+        super character: Compiler.translate_escaped_character(data[:character])
       end
     end
     
     class CharacterClassRange < ParsingExpression
       def build(builder, start_input, input_char, successful_block, failed_block)
-        expectation = "#{@data[:begin_char].data}-#{@data[:end_char].data}"
+        expectation = "#{@data[:begin_char].data[:character]}-#{@data[:end_char].data[:character]}"
         begin_char_successful = builder.create_block "character_class_range_begin_char_successful"
-        successful = builder.icmp :uge, input_char, LLVM::Int8.from_i(@data[:begin_char].data.ord), "begin_matching"
+        successful = builder.icmp :uge, input_char, LLVM::Int8.from_i(@data[:begin_char].data[:character].ord), "begin_matching"
         builder.cond successful, begin_char_successful, builder.add_failure_reason(failed_block, start_input, expectation)
         builder.position_at_end begin_char_successful
-        successful = builder.icmp :ule, input_char, LLVM::Int8.from_i(@data[:end_char].data.ord), "end_matching"
+        successful = builder.icmp :ule, input_char, LLVM::Int8.from_i(@data[:end_char].data[:character].ord), "end_matching"
         builder.cond successful, successful_block, builder.add_failure_reason(failed_block, start_input, expectation)
       end
     end
