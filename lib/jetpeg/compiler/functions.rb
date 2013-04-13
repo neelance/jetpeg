@@ -1,10 +1,6 @@
 module JetPEG
   module Compiler
     class TrueFunction < ParsingExpression
-      def initialize(data)
-        super
-      end
-      
       def calculate_has_return_value?
         true
       end
@@ -16,10 +12,6 @@ module JetPEG
     end
     
     class FalseFunction < ParsingExpression
-      def initialize(data)
-        super
-      end
-      
       def calculate_has_return_value?
         true
       end
@@ -66,13 +58,8 @@ module JetPEG
     end
     
     class ErrorFunction < ParsingExpression
-      def initialize(data)
-        super
-        @message = data[:message]
-      end
-      
       def build(builder, start_input, modes, failed_block)
-        builder.br builder.add_failure_reason(failed_block, start_input, @message, false)
+        builder.br builder.add_failure_reason(failed_block, start_input, @data[:message], false)
 
         dummy_block = builder.create_block "error_dummy"
         builder.position_at_end dummy_block
