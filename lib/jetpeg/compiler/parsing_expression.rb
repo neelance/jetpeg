@@ -181,29 +181,24 @@ module JetPEG
         0 # no hash used for Array.uniq, always eql?
       end
 
-      def is_primary
-        false
-      end
-
-      def get_leftmost_primary
-        if @children.empty?
+      def get_leftmost_leaf
+        if @children.empty? || self.is_a?(NegativeLookahead)
           nil
-        elsif @children.first.is_primary
+        elsif @children.first.children.empty? and not @children.first.is_a?(LocalValue)
           @children.first
         else
-          @children.first.get_leftmost_primary
+          @children.first.get_leftmost_leaf
         end
       end
       
-      def replace_leftmost_primary(replacement)
-        if @children.empty?
+      def replace_leftmost_leaf(replacement)
+        if @children.empty? || self.is_a?(NegativeLookahead)
           raise
-        elsif @children.first.is_primary
+        elsif @children.first.children.empty? and not @children.first.is_a?(LocalValue)
           @children[0] = replacement
-          @expression = replacement
           replacement.parent = self
         else
-          @children.first.replace_leftmost_primary replacement
+          @children.first.replace_leftmost_leaf replacement
         end
       end
     end

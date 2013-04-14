@@ -1,21 +1,15 @@
 module JetPEG
   module Compiler
     class Label < ParsingExpression
-      def initialize(data)
-        super
-        @expression = data[:child]
-        self.children = [@expression]
-      end
-      
       def calculate_has_return_value?
         !@data[:is_local]
       end
       
       def build(builder, start_input, modes, failed_block)
-        expression_end_input = @expression.build builder, start_input, modes, failed_block
+        expression_end_input = @children.first.build builder, start_input, modes, failed_block
         
-        if not @expression.has_return_value? or data[:name] == "@"
-          builder.call builder.output_functions[:pop] if @expression.has_return_value?
+        if not @children.first.has_return_value? or data[:name] == "@"
+          builder.call builder.output_functions[:pop] if @children.first.has_return_value?
           builder.call builder.output_functions[:push_input_range], start_input, expression_end_input
         end
 
@@ -70,8 +64,8 @@ module JetPEG
       end
 
       def build(builder, start_input, modes, failed_block)
-        end_input = @data[:child].build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:push_nil] if not @data[:child].has_return_value?
+        end_input = @children.first.build builder, start_input, modes, failed_block
+        builder.call builder.output_functions[:push_nil] if not @children.first.has_return_value?
         if @data[:data]
           builder.call builder.output_functions[:set_as_source]
           @data[:data].build builder
@@ -87,8 +81,8 @@ module JetPEG
       end
 
       def build(builder, start_input, modes, failed_block)
-        end_input = @data[:child].build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:push_nil] if not @data[:child].has_return_value?
+        end_input = @children.first.build builder, start_input, modes, failed_block
+        builder.call builder.output_functions[:push_nil] if not @children.first.has_return_value?
         builder.call builder.output_functions[:make_value], builder.global_string_pointer(@data[:code]), builder.global_string_pointer(parser.filename), LLVM::Int64.from_i(@data[:code].line)
         end_input
       end
