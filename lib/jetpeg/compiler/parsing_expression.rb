@@ -99,7 +99,7 @@ module JetPEG
           
           builder = Compiler::Builder.new
           builder.position_at_end entry_block
-          rule_end_input = builder.call internal_match_function(false, false), start_ptr, @mode_struct.null, *output_functions
+          rule_end_input = builder.call internal_match_function(false), start_ptr, @mode_struct.null, *output_functions, LLVM_STRING.null
           successful = builder.icmp :eq, rule_end_input, end_ptr
           builder.cond successful, successful_block, failed_block
           
@@ -107,24 +107,23 @@ module JetPEG
           builder.ret LLVM::TRUE
           
           builder.position_at_end failed_block
-          builder.call internal_match_function(true, false), start_ptr, @mode_struct.null, *output_functions
+          builder.call internal_match_function(true), start_ptr, @mode_struct.null, *output_functions, LLVM_STRING.null
           builder.ret LLVM::FALSE
           builder.dispose
         end
         @match_function
       end
 
-      def internal_match_function(traced, is_left_recursion)
-        if @internal_match_functions[[traced, is_left_recursion]].nil?
-          function = @mod.functions.add "#{@rule_name}_internal_match", [LLVM_STRING, @mode_struct, *OUTPUT_FUNCTION_POINTERS] + (is_left_recursion ? [LLVM_STRING] : []), LLVM_STRING
+      def internal_match_function(traced)
+        if @internal_match_functions[traced].nil?
+          function = @mod.functions.add "#{@rule_name}_internal_match", [LLVM_STRING, @mode_struct, *OUTPUT_FUNCTION_POINTERS, LLVM_STRING], LLVM_STRING
           function.linkage = :private
-          @internal_match_functions[[traced, is_left_recursion]] = function
+          @internal_match_functions[traced] = function
 
           entry = function.basic_blocks.append "entry"
           builder = Compiler::Builder.new
           builder.position_at_end entry
           builder.traced = traced
-          builder.is_left_recursion = is_left_recursion
           builder.rule_start_input = function.params[0]
           builder.output_functions = Hash[*OUTPUT_INTERFACE_SIGNATURES.keys.zip(function.params.to_a[2, OUTPUT_FUNCTION_POINTERS.size]).flatten]
           builder.left_recursion_occurred = builder.alloca LLVM::Int1
@@ -135,33 +134,30 @@ module JetPEG
           end_input = build builder, function.params[0], function.params[1], failed_block
           
           if @has_direct_recursion
-            if is_left_recursion
-              left_recursion_finished = builder.icmp :eq, end_input, builder.left_recursion_previous_end_input, "left_recursion_finished"
-              left_recursion_finished_block, left_recursion_not_finished_block = builder.cond left_recursion_finished
-              
-              builder.position_at_end left_recursion_finished_block
-              builder.ret end_input
-              
-              builder.position_at_end left_recursion_not_finished_block
-              left_recursion_failed = builder.icmp :ult, end_input, builder.left_recursion_previous_end_input, "left_recursion_failed"
-              left_recursion_failed, left_recursion_not_failed = builder.cond left_recursion_failed
-              
-              builder.position_at_end left_recursion_failed
-              builder.br failed_block
-              
-              builder.position_at_end left_recursion_not_failed
-              recursion_end_input = builder.call(internal_match_function(traced, true), *function.params.to_a[0..-2], end_input)
-              builder.ret recursion_end_input
-            else
-              left_recursion_occurred_block, no_left_recursion_occurred_block = builder.cond builder.load(builder.left_recursion_occurred, "left_recursion_occurred")
-              
-              builder.position_at_end left_recursion_occurred_block
-              recursion_end_input = builder.call internal_match_function(traced, true), *function.params, end_input
-              builder.ret recursion_end_input
-              
-              builder.position_at_end no_left_recursion_occurred_block
-              builder.ret end_input
-            end
+            recursion_block = builder.create_block "recursion"
+            no_recursion_block = builder.create_block "no_recursion"
+
+            in_left_recursion = builder.icmp :ne, builder.left_recursion_previous_end_input, LLVM_STRING.null, "in_left_recursion"
+            in_left_recursion_block, not_in_left_recursion_block = builder.cond in_left_recursion
+
+            builder.position_at_end in_left_recursion_block
+            left_recursion_finished = builder.icmp :eq, end_input, builder.left_recursion_previous_end_input, "left_recursion_finished"
+            left_recursion_not_finished_block = builder.create_block "left_recursion_not_finished"
+            builder.cond left_recursion_finished, no_recursion_block, left_recursion_not_finished_block
+            
+            builder.position_at_end left_recursion_not_finished_block
+            left_recursion_failed = builder.icmp :ult, end_input, builder.left_recursion_previous_end_input, "left_recursion_failed"
+            builder.cond left_recursion_failed, failed_block, recursion_block
+
+            builder.position_at_end not_in_left_recursion_block
+            builder.cond builder.load(builder.left_recursion_occurred, "left_recursion_occurred"), recursion_block, no_recursion_block
+
+            builder.position_at_end recursion_block
+            recursion_end_input = builder.call internal_match_function(traced), *function.params.to_a[0..-2], end_input
+            builder.ret recursion_end_input
+            
+            builder.position_at_end no_recursion_block
+            builder.ret end_input
           else
             builder.ret end_input
           end
@@ -170,7 +166,7 @@ module JetPEG
           builder.ret LLVM_STRING.null
           builder.dispose
         end
-        @internal_match_functions[[traced, is_left_recursion]]
+        @internal_match_functions[traced]
       end
 
       def ==(other)

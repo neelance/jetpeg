@@ -2,7 +2,7 @@ module JetPEG
   module Compiler
     class Sequence < ParsingExpression
       def calculate_has_return_value?
-        @children.any?(&:has_return_value?)
+        @children.map(&:has_return_value?).any?
       end
       
       def build(builder, start_input, modes, failed_block)
@@ -52,7 +52,7 @@ module JetPEG
       end
       
       def calculate_has_return_value?
-        @children.any?(&:has_return_value?)
+        @children.map(&:has_return_value?).any?
       end
       
       def build(builder, start_input, modes, failed_block)
@@ -218,24 +218,27 @@ module JetPEG
         rule_end_input_phi = DynamicPhi.new builder, LLVM_STRING
 
         if referenced == rule
-          left_recursion = builder.icmp :eq, start_input, builder.rule_start_input, "left_recursion"
-          left_recursion_block, no_left_recursion_block = builder.cond left_recursion
+          found_left_recursion = builder.icmp :eq, start_input, builder.rule_start_input, "found_left_recursion"
+          found_left_recursion_block, found_no_left_recursion_block = builder.cond found_left_recursion
           
-          builder.position_at_end left_recursion_block
-          if builder.is_left_recursion
-            rule_end_input_phi << builder.left_recursion_previous_end_input
-            builder.br successful_block
-          else
-            builder.store LLVM::TRUE, builder.left_recursion_occurred
-            builder.br failed_block
-          end
+          builder.position_at_end found_left_recursion_block
+          in_left_recursion = builder.icmp :ne, builder.left_recursion_previous_end_input, LLVM_STRING.null, "in_left_recursion"
+          in_left_recursion_block, not_in_left_recursion_block = builder.cond in_left_recursion
+
+          builder.position_at_end in_left_recursion_block
+          rule_end_input_phi << builder.left_recursion_previous_end_input
+          builder.br successful_block
+         
+          builder.position_at_end not_in_left_recursion_block
+          builder.store LLVM::TRUE, builder.left_recursion_occurred
+          builder.br failed_block
           
-          builder.position_at_end no_left_recursion_block
+          builder.position_at_end found_no_left_recursion_block
         end
         
         @arguments.each { |arg| arg.build builder, start_input, modes, failed_block }
         @arguments.size.times { builder.call builder.output_functions[:locals_push] }
-        call_end_input = builder.call referenced.internal_match_function(builder.traced, false), start_input, modes, *builder.output_functions.values
+        call_end_input = builder.call referenced.internal_match_function(builder.traced), start_input, modes, *builder.output_functions.values, LLVM_STRING.null
         rule_end_input_phi << call_end_input
         @arguments.size.times { builder.call builder.output_functions[:locals_pop] }
         
