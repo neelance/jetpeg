@@ -51,9 +51,7 @@ module JetPEG
       end
       
       def build(builder, start_input, modes, failed_block)
-        index = get_local_label @data[:name], 0
-        raise CompilationError.new("Undefined local value \"%#{@data[:name]}\".", rule) if index.nil?
-        builder.call builder.output_functions[:locals_load], LLVM::Int64.from_i(index)
+        builder.call builder.output_functions[:locals_load], LLVM::Int64.from_i(get_local_label(@data[:name], 0))
         start_input
       end
     end

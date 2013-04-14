@@ -226,6 +226,7 @@ module JetPEG
 
           builder.position_at_end in_left_recursion_block
           rule_end_input_phi << builder.left_recursion_previous_end_input
+          builder.call builder.output_functions[:locals_load], LLVM::Int64.from_i(get_local_label("<left_recursion_value>", 0)) if has_return_value?
           builder.br successful_block
          
           builder.position_at_end not_in_left_recursion_block

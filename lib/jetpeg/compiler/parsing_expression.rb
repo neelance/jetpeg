@@ -153,7 +153,9 @@ module JetPEG
             builder.cond builder.load(builder.left_recursion_occurred, "left_recursion_occurred"), recursion_block, no_recursion_block
 
             builder.position_at_end recursion_block
+            builder.call builder.output_functions[:locals_push] if has_return_value?
             recursion_end_input = builder.call internal_match_function(traced), *function.params.to_a[0..-2], end_input
+            builder.call builder.output_functions[:locals_pop] if has_return_value?
             builder.ret recursion_end_input
             
             builder.position_at_end no_recursion_block
@@ -182,7 +184,7 @@ module JetPEG
       end
 
       def get_leftmost_leaf
-        if @children.empty? || self.is_a?(NegativeLookahead)
+        if @children.empty? or self.is_a?(NegativeLookahead)
           nil
         elsif @children.first.children.empty? and not @children.first.is_a?(LocalValue)
           @children.first
@@ -192,7 +194,7 @@ module JetPEG
       end
       
       def replace_leftmost_leaf(replacement)
-        if @children.empty? || self.is_a?(NegativeLookahead)
+        if @children.empty? or self.is_a?(NegativeLookahead)
           raise
         elsif @children.first.children.empty? and not @children.first.is_a?(LocalValue)
           @children[0] = replacement

@@ -189,7 +189,7 @@ class LabelsTests < Test::Unit::TestCase
         [0-9]+
       end
     "
-    assert grammar.parse_rule(:expr, "1-2-3")# == { sub: { l: { sub: { l: "1", r: "2" } }, r: "3" } }
+    assert grammar.parse_rule(:expr, "1-2-3") == { sub: { l: { sub: { l: "1", r: "2" } }, r: "3" } }
   end
   
 end
