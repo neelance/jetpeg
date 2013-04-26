@@ -227,6 +227,7 @@ module JetPEG
       end
       success_value.dispose
       
+      raise if output_stack.size > 1 or not locals_stack.empty?
       output = output_stack.last || {} 
       check_malloc_counter
       

@@ -99,7 +99,7 @@ module JetPEG
           
           builder = Compiler::Builder.new
           builder.position_at_end entry_block
-          rule_end_input = builder.call internal_match_function(false), start_ptr, @mode_struct.null, *output_functions, LLVM_STRING.null
+          rule_end_input = builder.call internal_match_function(false), start_ptr, @mode_struct.null, *output_functions
           successful = builder.icmp :eq, rule_end_input, end_ptr
           builder.cond successful, successful_block, failed_block
           
@@ -107,7 +107,7 @@ module JetPEG
           builder.ret LLVM::TRUE
           
           builder.position_at_end failed_block
-          builder.call internal_match_function(true), start_ptr, @mode_struct.null, *output_functions, LLVM_STRING.null
+          builder.call internal_match_function(true), start_ptr, @mode_struct.null, *output_functions
           builder.ret LLVM::FALSE
           builder.dispose
         end
@@ -116,19 +116,24 @@ module JetPEG
 
       def internal_match_function(traced)
         if @internal_match_functions[traced].nil?
-          function = @mod.functions.add "#{@rule_name}_internal_match", [LLVM_STRING, @mode_struct, *OUTPUT_FUNCTION_POINTERS, LLVM_STRING], LLVM_STRING
+          function = @mod.functions.add "#{@rule_name}_internal_match", [LLVM_STRING, @mode_struct, *OUTPUT_FUNCTION_POINTERS], LLVM_STRING
           function.linkage = :private
           @internal_match_functions[traced] = function
 
-          entry = function.basic_blocks.append "entry"
           builder = Compiler::Builder.new
-          builder.position_at_end entry
+          entry_block = function.basic_blocks.append "entry"
           builder.traced = traced
           builder.rule_start_input = function.params[0]
           builder.output_functions = Hash[*OUTPUT_INTERFACE_SIGNATURES.keys.zip(function.params.to_a[2, OUTPUT_FUNCTION_POINTERS.size]).flatten]
+
+          builder.position_at_end entry_block
+          recursion_loop_block = builder.create_block "recursion_loop"
+          builder.br recursion_loop_block
+
+          builder.position_at_end recursion_loop_block
+          builder.left_recursion_previous_end_input = builder.phi LLVM_STRING, { entry_block => LLVM_STRING.null }, "left_recursion_previous_end_input"
           builder.left_recursion_occurred = builder.alloca LLVM::Int1
           builder.store LLVM::FALSE, builder.left_recursion_occurred
-          builder.left_recursion_previous_end_input = function.params[-1]
           
           failed_block = builder.create_block "failed"
           end_input = build builder, function.params[0], function.params[1], failed_block
@@ -141,6 +146,7 @@ module JetPEG
             in_left_recursion_block, not_in_left_recursion_block = builder.cond in_left_recursion
 
             builder.position_at_end in_left_recursion_block
+            builder.call builder.output_functions[:locals_pop] if has_return_value?
             left_recursion_finished = builder.icmp :eq, end_input, builder.left_recursion_previous_end_input, "left_recursion_finished"
             left_recursion_not_finished_block = builder.create_block "left_recursion_not_finished"
             builder.cond left_recursion_finished, no_recursion_block, left_recursion_not_finished_block
@@ -154,15 +160,13 @@ module JetPEG
 
             builder.position_at_end recursion_block
             builder.call builder.output_functions[:locals_push] if has_return_value?
-            recursion_end_input = builder.call internal_match_function(traced), *function.params.to_a[0..-2], end_input
-            builder.call builder.output_functions[:locals_pop] if has_return_value?
-            builder.ret recursion_end_input
+            builder.left_recursion_previous_end_input.add_incoming recursion_block => end_input
+            builder.br recursion_loop_block
             
             builder.position_at_end no_recursion_block
-            builder.ret end_input
-          else
-            builder.ret end_input
           end
+
+          builder.ret end_input
           
           builder.position_at_end failed_block
           builder.ret LLVM_STRING.null

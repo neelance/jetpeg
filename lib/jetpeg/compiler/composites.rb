@@ -238,7 +238,7 @@ module JetPEG
         
         @arguments.each { |arg| arg.build builder, start_input, modes, failed_block }
         @arguments.size.times { builder.call builder.output_functions[:locals_push] }
-        call_end_input = builder.call referenced.internal_match_function(builder.traced), start_input, modes, *builder.output_functions.values, LLVM_STRING.null
+        call_end_input = builder.call referenced.internal_match_function(builder.traced), start_input, modes, *builder.output_functions.values
         rule_end_input_phi << call_end_input
         @arguments.size.times { builder.call builder.output_functions[:locals_pop] }
         
