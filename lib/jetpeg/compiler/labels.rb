@@ -81,7 +81,7 @@ module JetPEG
       def build(builder, start_input, modes, failed_block)
         end_input = @children.first.build builder, start_input, modes, failed_block
         builder.call builder.output_functions[:push_nil] if not @children.first.has_return_value?
-        builder.call builder.output_functions[:make_value], builder.global_string_pointer(@data[:code]), builder.global_string_pointer(parser.filename), LLVM::Int64.from_i(@data[:code].line)
+        builder.call builder.output_functions[:make_value], builder.global_string_pointer(@data[:code]), builder.global_string_pointer(parser.options[:filename]), LLVM::Int64.from_i(@data[:code].line)
         end_input
       end
     end

@@ -129,12 +129,12 @@ class LabelsTests < Test::Unit::TestCase
   end
   
   def test_object_creator
-    rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' <TestClassA> / 'd' char:. 'f' <TestClassB>"
-    assert rule.parse("abc", class_scope: self.class) == TestClassA.new({ char: "b" })
-    assert rule.parse("def", class_scope: self.class) == TestClassB.new({ char: "e" })
+    rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' <TestClassA> / 'd' char:. 'f' <TestClassB>", class_scope: self.class
+    assert rule.parse("abc") == TestClassA.new({ char: "b" })
+    assert rule.parse("def") == TestClassB.new({ char: "e" })
     
-    rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' <TestClassA { a: 'test1', b: [ <TestClassB true>, <TestClassB { r: @char }> ] }>"
-    assert rule.parse("abc", class_scope: self.class) == TestClassA.new({ a: "test1", b: [ TestClassB.new(true), TestClassB.new({ r: "b" }) ] })
+    rule = JetPEG::Compiler.compile_rule "'a' char:. 'c' <TestClassA { a: 'test1', b: [ <TestClassB true>, <TestClassB { r: @char }> ] }>", class_scope: self.class
+    assert rule.parse("abc") == TestClassA.new({ a: "test1", b: [ TestClassB.new(true), TestClassB.new({ r: "b" }) ] })
   end
   
   def test_value_creator
@@ -142,7 +142,7 @@ class LabelsTests < Test::Unit::TestCase
       'a' char:. 'c' { @char.upcase } /
       word:'def' { @word.chars.map { |c| c.ord } } /
       'ghi' { [__FILE__, __LINE__] }
-    ", "test.jetpeg"
+    ", filename: "test.jetpeg"
     assert rule.parse("abc") == "B"
     assert rule.parse("def") == ["d".ord, "e".ord, "f".ord]
     assert rule.parse("ghi") == ["test.jetpeg", 4]

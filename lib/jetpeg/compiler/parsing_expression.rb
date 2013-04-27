@@ -1,7 +1,7 @@
 module JetPEG
   module Compiler
     class ParsingExpression
-      attr_accessor :data, :parent, :rule_name, :parameters, :is_root, :local_label_source, :has_direct_recursion
+      attr_accessor :data, :parent, :rule_name, :parameters, :is_root, :local_label_source
       attr_reader :children
       
       def initialize(data)
@@ -23,7 +23,6 @@ module JetPEG
         @has_return_value = :pending
         @has_return_value_recursion = false
         @local_label_source = nil
-        @has_direct_recursion = false
       end
       
       def children=(array)

@@ -190,7 +190,6 @@ module JetPEG
         super
         @arguments = data[:arguments] || []
         self.children = @arguments
-        @recursion = false
       end
       
       def referenced
@@ -206,8 +205,6 @@ module JetPEG
         begin
           referenced.has_return_value?
         rescue Recursion
-          @recursion = true
-          rule.has_direct_recursion = true if referenced == rule
           true
         end
       end

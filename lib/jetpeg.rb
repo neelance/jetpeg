@@ -1,7 +1,8 @@
 require "jetpeg/compiler"
 
 module JetPEG
-  def self.load(filename)
-    Compiler.compile_grammar IO.read(filename), filename
+  def self.load(filename, options = {})
+    options[:filename] = filename
+    Compiler.compile_grammar IO.read(filename), options
   end
 end

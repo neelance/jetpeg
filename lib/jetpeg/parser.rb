@@ -76,31 +76,33 @@ module JetPEG
   OUTPUT_FUNCTION_POINTERS = OUTPUT_INTERFACE_SIGNATURES.values.map { |fun_type| LLVM::Pointer(fun_type) }
 
   class Parser
-    @@default_options = { raise_on_failure: true, class_scope: ::Object, bitcode_optimization: true, machine_code_optimization: 0, track_malloc: false }
+    @@default_options = { filename: "grammar", raise_on_failure: true, class_scope: ::Object, bitcode_optimization: true, machine_code_optimization: 0, track_malloc: false }
     
     def self.default_options
       @@default_options
     end
     
-    attr_reader :mod, :execution_engine
+    attr_reader :mod, :options, :execution_engine
     
-    def initialize(mod)
+    def initialize(mod, options = {})
       @mod = mod
+      @options = options
+      @options.merge!(@@default_options) { |key, oldval, newval| oldval }
+
       @execution_engine = nil
       @rules = nil
     end
     
-    def parse(input, options = {})
-      parse_rule @rules.values.first.rule_name, input, options
+    def parse(input)
+      parse_rule @rules.values.first.rule_name, input
     end
     
-    def parse_rule(rule_name, input, options = {})
+    def parse_rule(rule_name, input)
       raise ArgumentError.new("Input must be a String.") if not input.is_a? String
-      options.merge!(@@default_options) { |key, oldval, newval| oldval }
       
       if @execution_engine.nil?
-        @execution_engine = LLVM::JITCompiler.new @mod, options[:machine_code_optimization]
-        if options[:bitcode_optimization]
+        @execution_engine = LLVM::JITCompiler.new @mod, @options[:machine_code_optimization]
+        if @options[:bitcode_optimization]
           pass_manager = LLVM::PassManager.new @execution_engine # TODO tweak passes
           pass_manager.inline!
           pass_manager.mem2reg! # alternative: pass_manager.scalarrepl!
@@ -174,7 +176,7 @@ module JetPEG
         },
         new_checked_ffi_function.call(:make_object, [:string], :void) { |class_name|
           data = output_stack.pop
-          object_class = class_name.split("::").map(&:to_sym).inject(options[:class_scope]) { |scope, name| scope.const_get(name) }
+          object_class = class_name.split("::").map(&:to_sym).inject(@options[:class_scope]) { |scope, name| scope.const_get(name) }
           output_stack << object_class.new(data)
         },
         new_checked_ffi_function.call(:pop, [], :void) {
@@ -222,7 +224,7 @@ module JetPEG
         success_value.dispose
         check_malloc_counter
         @failure_reason = ParsingError.new input, failure_position, failure_expectations, failure_other_reasons
-        raise @failure_reason if options[:raise_on_failure]
+        raise @failure_reason if @options[:raise_on_failure]
         return nil
       end
       success_value.dispose
@@ -255,32 +257,28 @@ module JetPEG
   end
   
   class JitParser < Parser
-    attr_reader :failure_reason, :filename, :mode_names
+    attr_reader :failure_reason, :mode_names
     
-    def initialize(rules, filename = "grammar")
-      super(nil)
+    def initialize(rules, options = {})
+      super(nil, options)
       
       @rules = rules
       @rules.each_value { |rule| rule.parent = self }
-      @filename = filename
 
       @rules.values.first.is_root = true
-      
-      @rules.each_value(&:has_return_value?) # sanity check
+      build
     end
     
-    def parse_rule(rule_name, input, options = {})
+    def parse_rule(rule_name, input)
       if @mod.nil? or not @rules[rule_name].is_root
         @rules[rule_name].is_root = true
-        build options
+        build
       end
       
       super
     end
     
-    def build(options = {})
-      options.merge!(@@default_options) { |key, oldval, newval| oldval }
-
+    def build
       if @execution_engine
         @execution_engine.dispose # disposes module, too
         @execution_engine = nil
@@ -292,7 +290,7 @@ module JetPEG
       
       malloc_counter = nil
       free_counter = nil
-      if options[:track_malloc]
+      if @options[:track_malloc]
         malloc_counter = mod.globals.add LLVM::Int64, :malloc_counter
         malloc_counter.initializer = LLVM::Int64.from_i(0)
         free_counter = mod.globals.add LLVM::Int64, :free_counter

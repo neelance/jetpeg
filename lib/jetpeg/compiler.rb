@@ -88,7 +88,7 @@ module JetPEG
       if @@metagrammar_parser.nil?
         begin
           mod = LLVM::Module.parse_bitcode File.join(File.dirname(__FILE__), "compiler/metagrammar.jetpeg.bc")
-          @@metagrammar_parser = Parser.new mod
+          @@metagrammar_parser = Parser.new mod, class_scope: self, raise_on_failure: true
         rescue Exception => e
           $stderr.puts "Could not load metagrammar:", e, e.backtrace
           exit
@@ -97,30 +97,30 @@ module JetPEG
       @@metagrammar_parser
     end
 
-    def self.compile_rule(code, filename = "grammar")
-      expression = metagrammar_parser.parse_rule :rule_expression, code, class_scope: self, raise_on_failure: true
+    def self.compile_rule(code, options = {})
+      expression = metagrammar_parser.parse_rule :rule_expression, code
       expression.rule_name = :rule
-      JitParser.new({ :rule => expression }, filename)
+      JitParser.new({ :rule => expression }, options)
     rescue ParsingError => e
       raise CompilationError, "Syntax error in grammar: #{e}"
     end
     
-    def self.compile_grammar(code, filename = "grammar")
-      data = metagrammar_parser.parse_rule :grammar, code, class_scope: self, raise_on_failure: true
-      parser = load_parser data, filename
+    def self.compile_grammar(code, options = {})
+      data = metagrammar_parser.parse_rule :grammar, code
+      parser = load_parser data, options
       parser
     rescue ParsingError => e
       raise CompilationError, "Syntax error in grammar: #{e}"
     end
     
-    def self.load_parser(data, filename)
+    def self.load_parser(data, options)
       rules = data[:rules].each_with_object({}) do |element, h|
         expression = element[:child]
         expression.rule_name = element[:rule_name].to_sym
         expression.parameters = (element[:parameters] || []).map{ |p| Parameter.new p.data[:name] }
         h[expression.rule_name] = expression
       end
-      JitParser.new rules, filename
+      JitParser.new rules, options
     end
     
     def self.translate_escaped_character(char)
