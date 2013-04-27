@@ -55,17 +55,6 @@ module JetPEG
         self.insert_block.parent.basic_blocks.append name
       end
       
-      def cond(condition, if_true = nil, if_false = nil)
-        if if_true.nil? and if_false.nil?
-          if_true = create_block "if_true"
-          if_false = create_block "if_false"
-          super condition, if_true, if_false
-          [if_true, if_false]
-        else
-          super
-        end
-      end
-      
       def add_failure_reason(failed_block, position, reason, is_expectation = true)
         return failed_block if not @traced
         

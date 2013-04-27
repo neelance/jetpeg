@@ -2,17 +2,13 @@ module JetPEG
   module Compiler
     class ParsingExpression
       attr_accessor :data, :parent, :rule_name, :parameters, :is_root, :local_label_source
-      attr_reader :children
       
       def initialize(data)
         @data = data
-        children = []
-        children << data[:child] if data and data[:child]
-        children.concat data[:children] if data and data[:children]
-        self.children = children
 
         previous_child = nil
-        @children.each do |child|
+        children.each do |child|
+          child.parent = self
           child.local_label_source = previous_child
           previous_child = child
         end
@@ -20,13 +16,17 @@ module JetPEG
         @rule_name = nil
         @parameters = []
         @is_root = false
+        @children = nil
         @rule_has_return_value = :pending
         @local_label_source = nil
       end
+
+      def children
+        @children ||= collect_children
+      end
       
-      def children=(array)
-        @children = array
-        @children.each { |child| child.parent = self }
+      def collect_children
+        (@data && @data[:child]) ? [@data[:child]] : []
       end
       
       def parser
@@ -66,7 +66,7 @@ module JetPEG
       end
       
       def all_mode_names
-        @children.map(&:all_mode_names).flatten
+        children.map(&:all_mode_names).flatten
       end
 
       def set_runtime(mod, mode_struct)
@@ -176,23 +176,23 @@ module JetPEG
       end
 
       def get_leftmost_leaf
-        if @children.empty? or self.is_a?(NegativeLookahead)
+        if children.empty? or self.is_a?(NegativeLookahead)
           nil
-        elsif @children.first.children.empty? and not @children.first.is_a?(LocalValue)
-          @children.first
+        elsif children.first.children.empty? and not children.first.is_a?(LocalValue)
+          children.first
         else
-          @children.first.get_leftmost_leaf
+          children.first.get_leftmost_leaf
         end
       end
       
       def replace_leftmost_leaf(replacement)
-        if @children.empty? or self.is_a?(NegativeLookahead)
+        if children.empty? or self.is_a?(NegativeLookahead)
           raise
-        elsif @children.first.children.empty? and not @children.first.is_a?(LocalValue)
-          @children[0] = replacement
+        elsif children.first.children.empty? and not children.first.is_a?(LocalValue)
+          children[0] = replacement
           replacement.parent = self
         else
-          @children.first.replace_leftmost_leaf replacement
+          children.first.replace_leftmost_leaf replacement
         end
       end
     end
