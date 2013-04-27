@@ -49,7 +49,7 @@ module JetPEG
   
   module Compiler
     class Builder < LLVM::Builder
-      attr_accessor :traced, :left_recursion_occurred, :left_recursion_previous_end_input, :rule_start_input, :output_functions, :add_failure_callback
+      attr_accessor :traced, :direct_left_recursion_occurred, :left_recursion_previous_end_input, :rule_start_input, :output_functions, :add_failure_callback
       
       def create_block(name)
         self.insert_block.parent.basic_blocks.append name

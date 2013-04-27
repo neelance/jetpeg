@@ -217,23 +217,21 @@ module JetPEG
         rule_end_input_phi = DynamicPhi.new builder, LLVM_STRING
 
         if referenced == rule
-          found_left_recursion = builder.icmp :eq, start_input, builder.rule_start_input, "found_left_recursion"
-          found_left_recursion_block, found_no_left_recursion_block = builder.cond found_left_recursion
+          is_direct_left_recursion = builder.icmp :eq, start_input, builder.rule_start_input, "is_direct_left_recursion"
+          direct_left_recursion_block, no_direct_left_recursion_block = builder.cond is_direct_left_recursion
           
-          builder.position_at_end found_left_recursion_block
-          in_left_recursion = builder.icmp :ne, builder.left_recursion_previous_end_input, LLVM_STRING.null, "in_left_recursion"
-          in_left_recursion_block, not_in_left_recursion_block = builder.cond in_left_recursion
+          builder.position_at_end direct_left_recursion_block
+          builder.store LLVM::TRUE, builder.direct_left_recursion_occurred
+          in_recursion_loop = builder.icmp :ne, builder.left_recursion_previous_end_input, LLVM_STRING.null, "in_recursion_loop"
+          in_recursion_loop_block = builder.create_block "in_recursion_loop"
+          builder.cond in_recursion_loop, in_recursion_loop_block, failed_block
 
-          builder.position_at_end in_left_recursion_block
+          builder.position_at_end in_recursion_loop_block
           rule_end_input_phi << builder.left_recursion_previous_end_input
           builder.call builder.output_functions[:locals_load], LLVM::Int64.from_i(get_local_label("<left_recursion_value>", 0)) if has_return_value?
           builder.br successful_block
-         
-          builder.position_at_end not_in_left_recursion_block
-          builder.store LLVM::TRUE, builder.left_recursion_occurred
-          builder.br failed_block
           
-          builder.position_at_end found_no_left_recursion_block
+          builder.position_at_end no_direct_left_recursion_block
         end
         
         @arguments.each { |arg| arg.build builder, start_input, modes, failed_block }

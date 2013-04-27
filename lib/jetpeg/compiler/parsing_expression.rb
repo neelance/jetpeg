@@ -127,45 +127,44 @@ module JetPEG
           builder.output_functions = Hash[*OUTPUT_INTERFACE_SIGNATURES.keys.zip(function.params.to_a[2, OUTPUT_FUNCTION_POINTERS.size]).flatten]
 
           builder.position_at_end entry_block
+          builder.direct_left_recursion_occurred = builder.alloca LLVM::Int1, "direct_left_recursion_occurred"
           recursion_loop_block = builder.create_block "recursion_loop"
           builder.br recursion_loop_block
 
           builder.position_at_end recursion_loop_block
           builder.left_recursion_previous_end_input = builder.phi LLVM_STRING, { entry_block => LLVM_STRING.null }, "left_recursion_previous_end_input"
-          builder.left_recursion_occurred = builder.alloca LLVM::Int1
-          builder.store LLVM::FALSE, builder.left_recursion_occurred
+          builder.store LLVM::FALSE, builder.direct_left_recursion_occurred
           
           failed_block = builder.create_block "failed"
           end_input = build builder, function.params[0], function.params[1], failed_block
           
-          if @has_direct_recursion
-            recursion_block = builder.create_block "recursion"
-            no_recursion_block = builder.create_block "no_recursion"
+          direct_left_recursion_occurred_block = builder.create_block "direct_left_recursion_occurred"
+          in_left_recursion_block = builder.create_block "in_left_recursion_block"
+          left_recursion_not_finished_block = builder.create_block "left_recursion_not_finished"
+          recursion_block = builder.create_block "recursion"
+          no_recursion_block = builder.create_block "no_recursion"
 
-            in_left_recursion = builder.icmp :ne, builder.left_recursion_previous_end_input, LLVM_STRING.null, "in_left_recursion"
-            in_left_recursion_block, not_in_left_recursion_block = builder.cond in_left_recursion
+          builder.cond builder.load(builder.direct_left_recursion_occurred, "direct_left_recursion_occurred"), direct_left_recursion_occurred_block, no_recursion_block
 
-            builder.position_at_end in_left_recursion_block
-            builder.call builder.output_functions[:locals_pop] if has_return_value?
-            left_recursion_finished = builder.icmp :eq, end_input, builder.left_recursion_previous_end_input, "left_recursion_finished"
-            left_recursion_not_finished_block = builder.create_block "left_recursion_not_finished"
-            builder.cond left_recursion_finished, no_recursion_block, left_recursion_not_finished_block
-            
-            builder.position_at_end left_recursion_not_finished_block
-            left_recursion_failed = builder.icmp :ult, end_input, builder.left_recursion_previous_end_input, "left_recursion_failed"
-            builder.cond left_recursion_failed, failed_block, recursion_block
+          builder.position_at_end direct_left_recursion_occurred_block
+          in_left_recursion = builder.icmp :ne, builder.left_recursion_previous_end_input, LLVM_STRING.null, "in_left_recursion"
+          builder.cond in_left_recursion, in_left_recursion_block, recursion_block
 
-            builder.position_at_end not_in_left_recursion_block
-            builder.cond builder.load(builder.left_recursion_occurred, "left_recursion_occurred"), recursion_block, no_recursion_block
+          builder.position_at_end in_left_recursion_block
+          builder.call builder.output_functions[:locals_pop] if has_return_value?
+          left_recursion_finished = builder.icmp :eq, end_input, builder.left_recursion_previous_end_input, "left_recursion_finished"
+          builder.cond left_recursion_finished, no_recursion_block, left_recursion_not_finished_block
+          
+          builder.position_at_end left_recursion_not_finished_block
+          left_recursion_failed = builder.icmp :ult, end_input, builder.left_recursion_previous_end_input, "left_recursion_failed"
+          builder.cond left_recursion_failed, failed_block, recursion_block
 
-            builder.position_at_end recursion_block
-            builder.call builder.output_functions[:locals_push] if has_return_value?
-            builder.left_recursion_previous_end_input.add_incoming recursion_block => end_input
-            builder.br recursion_loop_block
-            
-            builder.position_at_end no_recursion_block
-          end
-
+          builder.position_at_end recursion_block
+          builder.call builder.output_functions[:locals_push] if has_return_value?
+          builder.left_recursion_previous_end_input.add_incoming recursion_block => end_input
+          builder.br recursion_loop_block
+          
+          builder.position_at_end no_recursion_block
           builder.ret end_input
           
           builder.position_at_end failed_block
