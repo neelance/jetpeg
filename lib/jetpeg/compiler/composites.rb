@@ -46,7 +46,7 @@ module JetPEG
           children.each { |child| child.replace_leftmost_leaf local_value }
 
           local_label = Label.new child: leftmost_primaries.first, is_local: true, name: label_name
-          return Sequence.new children: [local_label, Choice.new(children: children)]
+          return Sequence.new children: [local_label, super]
         end
         
         super
