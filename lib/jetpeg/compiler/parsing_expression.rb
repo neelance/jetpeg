@@ -20,8 +20,7 @@ module JetPEG
         @rule_name = nil
         @parameters = []
         @is_root = false
-        @has_return_value = :pending
-        @has_return_value_recursion = false
+        @rule_has_return_value = :pending
         @local_label_source = nil
       end
       
@@ -42,21 +41,12 @@ module JetPEG
         @rule_name ? self : parent.rule
       end
       
-      def has_return_value?
-        if @has_return_value == :pending
-          raise Recursion.new if @has_return_value_recursion
-          begin
-            @has_return_value_recursion = true
-            @has_return_value = calculate_has_return_value?
-          ensure
-            @has_return_value_recursion = false
-          end
+      def rule_has_return_value?
+        if @rule_has_return_value == :pending
+          @rule_has_return_value = true # value for recursion
+          internal_match_function false
         end
-        @has_return_value
-      end
-      
-      def calculate_has_return_value?
-        false
+        @rule_has_return_value
       end
       
       def get_local_label(name, stack_index)
@@ -135,7 +125,7 @@ module JetPEG
           builder.store LLVM::FALSE, builder.direct_left_recursion_occurred
           
           failed_block = builder.create_block "failed"
-          end_input = build builder, function.params[0], function.params[1], failed_block
+          end_input, @rule_has_return_value = build builder, function.params[0], function.params[1], failed_block
           
           direct_left_recursion_occurred_block = builder.create_block "direct_left_recursion_occurred"
           in_left_recursion_block = builder.create_block "in_left_recursion_block"
@@ -150,7 +140,7 @@ module JetPEG
           builder.cond in_left_recursion, in_left_recursion_block, recursion_block
 
           builder.position_at_end in_left_recursion_block
-          builder.call builder.output_functions[:locals_pop] if has_return_value?
+          builder.call builder.output_functions[:locals_pop] if @rule_has_return_value
           left_recursion_finished = builder.icmp :eq, end_input, builder.left_recursion_previous_end_input, "left_recursion_finished"
           builder.cond left_recursion_finished, no_recursion_block, left_recursion_not_finished_block
           
@@ -159,7 +149,7 @@ module JetPEG
           builder.cond left_recursion_failed, failed_block, recursion_block
 
           builder.position_at_end recursion_block
-          builder.call builder.output_functions[:locals_push] if has_return_value?
+          builder.call builder.output_functions[:locals_push] if @rule_has_return_value
           builder.left_recursion_previous_end_input.add_incoming recursion_block => end_input
           builder.br recursion_loop_block
           
@@ -222,7 +212,7 @@ module JetPEG
       end
       
       def build(builder, start_input, modes, failed_block)
-        start_input
+        return start_input, false
       end
     end
   end

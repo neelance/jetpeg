@@ -1,24 +1,16 @@
 module JetPEG
   module Compiler
     class TrueFunction < ParsingExpression
-      def calculate_has_return_value?
-        true
-      end
-      
       def build(builder, start_input, modes, failed_block)
         builder.call builder.output_functions[:push_boolean], LLVM::TRUE
-        start_input
+        return start_input, true
       end
     end
     
     class FalseFunction < ParsingExpression
-      def calculate_has_return_value?
-        true
-      end
-      
       def build(builder, start_input, modes, failed_block)
         builder.call builder.output_functions[:push_boolean], LLVM::FALSE
-        start_input
+        return start_input, true
       end
     end
     
@@ -32,7 +24,7 @@ module JetPEG
         builder.cond successful, exit_block, builder.add_failure_reason(failed_block, start_input, "$match failed", false) # TODO better failure message
         
         builder.position_at_end exit_block
-        end_input
+        return end_input, false
       end
     end
     
@@ -42,7 +34,7 @@ module JetPEG
 
         dummy_block = builder.create_block "error_dummy"
         builder.position_at_end dummy_block
-        start_input
+        return start_input, false
       end
     end
     
@@ -55,14 +47,14 @@ module JetPEG
     class EnterModeFunction < ModeFunction      
       def build(builder, start_input, modes, failed_block)
         new_modes = builder.insert_value modes, LLVM::TRUE, parser.mode_names.index(@data[:name])
-        @children.first.build builder, start_input, new_modes, failed_block
+        return @children.first.build builder, start_input, new_modes, failed_block
       end
     end
     
     class LeaveModeFunction < ModeFunction
       def build(builder, start_input, modes, failed_block)
         new_modes = builder.insert_value modes, LLVM::FALSE, parser.mode_names.index(@data[:name])
-        @children.first.build builder, start_input, new_modes, failed_block
+        return @children.first.build builder, start_input, new_modes, failed_block
       end
     end
     
@@ -72,7 +64,7 @@ module JetPEG
         in_mode = builder.extract_value modes, parser.mode_names.index(@data[:name]), "in_mode_#{@data[:name]}"
         builder.cond in_mode, successful_block, failed_block
         builder.position_at_end successful_block
-        start_input
+        return start_input, false
       end
     end
   end

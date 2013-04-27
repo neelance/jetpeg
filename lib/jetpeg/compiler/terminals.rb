@@ -11,7 +11,7 @@ module JetPEG
           builder.position_at_end next_char_block
           builder.gep input, LLVM::Int(1), "new_input"
         end
-        end_input
+        return end_input, false
       end
     end
     
@@ -32,7 +32,7 @@ module JetPEG
         end
         
         end_input = builder.gep start_input, LLVM::Int(1), "new_input"
-        end_input
+        return end_input, false
       end
     end
     

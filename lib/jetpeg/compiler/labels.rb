@@ -1,16 +1,12 @@
 module JetPEG
   module Compiler
     class Label < ParsingExpression
-      def calculate_has_return_value?
-        !@data[:is_local]
-      end
-      
       def build(builder, start_input, modes, failed_block)
-        expression_end_input = @children.first.build builder, start_input, modes, failed_block
+        child_end_input, has_return_value = @children.first.build builder, start_input, modes, failed_block
         
-        if not @children.first.has_return_value? or data[:name] == "@"
-          builder.call builder.output_functions[:pop] if @children.first.has_return_value?
-          builder.call builder.output_functions[:push_input_range], start_input, expression_end_input
+        if not has_return_value or data[:name] == "@"
+          builder.call builder.output_functions[:pop] if has_return_value
+          builder.call builder.output_functions[:push_input_range], start_input, child_end_input
         end
 
         if @data[:is_local]
@@ -19,7 +15,7 @@ module JetPEG
           builder.call builder.output_functions[:make_label], builder.global_string_pointer(data[:name])
         end
         
-        expression_end_input
+        return child_end_input, !@data[:is_local]
       end
       
       def get_local_label(name, stack_index)
@@ -46,43 +42,31 @@ module JetPEG
     end
     
     class LocalValue < ParsingExpression
-      def calculate_has_return_value?
-        true
-      end
-      
       def build(builder, start_input, modes, failed_block)
         builder.call builder.output_functions[:locals_load], LLVM::Int64.from_i(get_local_label(@data[:name], 0))
-        start_input
+        return start_input, true
       end
     end
     
     class ObjectCreator < ParsingExpression
-      def calculate_has_return_value?
-        true
-      end
-
       def build(builder, start_input, modes, failed_block)
-        end_input = @children.first.build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:push_nil] if not @children.first.has_return_value?
+        end_input, has_return_value = @children.first.build builder, start_input, modes, failed_block
+        builder.call builder.output_functions[:push_nil] if not has_return_value
         if @data[:data]
           builder.call builder.output_functions[:set_as_source]
           @data[:data].build builder
         end
         builder.call builder.output_functions[:make_object], builder.global_string_pointer(@data[:class_name])
-        end_input
+        return end_input, true
       end
     end
     
     class ValueCreator < ParsingExpression
-      def calculate_has_return_value?
-        true
-      end
-
       def build(builder, start_input, modes, failed_block)
-        end_input = @children.first.build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:push_nil] if not @children.first.has_return_value?
+        end_input, has_return_value = @children.first.build builder, start_input, modes, failed_block
+        builder.call builder.output_functions[:push_nil] if not has_return_value
         builder.call builder.output_functions[:make_value], builder.global_string_pointer(@data[:code]), builder.global_string_pointer(parser.options[:filename]), LLVM::Int64.from_i(@data[:code].line)
-        end_input
+        return end_input, true
       end
     end
   end

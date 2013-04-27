@@ -79,9 +79,6 @@ module JetPEG
       end
     end
     
-    class Recursion < RuntimeError
-    end
-    
     @@metagrammar_parser = nil
     
     def self.metagrammar_parser
