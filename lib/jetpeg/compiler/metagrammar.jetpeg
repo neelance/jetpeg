@@ -11,7 +11,7 @@ rule rule_expression
 end
 
 rule choice
-  child:creator children:( '/' ws creator )+ <Choice> /
+  first_child:creator '/' ws second_child:choice <Choice> /
   creator
 end
 
@@ -50,7 +50,7 @@ rule lookahead
 end
 
 rule repetition
-  child:primary '?' ws <Choice { children: [ @child, <EmptyParsingExpression { }> ] }> /
+  child:primary '?' ws <Choice { first_child: @child, second_child: <EmptyParsingExpression { }> }> /
   child:primary '*->' until_expression:primary <Until> /
   child:primary ( '{' ws glue_expression:choice '}' )? ( '*' at_least_once:$false / '+' at_least_once:$true ) ws <Repetition> /
   primary ws

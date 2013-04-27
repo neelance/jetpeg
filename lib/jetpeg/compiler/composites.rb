@@ -37,38 +37,63 @@ module JetPEG
     
     class Choice < ParsingExpression
       def self.new(data)
-        children = data[:child] ? ([data[:child]] + data[:children]) : data[:children]
-        leftmost_primaries = children.map(&:get_leftmost_leaf).uniq
-        if leftmost_primaries.size == 1 and not leftmost_primaries.first.nil?
+        first_leftmost_leaf = data[:first_child].get_leftmost_leaf
+        second_leftmost_leaf = data[:second_child].get_leftmost_leaf
+        if not first_leftmost_leaf.nil? and first_leftmost_leaf == second_leftmost_leaf
           label_name = self.object_id.to_s
 
           local_value = LocalValue.new name: label_name
-          children.each { |child| child.replace_leftmost_leaf local_value }
+          data[:first_child].replace_leftmost_leaf local_value
+          data[:second_child].replace_leftmost_leaf local_value
 
-          local_label = Label.new child: leftmost_primaries.first, is_local: true, name: label_name
+          local_label = Label.new child: first_leftmost_leaf, is_local: true, name: label_name
           return Sequence.new children: [local_label, super]
         end
         
         super
       end
+
+      def initialize(data)
+        super
+        self.children = [data[:first_child], data[:second_child]]
+      end
       
       def calculate_has_return_value?
         @children.map(&:has_return_value?).any?
       end
+
+      def get_leftmost_leaf
+        first_leftmost_leaf = @data[:first_child].get_leftmost_leaf
+        second_leftmost_leaf = @data[:second_child].get_leftmost_leaf
+        first_leftmost_leaf == second_leftmost_leaf ? first_leftmost_leaf : nil
+      end
       
+      def replace_leftmost_leaf(replacement)
+        @data[:first_child].replace_leftmost_leaf replacement
+        @data[:second_child].replace_leftmost_leaf replacement
+      end
+
       def build(builder, start_input, modes, failed_block)
+        second_child_block = builder.create_block "choice_second_child"
         choice_successful_block = builder.create_block "choice_successful"
         input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
 
-        @children.each_with_index do |child, index|
-          next_child_block = index < @children.size - 1 ? builder.create_block("next_choice_child") : failed_block
-          
-          input_phi << child.build(builder, start_input, modes, next_child_block)
-          builder.call builder.output_functions[:push_nil] if has_return_value? and not child.has_return_value?
-          
-          builder.br choice_successful_block
-          builder.position_at_end next_child_block
-        end
+        first_end_input = @data[:first_child].build builder, start_input, modes, second_child_block
+        input_phi << first_end_input
+        first_child_exit_block = builder.insert_block
+
+        builder.position_at_end second_child_block
+        second_end_input = @data[:second_child].build builder, start_input, modes, failed_block
+        input_phi << second_end_input
+        second_child_exit_block = builder.insert_block
+
+        builder.position_at_end first_child_exit_block
+        builder.call builder.output_functions[:push_nil] if @data[:second_child].has_return_value? and not @data[:first_child].has_return_value?
+        builder.br choice_successful_block
+        
+        builder.position_at_end second_child_exit_block
+        builder.call builder.output_functions[:push_nil] if @data[:first_child].has_return_value? and not @data[:second_child].has_return_value?
+        builder.br choice_successful_block
         
         builder.position_at_end choice_successful_block
         input_phi.build
