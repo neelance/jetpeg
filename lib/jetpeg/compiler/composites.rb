@@ -2,37 +2,44 @@ module JetPEG
   module Compiler
     class Sequence < ParsingExpression
       def collect_children
-        @data[:children]
+        [@data[:first_child], @data[:second_child]]
       end
 
       def build(builder, start_input, modes, failed_block)
-        input = start_input
-        previous_fail_cleanup_block = failed_block
-        return_value_count = 0
-        children.each_with_index do |child, index|
-          input, has_return_value = child.build builder, input, modes, previous_fail_cleanup_block
-          return_value_count += 1 if has_return_value
-        
-          successful_block = builder.insert_block
-          if has_return_value or child.has_local_value?
-            current_fail_cleanup_block = builder.create_block "sequence_fail_cleanup"
-            builder.position_at_end current_fail_cleanup_block
-            builder.call builder.output_functions[:pop] if has_return_value
-            child.free_local_value builder
-            builder.br previous_fail_cleanup_block
-            previous_fail_cleanup_block = current_fail_cleanup_block
-          end
-          
-          builder.position_at_end successful_block
-        end
+        cleanup_first_block = builder.create_block "sequence_cleanup_first"
+        successful_block = builder.create_block "sequence_successful"
 
-        builder.call builder.output_functions[:merge_labels], LLVM::Int64.from_i(return_value_count) if return_value_count > 1
+        first_end_input, first_has_return_value = @data[:first_child].build builder, start_input, modes, failed_block
+        second_end_input, second_has_return_value = @data[:second_child].build builder, first_end_input, modes, cleanup_first_block
+        builder.call builder.output_functions[:merge_labels], LLVM::Int64.from_i(2) if first_has_return_value and second_has_return_value
+        @data[:first_child].free_local_value builder
+        @data[:second_child].free_local_value builder
+        builder.br successful_block
 
-        children.each do |child|
-          child.free_local_value builder
+        builder.position_at_end cleanup_first_block
+        builder.call builder.output_functions[:pop] if first_has_return_value
+        @data[:first_child].free_local_value builder
+        builder.br failed_block
+
+        builder.position_at_end successful_block
+        return second_end_input, first_has_return_value || second_has_return_value
+      end
+
+      def get_leftmost_leaf
+        if @data[:first_child].children.empty?
+          @data[:first_child]
+        else
+          @data[:first_child].get_leftmost_leaf
         end
-        
-        return input, return_value_count != 0
+      end
+      
+      def replace_leftmost_leaf(replacement)
+        if @data[:first_child].children.empty?
+          @data[:first_child] = replacement
+          replacement.parent = self
+        else
+          @data[:first_child].replace_leftmost_leaf replacement
+        end
       end
     end
     
@@ -48,7 +55,7 @@ module JetPEG
           data[:second_child].replace_leftmost_leaf local_value
 
           local_label = Label.new child: first_leftmost_leaf, is_local: true, name: label_name
-          return Sequence.new children: [local_label, super]
+          return Sequence.new first_child: local_label, second_child: super
         end
         
         super
@@ -71,7 +78,7 @@ module JetPEG
 
       def build(builder, start_input, modes, failed_block)
         second_child_block = builder.create_block "choice_second_child"
-        choice_successful_block = builder.create_block "choice_successful"
+        successful_block = builder.create_block "choice_successful"
         input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
 
         first_end_input, first_has_return_value = @data[:first_child].build builder, start_input, modes, second_child_block
@@ -85,13 +92,13 @@ module JetPEG
 
         builder.position_at_end first_child_exit_block
         builder.call builder.output_functions[:push_nil] if not first_has_return_value and second_has_return_value
-        builder.br choice_successful_block
+        builder.br successful_block
         
         builder.position_at_end second_child_exit_block
         builder.call builder.output_functions[:push_nil] if not second_has_return_value and first_has_return_value
-        builder.br choice_successful_block
+        builder.br successful_block
         
-        builder.position_at_end choice_successful_block
+        builder.position_at_end successful_block
         return input_phi.build, first_has_return_value || second_has_return_value
       end
     end

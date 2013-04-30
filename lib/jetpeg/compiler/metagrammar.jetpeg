@@ -35,7 +35,8 @@ rule code
 end
 
 rule sequence
-  children:labeled+ <Sequence>
+  first_child:labeled second_child:sequence <Sequence> /
+  labeled
 end
 
 rule labeled
