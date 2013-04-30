@@ -67,7 +67,8 @@ rule primary
 end
 
 rule parenthesized_expression
-  '(' ws child:choice? ')' <ParenthesizedExpression>
+  '(' ws ')' <EmptyParsingExpression> /
+  '(' ws child:choice ')' <ParenthesizedExpression>
 end
 
 rule local_value

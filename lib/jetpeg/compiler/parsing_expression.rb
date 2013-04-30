@@ -4,7 +4,7 @@ module JetPEG
       attr_accessor :data, :parent, :rule_name, :parameters, :is_root, :local_label_source
       
       def initialize(data)
-        @data = data
+        @data = data.is_a?(Hash) && data
 
         previous_child = nil
         children.each do |child|
@@ -207,10 +207,6 @@ module JetPEG
     end
     
     class EmptyParsingExpression < ParsingExpression
-      def initialize(data = nil)
-        super
-      end
-      
       def build(builder, start_input, modes, failed_block)
         return start_input, false
       end

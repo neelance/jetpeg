@@ -46,25 +46,6 @@ class MiscTests < Test::Unit::TestCase
     assert_raise JetPEG::CompilationError do
       JetPEG::Compiler.compile_rule "missing_rule"
     end
-
-        # raise CompilationError.new("Invalid mix of return values (#{labels.map(&:inspect).join(', ')}).", rule) if labels.include?(nil) and labels.size != 1
-        # labels.uniq.each { |name| raise CompilationError.new("Duplicate label \"#{name}\".", rule) if labels.count(name) > 1 }
-
-    # assert_raise JetPEG::CompilationError do
-    #   JetPEG::Compiler.compile_rule "char:'a' 'b' char:'c'"
-    # end
-    
-    # assert_raise JetPEG::CompilationError do
-    #   JetPEG::Compiler.compile_rule "@:'a' 'b' char:'c'"
-    # end
-    
-    # assert_raise JetPEG::CompilationError do
-    #   JetPEG::Compiler.compile_rule "@:'a' 'b' @:'c'"
-    # end
-    
-    # assert_raise JetPEG::CompilationError do
-    #   JetPEG::Compiler.compile_rule "( @:'a' / b:'b' ) c:'c'"
-    # end
     
     assert_raise JetPEG::CompilationError do
       JetPEG::Compiler.compile_grammar "

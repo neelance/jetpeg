@@ -253,7 +253,6 @@ module JetPEG
     
     class ParenthesizedExpression < ParsingExpression
       def build(builder, start_input, modes, failed_block)
-        return start_input, false if children.first.nil?
         return children.first.build builder, start_input, modes, failed_block
       end
     end

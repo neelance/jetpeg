@@ -166,7 +166,7 @@ module JetPEG
           output_stack << { name.to_sym => value }
         },
         new_checked_ffi_function.call(:merge_labels, [:int64], :void) { |count|
-          merged = output_stack.pop(count).compact.reduce(&:merge)
+          merged = output_stack.pop(count).select{ |v| v.is_a? Hash }.reduce(&:merge)
           output_stack << merged
         },
         new_checked_ffi_function.call(:make_value, [:string, :string, :int64], :void) { |code, filename, line|
