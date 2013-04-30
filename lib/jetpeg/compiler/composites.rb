@@ -91,11 +91,11 @@ module JetPEG
         second_child_exit_block = builder.insert_block
 
         builder.position_at_end first_child_exit_block
-        builder.call builder.output_functions[:push_nil] if not first_has_return_value and second_has_return_value
+        builder.call builder.output_functions[:push_empty] if not first_has_return_value and second_has_return_value
         builder.br successful_block
         
         builder.position_at_end second_child_exit_block
-        builder.call builder.output_functions[:push_nil] if not second_has_return_value and first_has_return_value
+        builder.call builder.output_functions[:push_empty] if not second_has_return_value and first_has_return_value
         builder.br successful_block
         
         builder.position_at_end successful_block

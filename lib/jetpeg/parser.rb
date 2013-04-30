@@ -54,7 +54,7 @@ module JetPEG
   end
   
   OUTPUT_INTERFACE_SIGNATURES = {
-    push_nil:         LLVM.Function([], LLVM.Void()),
+    push_empty:       LLVM.Function([], LLVM.Void()),
     push_input_range: LLVM.Function([LLVM_STRING, LLVM_STRING], LLVM.Void()),
     push_boolean:     LLVM.Function([LLVM::Int1], LLVM.Void()),
     push_string:      LLVM.Function([LLVM_STRING], LLVM.Void()),
@@ -138,8 +138,8 @@ module JetPEG
       }
 
       output_functions = [
-        new_checked_ffi_function.call(:push_nil, [], :void) {
-          output_stack << nil
+        new_checked_ffi_function.call(:push_empty, [], :void) {
+          output_stack << {}
         },
         new_checked_ffi_function.call(:push_input_range, [:pointer, :pointer], :void) { |from_ptr, to_ptr|
           range = (from_ptr.address - start_ptr.address)...(to_ptr.address - start_ptr.address)

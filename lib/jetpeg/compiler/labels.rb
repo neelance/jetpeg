@@ -51,7 +51,7 @@ module JetPEG
     class ObjectCreator < ParsingExpression
       def build(builder, start_input, modes, failed_block)
         end_input, has_return_value = children.first.build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:push_nil] if not has_return_value
+        builder.call builder.output_functions[:push_empty] if not has_return_value
         if @data[:data]
           builder.call builder.output_functions[:set_as_source]
           @data[:data].build builder
@@ -64,7 +64,7 @@ module JetPEG
     class ValueCreator < ParsingExpression
       def build(builder, start_input, modes, failed_block)
         end_input, has_return_value = children.first.build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:push_nil] if not has_return_value
+        builder.call builder.output_functions[:push_empty] if not has_return_value
         builder.call builder.output_functions[:make_value], builder.global_string_pointer(@data[:code]), builder.global_string_pointer(parser.options[:filename]), LLVM::Int64.from_i(@data[:code].line)
         return end_input, true
       end

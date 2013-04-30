@@ -94,7 +94,7 @@ class LabelsTests < Test::Unit::TestCase
     assert rule.parse("abc") == { list: [{ char: "a" }, { char: "b" }, { char: "c" }] }
     
     rule = JetPEG::Compiler.compile_rule "list:( char:'a' / char:'b' / 'c' )+"
-    assert rule.parse("abc") == { list: [{ char: "a" }, { char: "b" }, nil] }
+    assert rule.parse("abc") == { list: [{ char: "a" }, { char: "b" }, {}] }
     
     rule = JetPEG::Compiler.compile_rule "( 'a' / 'b' / 'c' )+"
     assert rule.parse("abc") == {}
