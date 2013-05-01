@@ -49,19 +49,19 @@ module JetPEG
   
   module Compiler
     class Builder < LLVM::Builder
-      attr_accessor :traced, :direct_left_recursion_occurred, :left_recursion_previous_end_input, :rule_start_input, :output_functions, :add_failure_callback
+      attr_accessor :traced, :direct_left_recursion_occurred, :left_recursion_previous_end_input, :rule_start_input, :output_functions, :trace_failure_callback
       
       def create_block(name)
         self.insert_block.parent.basic_blocks.append name
       end
       
-      def add_failure_reason(failed_block, position, reason, is_expectation = true)
+      def trace_failure_reason(failed_block, position, reason, is_expectation = true)
         return failed_block if not @traced
         
         initial_block = self.insert_block
-        failure_reason_block = self.create_block "add_failure_reason"
+        failure_reason_block = self.create_block "trace_failure_reason"
         self.position_at_end failure_reason_block
-        self.call output_functions[:add_failure], position, self.global_string_pointer(reason.inspect[1..-2]), is_expectation ? LLVM::TRUE : LLVM::FALSE
+        self.call output_functions[:trace_failure], position, self.global_string_pointer(reason.inspect[1..-2]), is_expectation ? LLVM::TRUE : LLVM::FALSE
         self.br failed_block
         self.position_at_end initial_block
         failure_reason_block

@@ -71,7 +71,9 @@ module JetPEG
     match:            LLVM.Function([LLVM_STRING], LLVM_STRING),
     set_as_source:    LLVM.Function([], LLVM.Void()),
     read_from_source: LLVM.Function([LLVM_STRING], LLVM.Void()),
-    add_failure:      LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int1], LLVM.Void())
+    trace_enter:      LLVM.Function([LLVM_STRING], LLVM.Void()),
+    trace_leave:      LLVM.Function([LLVM_STRING, LLVM::Int1], LLVM.Void()),
+    trace_failure:    LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int1], LLVM.Void())
   }
   OUTPUT_FUNCTION_POINTERS = OUTPUT_INTERFACE_SIGNATURES.values.map { |fun_type| LLVM::Pointer(fun_type) }
 
@@ -132,7 +134,7 @@ module JetPEG
             puts e, e.backtrace
             exit!
           # ensure
-          #   puts "#{name}: #{output_stack.inspect}" if @rules
+          #   puts("#{name}(#{args.join ', '}): ".ljust(110) + output_stack.inspect) #if @rules
           end
         }
       }
@@ -205,7 +207,13 @@ module JetPEG
         new_checked_ffi_function.call(:read_from_source, [:string], :void) { |name|
           output_stack << temp_source[name.to_sym]
         },
-        new_checked_ffi_function.call(:add_failure, [:pointer, :string, :bool], :void) { |pos_ptr, reason, is_expectation|
+        new_checked_ffi_function.call(:trace_enter, [:string], :void) { |name|
+          # only for tracing
+        },
+        new_checked_ffi_function.call(:trace_leave, [:string, :bool], :void) { |name, successful|
+          # only for tracing
+        },
+        new_checked_ffi_function.call(:trace_failure, [:pointer, :string, :bool], :void) { |pos_ptr, reason, is_expectation|
           position = pos_ptr.address - start_ptr.address
           if position > failure_position
             failure_position = position

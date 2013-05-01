@@ -6,7 +6,7 @@ module JetPEG
         end_input = string.chars.inject(start_input) do |input, char|
           successful = builder.icmp :eq, builder.load(input), LLVM::Int8.from_i(char.ord), "failed"
           next_char_block = builder.create_block "string_terminal_next_char"
-          builder.cond successful, next_char_block, builder.add_failure_reason(failed_block, start_input, string)
+          builder.cond successful, next_char_block, builder.trace_failure_reason(failed_block, start_input, string)
           
           builder.position_at_end next_char_block
           builder.gep input, LLVM::Int(1), "new_input"
@@ -39,7 +39,7 @@ module JetPEG
     class CharacterClassSingleCharacter < ParsingExpression
       def build(builder, start_input, input_char, successful_block, failed_block)
         successful = builder.icmp :eq, input_char, LLVM::Int8.from_i(@data[:character].ord), "matching"
-        builder.cond successful, successful_block, builder.add_failure_reason(failed_block, start_input, @data[:character])
+        builder.cond successful, successful_block, builder.trace_failure_reason(failed_block, start_input, @data[:character])
       end
     end
     
@@ -54,10 +54,10 @@ module JetPEG
         expectation = "#{@data[:begin_char].data[:character]}-#{@data[:end_char].data[:character]}"
         begin_char_successful = builder.create_block "character_class_range_begin_char_successful"
         successful = builder.icmp :uge, input_char, LLVM::Int8.from_i(@data[:begin_char].data[:character].ord), "begin_matching"
-        builder.cond successful, begin_char_successful, builder.add_failure_reason(failed_block, start_input, expectation)
+        builder.cond successful, begin_char_successful, builder.trace_failure_reason(failed_block, start_input, expectation)
         builder.position_at_end begin_char_successful
         successful = builder.icmp :ule, input_char, LLVM::Int8.from_i(@data[:end_char].data[:character].ord), "end_matching"
-        builder.cond successful, successful_block, builder.add_failure_reason(failed_block, start_input, expectation)
+        builder.cond successful, successful_block, builder.trace_failure_reason(failed_block, start_input, expectation)
       end
     end
   end

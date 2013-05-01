@@ -117,6 +117,7 @@ module JetPEG
 
           builder.position_at_end entry_block
           builder.direct_left_recursion_occurred = builder.alloca LLVM::Int1, "direct_left_recursion_occurred"
+          builder.call builder.output_functions[:trace_enter], builder.global_string_pointer(@rule_name.to_s) if traced
           recursion_loop_block = builder.create_block "recursion_loop"
           builder.br recursion_loop_block
 
@@ -154,9 +155,11 @@ module JetPEG
           builder.br recursion_loop_block
           
           builder.position_at_end no_recursion_block
+          builder.call builder.output_functions[:trace_leave], builder.global_string_pointer(@rule_name.to_s), LLVM::TRUE if traced
           builder.ret end_input
           
           builder.position_at_end failed_block
+          builder.call builder.output_functions[:trace_leave], builder.global_string_pointer(@rule_name.to_s), LLVM::FALSE if traced
           builder.ret LLVM_STRING.null
           builder.dispose
         end

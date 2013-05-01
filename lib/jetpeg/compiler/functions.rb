@@ -21,7 +21,7 @@ module JetPEG
         children.first.build builder, start_input, modes, failed_block
         end_input = builder.call builder.output_functions[:match], start_input
         successful = builder.icmp :ne, end_input, LLVM_STRING.null, "match_successful"
-        builder.cond successful, exit_block, builder.add_failure_reason(failed_block, start_input, "$match failed", false) # TODO better failure message
+        builder.cond successful, exit_block, builder.trace_failure_reason(failed_block, start_input, "$match failed", false) # TODO better failure message
         
         builder.position_at_end exit_block
         return end_input, false
@@ -30,7 +30,7 @@ module JetPEG
     
     class ErrorFunction < ParsingExpression
       def build(builder, start_input, modes, failed_block)
-        builder.br builder.add_failure_reason(failed_block, start_input, @data[:message], false)
+        builder.br builder.trace_failure_reason(failed_block, start_input, @data[:message], false)
 
         dummy_block = builder.create_block "error_dummy"
         builder.position_at_end dummy_block
