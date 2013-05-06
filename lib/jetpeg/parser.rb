@@ -227,7 +227,7 @@ module JetPEG
         }
       ]
 
-      success_value = @execution_engine.run_function @mod.functions["#{rule_name}_match"], start_ptr, end_ptr, *output_functions
+      success_value = @execution_engine.run_function @mod.functions["#{rule_name}_match"], start_ptr, end_ptr, @options[:force_traced] ? 1 : 0, *output_functions
       if not success_value.to_b
         success_value.dispose
         check_malloc_counter

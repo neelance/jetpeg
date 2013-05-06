@@ -78,25 +78,34 @@ module JetPEG
       
       def match_function
         if @match_function.nil?
-          @match_function = @mod.functions.add "#{@rule_name}_match", [LLVM_STRING, LLVM_STRING, *OUTPUT_FUNCTION_POINTERS], LLVM::Int1
+          @match_function = @mod.functions.add "#{@rule_name}_match", [LLVM_STRING, LLVM_STRING, LLVM::Int1, *OUTPUT_FUNCTION_POINTERS], LLVM::Int1
           @match_function.linkage = :external
         
           entry_block = @match_function.basic_blocks.append "rule_entry"
           successful_block = @match_function.basic_blocks.append "rule_successful"
           failed_block = @match_function.basic_blocks.append "rule_failed"
-          start_ptr, end_ptr, *output_functions = @match_function.params.to_a
+          start_ptr, end_ptr, force_traced, *output_functions = @match_function.params.to_a
           
           builder = Compiler::Builder.new
           builder.position_at_end entry_block
+          not_traced_block = builder.create_block "not_traced"
+          traced_block = builder.create_block "traced"
+          builder.cond force_traced, traced_block, not_traced_block
+
+          builder.position_at_end not_traced_block
           rule_end_input = builder.call internal_match_function(false), start_ptr, @mode_struct.null, *output_functions
+          successful = builder.icmp :eq, rule_end_input, end_ptr
+          builder.cond successful, successful_block, traced_block
+          
+          builder.position_at_end traced_block
+          rule_end_input = builder.call internal_match_function(true), start_ptr, @mode_struct.null, *output_functions
           successful = builder.icmp :eq, rule_end_input, end_ptr
           builder.cond successful, successful_block, failed_block
           
           builder.position_at_end successful_block
           builder.ret LLVM::TRUE
-          
+
           builder.position_at_end failed_block
-          builder.call internal_match_function(true), start_ptr, @mode_struct.null, *output_functions
           builder.ret LLVM::FALSE
           builder.dispose
         end
