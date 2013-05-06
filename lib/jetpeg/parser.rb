@@ -133,8 +133,8 @@ module JetPEG
           rescue Exception => e
             puts e, e.backtrace
             exit!
-          # ensure
-          #   puts("#{name}(#{args.join ', '}): ".ljust(110) + output_stack.inspect) #if @rules
+          ensure
+            puts("#{name}(#{args.join ', '}): ".ljust(110) + output_stack.inspect) if @options[:traced]
           end
         }
       }
@@ -227,7 +227,7 @@ module JetPEG
         }
       ]
 
-      success_value = @execution_engine.run_function @mod.functions["#{rule_name}_match"], start_ptr, end_ptr, @options[:force_traced] ? 1 : 0, *output_functions
+      success_value = @execution_engine.run_function @mod.functions["#{rule_name}_match"], start_ptr, end_ptr, @options[:traced] ? 1 : 0, *output_functions
       if not success_value.to_b
         success_value.dispose
         check_malloc_counter
