@@ -160,13 +160,13 @@ class LabelsTests < Test::Unit::TestCase
   def test_parameters
     grammar = JetPEG::Compiler.compile_grammar "
       rule test
-        %a:. %b:. test2[%a, %b]
+        %a:. %b:. test2[%a, %b, $true]
       end
-      rule test2[%v, %w]
-        result1:%v result2:%w
+      rule test2[%v, %w, %x]
+        result1:%v result2:%w result3:%x
       end
     "
-    assert grammar.parse_rule(:test, "ab") == { result1: "a", result2: "b" }
+    assert grammar.parse_rule(:test, "ab") == { result1: "a", result2: "b", result3: true }
   end
   
   def test_undefined_local_label_error

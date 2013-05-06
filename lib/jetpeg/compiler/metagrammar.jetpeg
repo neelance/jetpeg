@@ -62,7 +62,7 @@ rule primary
     terminal /
     rule_call_label /
     parenthesized_expression /
-    local_value /
+    value /
     function
   )
 end
@@ -70,6 +70,12 @@ end
 rule parenthesized_expression
   '(' ws ')' <EmptyParsingExpression> /
   '(' ws child:choice ')' <ParenthesizedExpression>
+end
+
+rule value
+  '$true' <TrueFunction> /
+  '$false' <FalseFunction> /
+  local_value
 end
 
 rule local_value
@@ -82,7 +88,7 @@ rule rule_call_label
 end
 
 rule rule_call
-  name:rule_name arguments:( '[' local_value{ ',' ws }* ']' )? <RuleCall>
+  name:rule_name arguments:( '[' value{ ',' ws }* ']' )? <RuleCall>
 end
 
 rule rule_name
@@ -96,8 +102,6 @@ rule terminal
 end
 
 rule function
-  '$true' <TrueFunction> /
-  '$false' <FalseFunction> /
   '$match' '[' child:local_value ']' <MatchFunction> /
   '$error' '[' message:quoted_string ']' <ErrorFunction> /
   '$enter_mode' '[' name:quoted_string ',' ws child:choice ']' <EnterModeFunction> /
