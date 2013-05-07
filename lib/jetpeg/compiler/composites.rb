@@ -38,10 +38,11 @@ module JetPEG
     
     class Choice < ParsingExpression
       def self.new(data)
+        return super if data[:nested_choice]
+
         choice = super data
         leftmost_leaf = choice.get_leftmost_leaf
         if leftmost_leaf
-          # puts leftmost_leaf.class, leftmost_leaf.data.inspect
           label_name = leftmost_leaf.object_id.to_s
           local_value = LocalValue.new name: label_name
           choice.replace_leftmost_leaf local_value

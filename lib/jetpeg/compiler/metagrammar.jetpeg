@@ -7,11 +7,11 @@ rule parsing_rule
 end
 
 rule rule_expression
-  ws? choice
+  ws? choice[$false]
 end
 
-rule choice
-  first_child:creator '/' ws second_child:choice <Choice> /
+rule choice[%nested_choice]
+  first_child:creator '/' ws second_child:choice[$true] nested_choice:%nested_choice <Choice> /
   creator
 end
 
@@ -53,7 +53,7 @@ end
 rule repetition
   child:primary '?' ws <Choice { first_child: @child, second_child: <EmptyParsingExpression { }> }> /
   child:primary '*->' until_expression:primary <Until> /
-  child:primary ( '{' ws glue_expression:choice '}' )? ( '*' at_least_once:$false / '+' at_least_once:$true ) ws <Repetition> /
+  child:primary ( '{' ws glue_expression:choice[$false] '}' )? ( '*' at_least_once:$false / '+' at_least_once:$true ) ws <Repetition> /
   primary ws
 end
 
@@ -69,7 +69,7 @@ end
 
 rule parenthesized_expression
   '(' ws ')' <EmptyParsingExpression> /
-  '(' ws child:choice ')' <ParenthesizedExpression>
+  '(' ws child:choice[$false] ')' <ParenthesizedExpression>
 end
 
 rule value
@@ -104,8 +104,8 @@ end
 rule function
   '$match' '[' child:local_value ']' <MatchFunction> /
   '$error' '[' message:quoted_string ']' <ErrorFunction> /
-  '$enter_mode' '[' name:quoted_string ',' ws child:choice ']' <EnterModeFunction> /
-  '$leave_mode' '[' name:quoted_string ',' ws child:choice ']' <LeaveModeFunction> /
+  '$enter_mode' '[' name:quoted_string ',' ws child:choice[$false] ']' <EnterModeFunction> /
+  '$leave_mode' '[' name:quoted_string ',' ws child:choice[$false] ']' <LeaveModeFunction> /
   '$in_mode' '[' name:quoted_string ']' <InModeFunction>
 end
 
