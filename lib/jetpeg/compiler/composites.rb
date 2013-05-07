@@ -1,7 +1,7 @@
 module JetPEG
   module Compiler
     class Sequence < ParsingExpression
-      def collect_children
+      def children
         [@data[:first_child], @data[:second_child]]
       end
 
@@ -53,7 +53,7 @@ module JetPEG
         return choice
       end
 
-      def collect_children
+      def children
         [@data[:first_child], @data[:second_child]]
       end
       
@@ -99,7 +99,7 @@ module JetPEG
     end
     
     class Repetition < ParsingExpression
-      def collect_children
+      def children
         [@data[:child]] + (@data[:glue_expression] ? [@data[:glue_expression]] : [])
       end
       
@@ -112,7 +112,7 @@ module JetPEG
         loop_input = DynamicPhi.new builder, LLVM_STRING, "loop_input"
         exit_input = DynamicPhi.new builder, LLVM_STRING, "exit_input"
 
-        child_end_input, has_return_value = children.first.build builder, start_input, modes, @data[:at_least_once] ? failed_block : first_failed_block
+        child_end_input, has_return_value = @data[:child].build builder, start_input, modes, @data[:at_least_once] ? failed_block : first_failed_block
         loop_input << child_end_input
         builder.call builder.output_functions[:push_array], LLVM::TRUE if has_return_value
         builder.br loop_block
@@ -126,7 +126,7 @@ module JetPEG
           builder.call builder.output_functions[:pop] if glue_has_return_value
         end
 
-        child_end_input, _ = children.first.build builder, input, modes, break_block
+        child_end_input, _ = @data[:child].build builder, input, modes, break_block
         loop_input << child_end_input
         builder.call builder.output_functions[:append_to_array] if has_return_value
 
@@ -147,7 +147,7 @@ module JetPEG
     end
 
     class Until < ParsingExpression
-      def collect_children
+      def children
         [@data[:child], @data[:until_expression]]
       end
       
@@ -166,7 +166,7 @@ module JetPEG
         builder.br exit_block
         
         builder.position_at_end loop2_block
-        child_end_input, child_has_return_value = children.first.build builder, input, modes, failed_block
+        child_end_input, child_has_return_value = @data[:child].build builder, input, modes, failed_block
         input << child_end_input
         builder.call builder.output_functions[:append_to_array] if child_has_return_value
         builder.br loop1_block
@@ -182,7 +182,7 @@ module JetPEG
     
     class PositiveLookahead < ParsingExpression
       def build(builder, start_input, modes, failed_block)
-        _, has_return_value = children.first.build builder, start_input, modes, failed_block
+        _, has_return_value = @data[:child].build builder, start_input, modes, failed_block
         builder.call builder.output_functions[:pop] if has_return_value
         return start_input, false
       end
@@ -192,7 +192,7 @@ module JetPEG
       def build(builder, start_input, modes, failed_block)
         lookahead_failed_block = builder.create_block "lookahead_failed"
   
-        _, has_return_value = children.first.build builder, start_input, modes, lookahead_failed_block
+        _, has_return_value = @data[:child].build builder, start_input, modes, lookahead_failed_block
         builder.call builder.output_functions[:pop] if has_return_value
         builder.br failed_block
         
@@ -202,15 +202,19 @@ module JetPEG
     end
     
     class RuleCall < ParsingExpression
-      def collect_children
+      def arguments
         @data[:arguments] || []
+      end
+
+      def children
+        arguments
       end
       
       def referenced
         @referenced ||= begin
           referenced = parser[@data[:name].to_sym]
           raise CompilationError.new("Undefined rule \"#{@data[:name]}\".", rule) if referenced.nil?
-          raise CompilationError.new("Wrong argument count for rule \"#{@data[:name]}\".", rule) if referenced.parameters.size != children.size
+          raise CompilationError.new("Wrong argument count for rule \"#{@data[:name]}\".", rule) if referenced.parameters.size != arguments.size
           referenced
         end
       end
@@ -239,11 +243,11 @@ module JetPEG
           builder.position_at_end no_direct_left_recursion_block
         end
         
-        children.each { |arg| arg.build builder, start_input, modes, failed_block }
-        children.size.times { builder.call builder.output_functions[:locals_push] }
+        arguments.each { |arg| arg.build builder, start_input, modes, failed_block }
+        arguments.size.times { builder.call builder.output_functions[:locals_push] }
         call_end_input = builder.call referenced.internal_match_function(builder.traced), start_input, modes, *builder.output_functions.values
         rule_end_input_phi << call_end_input
-        children.size.times { builder.call builder.output_functions[:locals_pop] }
+        arguments.size.times { builder.call builder.output_functions[:locals_pop] }
         
         rule_successful = builder.icmp :ne, call_end_input, LLVM_STRING.null, "rule_successful"
         builder.cond rule_successful, successful_block, failed_block
@@ -251,11 +255,29 @@ module JetPEG
         builder.position_at_end successful_block
         return rule_end_input_phi.build, referenced.rule_has_return_value?
       end
+
+      def get_leftmost_leaf
+        self
+      end
+      
+      def replace_leftmost_leaf(replacement)
+        replacement
+      end
     end
     
     class ParenthesizedExpression < ParsingExpression
       def build(builder, start_input, modes, failed_block)
-        return children.first.build builder, start_input, modes, failed_block
+        return @data[:child].build builder, start_input, modes, failed_block
+      end
+
+      def get_leftmost_leaf
+        @data[:child].get_leftmost_leaf
+      end
+      
+      def replace_leftmost_leaf(replacement)
+        @data[:child] = @data[:child].replace_leftmost_leaf replacement
+        @data[:child].parent = self
+        self
       end
     end
   end

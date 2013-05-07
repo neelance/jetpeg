@@ -13,6 +13,14 @@ module JetPEG
         end
         return end_input, false
       end
+
+      def get_leftmost_leaf
+        self
+      end
+      
+      def replace_leftmost_leaf(replacement)
+        replacement
+      end
     end
     
     class CharacterClassTerminal < ParsingExpression
@@ -33,6 +41,14 @@ module JetPEG
         
         end_input = builder.gep start_input, LLVM::Int(1), "new_input"
         return end_input, false
+      end
+
+      def get_leftmost_leaf
+        self
+      end
+      
+      def replace_leftmost_leaf(replacement)
+        replacement
       end
     end
     

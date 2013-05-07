@@ -1,31 +1,28 @@
 module JetPEG
   module Compiler
     class ParsingExpression
-      attr_accessor :data, :parent, :rule_name, :parameters, :is_root, :local_label_source
+      attr_accessor :data, :parent, :rule_name, :parameters, :is_root, :local_label_source, :all_mode_names
       
       def initialize(data)
         @data = data.is_a?(Hash) && data
 
         previous_child = nil
+        @all_mode_names = []
         children.each do |child|
           child.parent = self
           child.local_label_source = previous_child
           previous_child = child
+          @all_mode_names.concat child.all_mode_names
         end
         
         @rule_name = nil
         @parameters = []
         @is_root = false
-        @children = nil
         @rule_has_return_value = :pending
         @local_label_source = nil
       end
-
-      def children
-        @children ||= collect_children
-      end
       
-      def collect_children
+      def children
         (@data && @data[:child]) ? [@data[:child]] : []
       end
       
@@ -63,10 +60,6 @@ module JetPEG
       
       def free_local_value(builder)
         # nothing to do
-      end
-      
-      def all_mode_names
-        children.map(&:all_mode_names).flatten
       end
 
       def set_runtime(mod, mode_struct)
@@ -188,25 +181,11 @@ module JetPEG
       end
 
       def get_leftmost_leaf
-        if self.is_a? NegativeLookahead or (self.is_a? Label and @data[:is_local])
-          nil
-        elsif children.empty?
-          self
-        else
-          children[0].get_leftmost_leaf
-        end
+        nil
       end
       
       def replace_leftmost_leaf(replacement)
-        if self.is_a? NegativeLookahead or (self.is_a? Label and @data[:is_local])
-          raise
-        elsif children.empty?
-          replacement
-        else
-          children[0] = children[0].replace_leftmost_leaf replacement
-          children[0].parent = self
-          self
-        end
+        raise
       end
     end
     

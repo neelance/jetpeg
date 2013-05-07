@@ -18,7 +18,7 @@ module JetPEG
       def build(builder, start_input, modes, failed_block)
         exit_block = builder.create_block "match_exit"
 
-        children.first.build builder, start_input, modes, failed_block
+        @data[:child].build builder, start_input, modes, failed_block
         end_input = builder.call builder.output_functions[:match], start_input
         successful = builder.icmp :ne, end_input, LLVM_STRING.null, "match_successful"
         builder.cond successful, exit_block, builder.trace_failure_reason(failed_block, start_input, "$match failed", false) # TODO better failure message
@@ -47,14 +47,14 @@ module JetPEG
     class EnterModeFunction < ModeFunction      
       def build(builder, start_input, modes, failed_block)
         new_modes = builder.insert_value modes, LLVM::TRUE, parser.mode_names.index(@data[:name])
-        return children.first.build builder, start_input, new_modes, failed_block
+        return @data[:child].build builder, start_input, new_modes, failed_block
       end
     end
     
     class LeaveModeFunction < ModeFunction
       def build(builder, start_input, modes, failed_block)
         new_modes = builder.insert_value modes, LLVM::FALSE, parser.mode_names.index(@data[:name])
-        return children.first.build builder, start_input, new_modes, failed_block
+        return @data[:child].build builder, start_input, new_modes, failed_block
       end
     end
     
