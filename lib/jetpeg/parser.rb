@@ -125,6 +125,7 @@ module JetPEG
       failure_position = 0
       failure_expectations = []
       failure_other_reasons = []
+      trace_level = 0
 
       new_checked_ffi_function = lambda { |name, parameter_types, return_type, &block|
         FFI::Function.new(return_type, parameter_types) { |*args|
@@ -134,7 +135,11 @@ module JetPEG
             puts e, e.backtrace
             exit!
           ensure
-            puts("#{name}(#{args.join ', '}): ".ljust(110) + output_stack.inspect) if @options[:traced]
+            if @options[:traced]
+              trace_level -= 1 if name == :trace_leave
+              puts("#{trace_level.to_s.rjust 3} #{name}(#{args.join ', '}): ".ljust(110) + output_stack.inspect)
+              trace_level += 1 if name == :trace_enter
+            end
           end
         }
       }

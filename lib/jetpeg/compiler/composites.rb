@@ -26,43 +26,34 @@ module JetPEG
       end
 
       def get_leftmost_leaf
-        if @data[:first_child].children.empty?
-          @data[:first_child]
-        else
-          @data[:first_child].get_leftmost_leaf
-        end
+        @data[:first_child].get_leftmost_leaf
       end
       
       def replace_leftmost_leaf(replacement)
-        if @data[:first_child].children.empty?
-          @data[:first_child] = replacement
-          replacement.parent = self
-        else
-          @data[:first_child].replace_leftmost_leaf replacement
-        end
+        @data[:first_child] = @data[:first_child].replace_leftmost_leaf replacement
+        @data[:first_child].parent = self
+        self
       end
     end
     
     class Choice < ParsingExpression
       def self.new(data)
-        first_leftmost_leaf = data[:first_child].get_leftmost_leaf
-        second_leftmost_leaf = data[:second_child].get_leftmost_leaf
-        if not first_leftmost_leaf.nil? and first_leftmost_leaf == second_leftmost_leaf
-          label_name = self.object_id.to_s
-
+        choice = super data
+        leftmost_leaf = choice.get_leftmost_leaf
+        if leftmost_leaf
+          # puts leftmost_leaf.class, leftmost_leaf.data.inspect
+          label_name = leftmost_leaf.object_id.to_s
           local_value = LocalValue.new name: label_name
-          data[:first_child].replace_leftmost_leaf local_value
-          data[:second_child].replace_leftmost_leaf local_value
-
-          local_label = Label.new child: first_leftmost_leaf, is_local: true, name: label_name
-          return Sequence.new first_child: local_label, second_child: super
+          choice.replace_leftmost_leaf local_value
+          local_label = Label.new child: leftmost_leaf, is_local: true, name: label_name
+          return Sequence.new first_child: local_label, second_child: choice
         end
-        
-        super
+
+        return choice
       end
 
       def collect_children
-        [data[:first_child], data[:second_child]]
+        [@data[:first_child], @data[:second_child]]
       end
       
       def get_leftmost_leaf
@@ -72,8 +63,11 @@ module JetPEG
       end
       
       def replace_leftmost_leaf(replacement)
-        @data[:first_child].replace_leftmost_leaf replacement
-        @data[:second_child].replace_leftmost_leaf replacement
+        @data[:first_child] = @data[:first_child].replace_leftmost_leaf replacement
+        @data[:first_child].parent = self
+        @data[:second_child] = @data[:second_child].replace_leftmost_leaf replacement
+        @data[:second_child].parent = self
+        self
       end
 
       def build(builder, start_input, modes, failed_block)

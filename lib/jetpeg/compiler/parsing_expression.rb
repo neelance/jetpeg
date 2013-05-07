@@ -188,23 +188,24 @@ module JetPEG
       end
 
       def get_leftmost_leaf
-        if children.empty? or self.is_a?(NegativeLookahead)
+        if self.is_a? NegativeLookahead or (self.is_a? Label and @data[:is_local])
           nil
-        elsif children.first.children.empty? and not children.first.is_a?(LocalValue)
-          children.first
+        elsif children.empty?
+          self
         else
-          children.first.get_leftmost_leaf
+          children[0].get_leftmost_leaf
         end
       end
       
       def replace_leftmost_leaf(replacement)
-        if children.empty? or self.is_a?(NegativeLookahead)
+        if self.is_a? NegativeLookahead or (self.is_a? Label and @data[:is_local])
           raise
-        elsif children.first.children.empty? and not children.first.is_a?(LocalValue)
-          children[0] = replacement
-          replacement.parent = self
+        elsif children.empty?
+          replacement
         else
-          children.first.replace_leftmost_leaf replacement
+          children[0] = children[0].replace_leftmost_leaf replacement
+          children[0].parent = self
+          self
         end
       end
     end
