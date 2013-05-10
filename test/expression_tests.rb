@@ -1,11 +1,11 @@
-require 'test/unit'
+require "test/unit"
 require "jetpeg"
 JetPEG::Parser.default_options[:raise_on_failure] = false
 JetPEG::Parser.default_options[:track_malloc] = true
 
 class ExpressionsTests < Test::Unit::TestCase
   def test_string_terminal
-    rule = JetPEG::Compiler.compile_rule "'abc'"
+    rule = JetPEG::Compiler.compile_rule '"abc"'
     assert rule.parse("abc")
     assert !rule.parse("ab")
     assert !rule.parse("Xbc")
@@ -14,7 +14,7 @@ class ExpressionsTests < Test::Unit::TestCase
   end
   
   def test_character_class_terminal
-    rule = JetPEG::Compiler.compile_rule "[b-df\\-h]"
+    rule = JetPEG::Compiler.compile_rule '[b-df\\-h]'
     assert rule.parse("b")
     assert rule.parse("c")
     assert rule.parse("d")
@@ -25,29 +25,29 @@ class ExpressionsTests < Test::Unit::TestCase
     assert !rule.parse("e")
     assert !rule.parse("g")
     
-    rule = JetPEG::Compiler.compile_rule "[^a]"
+    rule = JetPEG::Compiler.compile_rule '[^a]'
     assert rule.parse("b")
     assert !rule.parse("a")
     
-    rule = JetPEG::Compiler.compile_rule "[\\n]"
+    rule = JetPEG::Compiler.compile_rule '[\\n]'
     assert rule.parse("\n")
     assert !rule.parse("n")
   end
   
   def test_any_character_terminal
-    rule = JetPEG::Compiler.compile_rule "."
+    rule = JetPEG::Compiler.compile_rule '.'
     assert rule.parse("a")
     assert rule.parse("B")
     assert rule.parse("5")
     assert !rule.parse("")
     assert !rule.parse("99")
     
-    rule = JetPEG::Compiler.compile_rule ".*"
+    rule = JetPEG::Compiler.compile_rule '.*'
     assert rule.parse("aaa")
   end
   
   def test_sequence
-    rule = JetPEG::Compiler.compile_rule "'abc' 'def'"
+    rule = JetPEG::Compiler.compile_rule '"abc" "def"'
     assert rule.parse("abcdef")
     assert !rule.parse("abcde")
     assert !rule.parse("aXcdef")
@@ -56,7 +56,7 @@ class ExpressionsTests < Test::Unit::TestCase
   end
   
   def test_choice
-    rule = JetPEG::Compiler.compile_rule "'abc' / 'def'"
+    rule = JetPEG::Compiler.compile_rule '"abc" / "def"'
     assert rule.parse("abc")
     assert rule.parse("def")
     assert !rule.parse("ab")
@@ -65,7 +65,7 @@ class ExpressionsTests < Test::Unit::TestCase
   end
   
   def test_optional
-    rule = JetPEG::Compiler.compile_rule "'abc'? 'def'"
+    rule = JetPEG::Compiler.compile_rule '"abc"? "def"'
     assert rule.parse("abcdef")
     assert rule.parse("def")
     assert !rule.parse("abc")
@@ -74,7 +74,7 @@ class ExpressionsTests < Test::Unit::TestCase
   end
   
   def test_zero_or_more
-    rule = JetPEG::Compiler.compile_rule "'a'*"
+    rule = JetPEG::Compiler.compile_rule '"a"*'
     assert rule.parse("")
     assert rule.parse("a")
     assert rule.parse("aaaaa")
@@ -83,7 +83,7 @@ class ExpressionsTests < Test::Unit::TestCase
   end
   
   def test_one_or_more
-    rule = JetPEG::Compiler.compile_rule "'a'+"
+    rule = JetPEG::Compiler.compile_rule '"a"+'
     assert rule.parse("a")
     assert rule.parse("aaaaa")
     assert !rule.parse("")
@@ -92,7 +92,7 @@ class ExpressionsTests < Test::Unit::TestCase
   end
   
   def test_until
-    rule = JetPEG::Compiler.compile_rule "( 'a' . )*->'ac'"
+    rule = JetPEG::Compiler.compile_rule '( "a" . )*->"ac"'
     assert rule.parse("ac")
     assert rule.parse("ababac")
     assert !rule.parse("")
@@ -104,7 +104,7 @@ class ExpressionsTests < Test::Unit::TestCase
   end
   
   def test_repetition_glue
-    rule = JetPEG::Compiler.compile_rule "'a'{ ',' }*"
+    rule = JetPEG::Compiler.compile_rule '"a"{ "," }*'
     assert rule.parse("")
     assert rule.parse("a")
     assert rule.parse("a,a,a")
@@ -114,7 +114,7 @@ class ExpressionsTests < Test::Unit::TestCase
     assert !rule.parse(",a,a")
     assert !rule.parse("a,,a")
     
-    rule = JetPEG::Compiler.compile_rule "'a'{ ',' }+"
+    rule = JetPEG::Compiler.compile_rule '"a"{ "," }+'
     assert rule.parse("a")
     assert rule.parse("a,a,a")
     assert !rule.parse("aa")
@@ -126,7 +126,7 @@ class ExpressionsTests < Test::Unit::TestCase
   end
   
   def test_parenthesized_expression
-    rule = JetPEG::Compiler.compile_rule "( 'a' ( ) 'b' )? 'c'"
+    rule = JetPEG::Compiler.compile_rule '( "a" ( ) "b" )? "c"'
     assert rule.parse("abc")
     assert rule.parse("c")
     assert !rule.parse("ac")
@@ -134,7 +134,7 @@ class ExpressionsTests < Test::Unit::TestCase
   end
   
   def test_positive_lookahead
-    rule = JetPEG::Compiler.compile_rule "&'a' ."
+    rule = JetPEG::Compiler.compile_rule '&"a" .'
     assert rule.parse("a")
     assert !rule.parse("")
     assert !rule.parse("X")
@@ -142,7 +142,7 @@ class ExpressionsTests < Test::Unit::TestCase
   end
   
   def test_negative_lookahead
-    rule = JetPEG::Compiler.compile_rule "!'a' ."
+    rule = JetPEG::Compiler.compile_rule '!"a" .'
     assert rule.parse("X")
     assert !rule.parse("")
     assert !rule.parse("a")
@@ -150,35 +150,35 @@ class ExpressionsTests < Test::Unit::TestCase
   end
   
   def test_rule_definition
-    grammar = JetPEG::Compiler.compile_grammar "
+    grammar = JetPEG::Compiler.compile_grammar '
       rule test
-        'a'
+        "a"
       end
-    "
+    '
     assert grammar.parse_rule(:test, "a")
     assert !grammar.parse_rule(:test, "X")
   end
   
   def test_rule_reference
-    grammar = JetPEG::Compiler.compile_grammar "
+    grammar = JetPEG::Compiler.compile_grammar '
       rule test
         a
       end
       rule a
-        'b'
+        "b"
       end
-    "
+    '
     assert grammar.parse_rule(:test, "b")
     assert !grammar.parse_rule(:test, "X")
     assert !grammar.parse_rule(:test, "a")
   end
   
   def test_recursive_rule
-    grammar = JetPEG::Compiler.compile_grammar "
+    grammar = JetPEG::Compiler.compile_grammar '
       rule test
-        '(' test ')' / ''
+        "(" test ")" / ""
       end
-    "
+    '
     assert grammar.parse_rule(:test, "")
     assert grammar.parse_rule(:test, "()")
     assert grammar.parse_rule(:test, "((()))")
