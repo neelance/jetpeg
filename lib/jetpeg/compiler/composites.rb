@@ -72,17 +72,16 @@ module JetPEG
       end
 
       def build(builder, start_input, modes, failed_block)
+        first_child_block = builder.insert_block
         second_child_block = builder.create_block "choice_second_child"
         successful_block = builder.create_block "choice_successful"
-        input_phi = DynamicPhi.new builder, LLVM_STRING, "input"
 
+        builder.position_at_end first_child_block
         first_end_input, first_has_return_value = @data[:first_child].build builder, start_input, modes, second_child_block
-        input_phi << first_end_input
         first_child_exit_block = builder.insert_block
 
         builder.position_at_end second_child_block
         second_end_input, second_has_return_value = @data[:second_child].build builder, start_input, modes, failed_block
-        input_phi << second_end_input
         second_child_exit_block = builder.insert_block
 
         builder.position_at_end first_child_exit_block
@@ -94,7 +93,8 @@ module JetPEG
         builder.br successful_block
         
         builder.position_at_end successful_block
-        return input_phi.build, first_has_return_value || second_has_return_value
+        end_input = builder.phi LLVM_STRING, first_child_exit_block => first_end_input, second_child_exit_block => second_end_input
+        return end_input, first_has_return_value || second_has_return_value
       end
     end
     
@@ -109,40 +109,33 @@ module JetPEG
         break_block = builder.create_block "repetition_break"
         exit_block = builder.create_block "repetition_exit"
         
-        loop_input = DynamicPhi.new builder, LLVM_STRING, "loop_input"
-        exit_input = DynamicPhi.new builder, LLVM_STRING, "exit_input"
-
         child_end_input, has_return_value = @data[:child].build builder, start_input, modes, @data[:at_least_once] ? failed_block : first_failed_block
-        loop_input << child_end_input
+        first_block = builder.insert_block
         builder.call builder.output_functions[:push_array], LLVM::TRUE if has_return_value
         builder.br loop_block
         
         builder.position_at_end loop_block
-        loop_input.build
-        input = loop_input
-
+        loop_input_phi = builder.phi LLVM_STRING, first_block => child_end_input
+        input = loop_input_phi
         if @data[:glue_expression]
           input, glue_has_return_value = @data[:glue_expression].build builder, input, modes, break_block
           builder.call builder.output_functions[:pop] if glue_has_return_value
         end
-
         child_end_input, _ = @data[:child].build builder, input, modes, break_block
-        loop_input << child_end_input
+        loop_input_phi.add_incoming builder.insert_block => child_end_input
         builder.call builder.output_functions[:append_to_array] if has_return_value
-
         builder.br loop_block
         
         builder.position_at_end first_failed_block
         builder.call builder.output_functions[:push_array], LLVM::FALSE if has_return_value
-        exit_input << start_input
         builder.br exit_block
 
         builder.position_at_end break_block
-        exit_input << loop_input
         builder.br exit_block
 
         builder.position_at_end exit_block
-        return exit_input.build, has_return_value
+        end_input = builder.phi LLVM_STRING, first_failed_block => start_input, break_block => loop_input_phi
+        return end_input, has_return_value
       end
     end
 
@@ -152,22 +145,20 @@ module JetPEG
       end
       
       def build(builder, start_input, modes, failed_block)
+        entry_block = builder.insert_block
         loop1_block = builder.create_block "until_loop1"
         loop2_block = builder.create_block "until_loop2"
         exit_block = builder.create_block "until_exit"
         
-        input = DynamicPhi.new builder, LLVM_STRING, "loop_input", start_input
-        entry_block = builder.insert_block
-        
         builder.position_at_end loop1_block
-        input.build
-        until_end_input, until_has_return_value = @data[:until_expression].build builder, input, modes, loop2_block
+        input_phi = builder.phi LLVM_STRING, entry_block => start_input
+        until_end_input, until_has_return_value = @data[:until_expression].build builder, input_phi, modes, loop2_block
         builder.call builder.output_functions[:append_to_array] if until_has_return_value
         builder.br exit_block
         
         builder.position_at_end loop2_block
-        child_end_input, child_has_return_value = @data[:child].build builder, input, modes, failed_block
-        input << child_end_input
+        child_end_input, child_has_return_value = @data[:child].build builder, input_phi, modes, failed_block
+        input_phi.add_incoming builder.insert_block => child_end_input
         builder.call builder.output_functions[:append_to_array] if child_has_return_value
         builder.br loop1_block
 
@@ -220,40 +211,37 @@ module JetPEG
       end
       
       def build(builder, start_input, modes, failed_block)
+        direct_left_recursion_block = builder.create_block "direct_left_recursion"
+        no_direct_left_recursion_block = builder.create_block "no_direct_left_recursion"
         successful_block = builder.create_block "rule_call_successful"
-        rule_end_input_phi = DynamicPhi.new builder, LLVM_STRING
 
-        if referenced == rule
-          direct_left_recursion_block = builder.create_block "direct_left_recursion"
-          no_direct_left_recursion_block = builder.create_block "no_direct_left_recursion"
-          is_direct_left_recursion = builder.icmp :eq, start_input, builder.rule_start_input, "is_direct_left_recursion"
-          builder.cond is_direct_left_recursion, direct_left_recursion_block, no_direct_left_recursion_block
-          
-          builder.position_at_end direct_left_recursion_block
-          builder.store LLVM::TRUE, builder.direct_left_recursion_occurred
-          in_recursion_loop = builder.icmp :ne, builder.left_recursion_previous_end_input, LLVM_STRING.null, "in_recursion_loop"
-          in_recursion_loop_block = builder.create_block "in_recursion_loop"
-          builder.cond in_recursion_loop, in_recursion_loop_block, failed_block
-
-          builder.position_at_end in_recursion_loop_block
-          rule_end_input_phi << builder.left_recursion_previous_end_input
-          builder.call builder.output_functions[:locals_load], LLVM::Int64.from_i(get_local_label("<left_recursion_value>", 0)) if referenced.rule_has_return_value?
-          builder.br successful_block
-          
-          builder.position_at_end no_direct_left_recursion_block
-        end
+        is_direct_recursion = referenced == rule ? LLVM::TRUE : LLVM::FALSE
+        is_left_recursion = builder.icmp :eq, start_input, builder.rule_start_input, "is_left_recursion"
+        is_direct_left_recursion = builder.and is_direct_recursion, is_left_recursion, "is_direct_left_recursion"
+        builder.cond is_direct_left_recursion, direct_left_recursion_block, no_direct_left_recursion_block
         
+        builder.position_at_end direct_left_recursion_block
+        builder.store LLVM::TRUE, builder.direct_left_recursion_occurred
+        in_recursion_loop = builder.icmp :ne, builder.left_recursion_previous_end_input, LLVM_STRING.null, "in_recursion_loop"
+        in_recursion_loop_block = builder.create_block "in_recursion_loop"
+        builder.cond in_recursion_loop, in_recursion_loop_block, failed_block
+
+        builder.position_at_end in_recursion_loop_block
+        builder.call builder.output_functions[:locals_load], LLVM::Int64.from_i(get_local_label("<left_recursion_value>", 0)) if referenced.rule_has_return_value?
+        builder.br successful_block
+        
+        builder.position_at_end no_direct_left_recursion_block
         arguments.each { |arg| arg.build builder, start_input, modes, failed_block }
         arguments.size.times { builder.call builder.output_functions[:locals_push] }
         call_end_input = builder.call referenced.internal_match_function(builder.traced), start_input, modes, *builder.output_functions.values
-        rule_end_input_phi << call_end_input
         arguments.size.times { builder.call builder.output_functions[:locals_pop] }
         
         rule_successful = builder.icmp :ne, call_end_input, LLVM_STRING.null, "rule_successful"
         builder.cond rule_successful, successful_block, failed_block
         
         builder.position_at_end successful_block
-        return rule_end_input_phi.build, referenced.rule_has_return_value?
+        end_input = builder.phi LLVM_STRING, in_recursion_loop_block => builder.left_recursion_previous_end_input, no_direct_left_recursion_block => call_end_input
+        return end_input, referenced.rule_has_return_value?
       end
 
       def get_leftmost_leaf

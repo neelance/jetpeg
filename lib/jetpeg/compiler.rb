@@ -123,7 +123,6 @@ end
 
 require "jetpeg/parser"
 
-require "jetpeg/compiler/tools"
 require "jetpeg/compiler/parsing_expression"
 require "jetpeg/compiler/terminals"
 require "jetpeg/compiler/composites"
