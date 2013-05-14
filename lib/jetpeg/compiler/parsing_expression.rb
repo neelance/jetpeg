@@ -4,7 +4,7 @@ module JetPEG
       attr_accessor :data, :parent, :rule_name, :parameters, :is_root, :local_label_source, :all_mode_names
       
       def initialize(data)
-        @data = data.is_a?(Hash) && data
+        @data = data
 
         previous_child = nil
         @all_mode_names = []
@@ -23,7 +23,7 @@ module JetPEG
       end
       
       def children
-        (@data && @data[:child]) ? [@data[:child]] : []
+        @data.is_a?(Hash) ? @data.values.select { |c| c.is_a? ParsingExpression } : []
       end
       
       def parser

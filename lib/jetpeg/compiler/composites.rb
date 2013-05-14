@@ -1,11 +1,23 @@
 module JetPEG
   module Compiler
     class Sequence < ParsingExpression
-      def children
-        [@data[:first_child], @data[:second_child]]
-      end
-
       def build(builder, start_input, modes, failed_block)
+        '
+          *_entry:
+            first_end_input, first_has_return_value = $build first_child, _start_input, *_failed
+            _end_input, second_has_return_value = $build second_child, first_end_input, *cleanup_first
+            $merge_labels i64(2) if first_has_return_value and second_has_return_value
+            _has_return_value = first_has_return_value or second_has_return_value
+            $free_local_value first_child
+            $free_local_value second_child
+            br *_successful
+
+          *cleanup_first:
+            $pop if first_has_return_value
+            $free_local_value first_child
+            br *_failed
+        '
+
         cleanup_first_block = builder.create_block "sequence_cleanup_first"
         successful_block = builder.create_block "sequence_successful"
 
@@ -53,24 +65,6 @@ module JetPEG
         return choice
       end
 
-      def children
-        [@data[:first_child], @data[:second_child]]
-      end
-      
-      def get_leftmost_leaf
-        first_leftmost_leaf = @data[:first_child].get_leftmost_leaf
-        second_leftmost_leaf = @data[:second_child].get_leftmost_leaf
-        first_leftmost_leaf == second_leftmost_leaf ? first_leftmost_leaf : nil
-      end
-      
-      def replace_leftmost_leaf(replacement)
-        @data[:first_child] = @data[:first_child].replace_leftmost_leaf replacement
-        @data[:first_child].parent = self
-        @data[:second_child] = @data[:second_child].replace_leftmost_leaf replacement
-        @data[:second_child].parent = self
-        self
-      end
-
       def build(builder, start_input, modes, failed_block)
         first_child_block = builder.insert_block
         second_child_block = builder.create_block "choice_second_child"
@@ -96,13 +90,23 @@ module JetPEG
         end_input = builder.phi LLVM_STRING, first_child_exit_block => first_end_input, second_child_exit_block => second_end_input
         return end_input, first_has_return_value || second_has_return_value
       end
+      
+      def get_leftmost_leaf
+        first_leftmost_leaf = @data[:first_child].get_leftmost_leaf
+        second_leftmost_leaf = @data[:second_child].get_leftmost_leaf
+        first_leftmost_leaf == second_leftmost_leaf ? first_leftmost_leaf : nil
+      end
+      
+      def replace_leftmost_leaf(replacement)
+        @data[:first_child] = @data[:first_child].replace_leftmost_leaf replacement
+        @data[:first_child].parent = self
+        @data[:second_child] = @data[:second_child].replace_leftmost_leaf replacement
+        @data[:second_child].parent = self
+        self
+      end
     end
     
     class Repetition < ParsingExpression
-      def children
-        [@data[:child]] + (@data[:glue_expression] ? [@data[:glue_expression]] : [])
-      end
-      
       def build(builder, start_input, modes, failed_block)
         first_failed_block = builder.create_block "repetition_first_failed"
         loop_block = builder.create_block "repetition_loop"
@@ -117,10 +121,10 @@ module JetPEG
         builder.position_at_end loop_block
         loop_input_phi = builder.phi LLVM_STRING, first_block => child_end_input
         input = loop_input_phi
-        if @data[:glue_expression]
-          input, glue_has_return_value = @data[:glue_expression].build builder, input, modes, break_block
-          builder.call builder.output_functions[:pop] if glue_has_return_value
-        end
+        
+        input, glue_has_return_value = @data[:glue_expression].build builder, input, modes, break_block if @data[:glue_expression]
+        builder.call builder.output_functions[:pop] if glue_has_return_value
+
         child_end_input, _ = @data[:child].build builder, input, modes, break_block
         loop_input_phi.add_incoming builder.insert_block => child_end_input
         builder.call builder.output_functions[:append_to_array] if has_return_value
@@ -140,10 +144,6 @@ module JetPEG
     end
 
     class Until < ParsingExpression
-      def children
-        [@data[:child], @data[:until_expression]]
-      end
-      
       def build(builder, start_input, modes, failed_block)
         entry_block = builder.insert_block
         loop1_block = builder.create_block "until_loop1"
@@ -163,7 +163,7 @@ module JetPEG
         builder.br loop1_block
 
         builder.position_at_end entry_block
-        builder.call builder.output_functions[:push_array], LLVM::FALSE if until_has_return_value || child_has_return_value
+        builder.call builder.output_functions[:push_array], LLVM::FALSE if until_has_return_value or child_has_return_value
         builder.br loop1_block
 
         builder.position_at_end exit_block
@@ -215,7 +215,7 @@ module JetPEG
         no_direct_left_recursion_block = builder.create_block "no_direct_left_recursion"
         successful_block = builder.create_block "rule_call_successful"
 
-        is_direct_recursion = referenced == rule ? LLVM::TRUE : LLVM::FALSE
+        is_direct_recursion = (referenced == rule ? LLVM::TRUE : LLVM::FALSE)
         is_left_recursion = builder.icmp :eq, start_input, builder.rule_start_input, "is_left_recursion"
         is_direct_left_recursion = builder.and is_direct_recursion, is_left_recursion, "is_direct_left_recursion"
         builder.cond is_direct_left_recursion, direct_left_recursion_block, no_direct_left_recursion_block

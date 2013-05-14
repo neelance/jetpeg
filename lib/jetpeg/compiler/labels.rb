@@ -62,10 +62,8 @@ module JetPEG
       def build(builder, start_input, modes, failed_block)
         end_input, has_return_value = @data[:child].build builder, start_input, modes, failed_block
         builder.call builder.output_functions[:push_empty] if not has_return_value
-        if @data[:data]
-          builder.call builder.output_functions[:set_as_source]
-          @data[:data].build builder
-        end
+        builder.call builder.output_functions[:set_as_source] if @data[:data]
+        @data[:data].build builder, start_input, modes, failed_block if @data[:data]
         builder.call builder.output_functions[:make_object], builder.global_string_pointer(@data[:class_name])
         return end_input, true
       end
