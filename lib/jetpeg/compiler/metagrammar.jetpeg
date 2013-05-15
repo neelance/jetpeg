@@ -58,13 +58,11 @@ rule repetition
 end
 
 rule primary
-  (
-    terminal /
-    rule_call_label /
-    parenthesized_expression /
-    value /
-    function
-  )
+  terminal /
+  rule_call_label /
+  parenthesized_expression /
+  function /
+  local_value
 end
 
 rule parenthesized_expression
@@ -72,10 +70,15 @@ rule parenthesized_expression
   "(" ws child:choice[$false] ")" <ParenthesizedExpression>
 end
 
-rule value
-  "$true" <TrueFunction> /
-  "$false" <FalseFunction> /
-  local_value
+rule argument
+  "\"" string:( !"\"" ( "\\\\" / "\\\"" / . ) )* "\"" <StringValue> /
+  function /
+  local_value /
+  choice[$false]
+end
+
+rule function
+  "$" name:alphanumeric_char+ ( "[" arguments:argument{ "," ws }+ "]" )? <Function>
 end
 
 rule local_value
@@ -88,7 +91,7 @@ rule rule_call_label
 end
 
 rule rule_call
-  name:rule_name arguments:( "[" value{ "," ws }* "]" )? <RuleCall>
+  name:rule_name arguments:( "[" argument{ "," ws }* "]" )? <RuleCall>
 end
 
 rule rule_name
@@ -99,14 +102,6 @@ rule terminal
   "\"" content:( !"\"" ( "\\\\" / "\\\"" / . ) )* "\"" <StringTerminal> /
   "[" ( "^" inverted:$true )? selections:( character_class_range / character_class_single_character )+ "]" <CharacterClassTerminal> /
   "." <CharacterClassTerminal { selections: [ <CharacterClassEscapedCharacter { character: "0" }> ], inverted: true }>
-end
-
-rule function
-  "$match" "[" child:local_value "]" <MatchFunction> /
-  "$error" "[" message:quoted_string "]" <ErrorFunction> /
-  "$enter_mode" "[" name:quoted_string "," ws child:choice[$false] "]" <EnterModeFunction> /
-  "$leave_mode" "[" name:quoted_string "," ws child:choice[$false] "]" <LeaveModeFunction> /
-  "$in_mode" "[" name:quoted_string "]" <InModeFunction>
 end
 
 rule quoted_string

@@ -196,10 +196,6 @@ module JetPEG
       def arguments
         @data[:arguments] || []
       end
-
-      def children
-        arguments
-      end
       
       def referenced
         @referenced ||= begin

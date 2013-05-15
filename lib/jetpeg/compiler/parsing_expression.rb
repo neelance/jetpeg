@@ -8,6 +8,11 @@ module JetPEG
 
         previous_child = nil
         @all_mode_names = []
+        children = []
+        @data.values.each do |value|
+          children << value if value.is_a? ParsingExpression
+          children.concat value if value.is_a? Array and value[0].is_a? ParsingExpression
+        end
         children.each do |child|
           child.parent = self
           child.local_label_source = previous_child
@@ -20,10 +25,6 @@ module JetPEG
         @is_root = false
         @rule_has_return_value = :pending
         @local_label_source = nil
-      end
-      
-      def children
-        @data.values.select { |c| c.is_a? ParsingExpression }
       end
       
       def parser
