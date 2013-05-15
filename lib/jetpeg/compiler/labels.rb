@@ -1,6 +1,8 @@
 module JetPEG
   module Compiler
     class Label < ParsingExpression
+      leftmost_leaves :child
+
       def build(builder, start_input, modes, failed_block)
         child_end_input, has_return_value = @data[:child].build builder, start_input, modes, failed_block
         
@@ -33,16 +35,6 @@ module JetPEG
       def free_local_value(builder)
         builder.call builder.output_functions[:locals_pop] if @data[:is_local]
       end
-
-      def get_leftmost_leaf
-        @data[:child].get_leftmost_leaf
-      end
-      
-      def replace_leftmost_leaf(replacement)
-        @data[:child] = @data[:child].replace_leftmost_leaf replacement
-        @data[:child].parent = self
-        self
-      end
     end
     
     class RuleCallLabel < Label
@@ -59,6 +51,8 @@ module JetPEG
     end
     
     class ObjectCreator < ParsingExpression
+      leftmost_leaves :child
+
       def build(builder, start_input, modes, failed_block)
         end_input, has_return_value = @data[:child].build builder, start_input, modes, failed_block
         builder.call builder.output_functions[:push_empty] if not has_return_value
@@ -67,34 +61,16 @@ module JetPEG
         builder.call builder.output_functions[:make_object], builder.global_string_pointer(@data[:class_name])
         return end_input, true
       end
-
-      def get_leftmost_leaf
-        @data[:child].get_leftmost_leaf
-      end
-      
-      def replace_leftmost_leaf(replacement)
-        @data[:child] = @data[:child].replace_leftmost_leaf replacement
-        @data[:child].parent = self
-        self
-      end
     end
     
     class ValueCreator < ParsingExpression
+      leftmost_leaves :child
+
       def build(builder, start_input, modes, failed_block)
         end_input, has_return_value = @data[:child].build builder, start_input, modes, failed_block
         builder.call builder.output_functions[:push_empty] if not has_return_value
         builder.call builder.output_functions[:make_value], builder.global_string_pointer(@data[:code]), builder.global_string_pointer(parser.options[:filename]), LLVM::Int64.from_i(@data[:code].line)
         return end_input, true
-      end
-
-      def get_leftmost_leaf
-        @data[:child].get_leftmost_leaf
-      end
-      
-      def replace_leftmost_leaf(replacement)
-        @data[:child] = @data[:child].replace_leftmost_leaf replacement
-        @data[:child].parent = self
-        self
       end
     end
   end

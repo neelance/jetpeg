@@ -181,12 +181,27 @@ module JetPEG
         0 # no hash used for Array.uniq, always eql?
       end
 
+      @@leftmost_leaves = Hash.new { |hash, key| hash[key] = [] }
+      def self.leftmost_leaves(*names)
+        @@leftmost_leaves[self] = names
+      end
+
       def get_leftmost_leaf
-        nil
+        leaves = []
+        @@leftmost_leaves[self.class].each do |name|
+          return self if name == :self
+          leaves << @data[name].get_leftmost_leaf
+        end
+        leaves.uniq.size == 1 ? leaves.first : nil
       end
       
       def replace_leftmost_leaf(replacement)
-        raise
+        @@leftmost_leaves[self.class].each do |name|
+          return replacement if name == :self
+          @data[name] = @data[name].replace_leftmost_leaf replacement
+          @data[name].parent = self
+        end
+        self
       end
     end
     

@@ -1,6 +1,8 @@
 module JetPEG
   module Compiler
     class StringTerminal < ParsingExpression
+      leftmost_leaves :self
+
       def build(builder, start_input, modes, failed_block)
         string = @data[:content].gsub(/\\./) { |str| Compiler.translate_escaped_character str[1] }
         end_input = string.chars.inject(start_input) do |input, char|
@@ -13,17 +15,11 @@ module JetPEG
         end
         return end_input, false
       end
-
-      def get_leftmost_leaf
-        self
-      end
-      
-      def replace_leftmost_leaf(replacement)
-        replacement
-      end
     end
     
     class CharacterClassTerminal < ParsingExpression
+      leftmost_leaves :self
+
       def build(builder, start_input, modes, failed_block)
         input_char = builder.load start_input, "char"
         successful_block = builder.create_block "character_class_successful" unless @data[:inverted]
@@ -41,14 +37,6 @@ module JetPEG
         
         end_input = builder.gep start_input, LLVM::Int(1), "new_input"
         return end_input, false
-      end
-
-      def get_leftmost_leaf
-        self
-      end
-      
-      def replace_leftmost_leaf(replacement)
-        replacement
       end
     end
     

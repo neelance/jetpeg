@@ -1,6 +1,8 @@
 module JetPEG
   module Compiler
     class Sequence < ParsingExpression
+      leftmost_leaves :first_child
+
       def build(builder, start_input, modes, failed_block)
         '
           *_entry:
@@ -36,19 +38,11 @@ module JetPEG
         builder.position_at_end successful_block
         return second_end_input, first_has_return_value || second_has_return_value
       end
-
-      def get_leftmost_leaf
-        @data[:first_child].get_leftmost_leaf
-      end
-      
-      def replace_leftmost_leaf(replacement)
-        @data[:first_child] = @data[:first_child].replace_leftmost_leaf replacement
-        @data[:first_child].parent = self
-        self
-      end
     end
     
     class Choice < ParsingExpression
+      leftmost_leaves :first_child, :second_child
+
       def self.new(data)
         return super if data[:nested_choice]
 
@@ -89,20 +83,6 @@ module JetPEG
         builder.position_at_end successful_block
         end_input = builder.phi LLVM_STRING, first_child_exit_block => first_end_input, second_child_exit_block => second_end_input
         return end_input, first_has_return_value || second_has_return_value
-      end
-      
-      def get_leftmost_leaf
-        first_leftmost_leaf = @data[:first_child].get_leftmost_leaf
-        second_leftmost_leaf = @data[:second_child].get_leftmost_leaf
-        first_leftmost_leaf == second_leftmost_leaf ? first_leftmost_leaf : nil
-      end
-      
-      def replace_leftmost_leaf(replacement)
-        @data[:first_child] = @data[:first_child].replace_leftmost_leaf replacement
-        @data[:first_child].parent = self
-        @data[:second_child] = @data[:second_child].replace_leftmost_leaf replacement
-        @data[:second_child].parent = self
-        self
       end
     end
     
@@ -193,6 +173,8 @@ module JetPEG
     end
     
     class RuleCall < ParsingExpression
+      leftmost_leaves :self
+
       def arguments
         @data[:arguments] || []
       end
@@ -239,29 +221,13 @@ module JetPEG
         end_input = builder.phi LLVM_STRING, in_recursion_loop_block => builder.left_recursion_previous_end_input, no_direct_left_recursion_block => call_end_input
         return end_input, referenced.rule_has_return_value?
       end
-
-      def get_leftmost_leaf
-        self
-      end
-      
-      def replace_leftmost_leaf(replacement)
-        replacement
-      end
     end
     
     class ParenthesizedExpression < ParsingExpression
+      leftmost_leaves :child
+
       def build(builder, start_input, modes, failed_block)
         return @data[:child].build builder, start_input, modes, failed_block
-      end
-
-      def get_leftmost_leaf
-        @data[:child].get_leftmost_leaf
-      end
-      
-      def replace_leftmost_leaf(replacement)
-        @data[:child] = @data[:child].replace_leftmost_leaf replacement
-        @data[:child].parent = self
-        self
       end
     end
   end
