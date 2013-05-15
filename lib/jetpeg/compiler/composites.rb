@@ -175,20 +175,12 @@ module JetPEG
     class RuleCall < ParsingExpression
       leftmost_leaves :self
 
-      def arguments
-        @data[:arguments] || []
-      end
-      
-      def referenced
-        @referenced ||= begin
-          referenced = parser[@data[:name].to_sym]
-          raise CompilationError.new("Undefined rule \"#{@data[:name]}\".", rule) if referenced.nil?
-          raise CompilationError.new("Wrong argument count for rule \"#{@data[:name]}\".", rule) if referenced.parameters.size != arguments.size
-          referenced
-        end
-      end
-      
       def build(builder, start_input, modes, failed_block)
+        referenced = parser[@data[:name].to_sym]
+        arguments = @data[:arguments] || []
+        raise CompilationError.new("Undefined rule \"#{@data[:name]}\".", rule) if referenced.nil?
+        raise CompilationError.new("Wrong argument count for rule \"#{@data[:name]}\".", rule) if referenced.parameters.size != arguments.size
+
         direct_left_recursion_block = builder.create_block "direct_left_recursion"
         no_direct_left_recursion_block = builder.create_block "no_direct_left_recursion"
         successful_block = builder.create_block "rule_call_successful"
