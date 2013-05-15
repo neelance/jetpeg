@@ -22,12 +22,12 @@ rule creator
 end
 
 rule data
-  quoted_string <StringData> /
+  string:quoted_string <StringData> /
   ( "true" value:$true / "false" value:$false ) <BooleanData> /
   "{" entries:( ws label:alphanumeric_char+ ":" ws :data ){ "," }* ws "}" <HashData> /
   "[" entries:( ws data ){ "," }* ws "]" <ArrayData> /
   "<" class_name:alphanumeric_char+ ws :data ">" <ObjectData> /
-  "@" @:alphanumeric_char+ <LabelData>
+  "@" name:alphanumeric_char+ <LabelData>
 end
 
 rule code
@@ -68,7 +68,7 @@ rule primary
 end
 
 rule parenthesized_expression
-  "(" ws ")" <EmptyParsingExpression> /
+  "(" ws ")" <EmptyParsingExpression { }> /
   "(" ws child:choice[$false] ")" <ParenthesizedExpression>
 end
 

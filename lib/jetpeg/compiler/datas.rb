@@ -2,7 +2,7 @@ module JetPEG
   module Compiler
     class StringData < ParsingExpression
       def build(builder, start_input, modes, failed_block)
-        builder.call builder.output_functions[:push_string], builder.global_string_pointer(@data)
+        builder.call builder.output_functions[:push_string], builder.global_string_pointer(@data[:string])
       end
     end
     
@@ -41,7 +41,7 @@ module JetPEG
     
     class LabelData < ParsingExpression
       def build(builder, start_input, modes, failed_block)
-        builder.call builder.output_functions[:read_from_source], builder.global_string_pointer(@data)
+        builder.call builder.output_functions[:read_from_source], builder.global_string_pointer(@data[:name])
       end
     end
   end
