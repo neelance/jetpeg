@@ -1,47 +1,53 @@
 module JetPEG
   module Compiler
     class StringData < ParsingExpression
-      def build(builder, start_input, modes, failed_block)
-        builder.call builder.output_functions[:push_string], builder.global_string_pointer(@data[:string])
+      block :_entry do
+        push_string @_builder.global_string_pointer(@_data[:string])
+        br :_successful
       end
     end
     
     class BooleanData < ParsingExpression
-      def build(builder, start_input, modes, failed_block)
-        builder.call builder.output_functions[:push_boolean], (@data[:value] ? LLVM::TRUE : LLVM::FALSE)
+      block :_entry do
+        push_boolean (@_data[:value] ? LLVM::TRUE : LLVM::FALSE)
+        br :_successful
       end
     end
     
     class HashData < ParsingExpression
-      def build(builder, start_input, modes, failed_block)
-        @data[:entries].each do |entry|
-          entry[:data].build builder, start_input, modes, failed_block
-          builder.call builder.output_functions[:make_label], builder.global_string_pointer(entry[:label])
+      block :_entry do
+        @_data[:entries].each do |entry|
+          entry[:data].build @_builder, @_start_input, @_modes, @_blocks[:_failed]
+          make_label @_builder.global_string_pointer(entry[:label])
         end
-        builder.call builder.output_functions[:merge_labels], LLVM::Int64.from_i(@data[:entries].size)
+        merge_labels LLVM::Int64.from_i(@_data[:entries].size)
+        br :_successful
       end
     end
     
     class ArrayData < ParsingExpression
-      def build(builder, start_input, modes, failed_block)
-        builder.call builder.output_functions[:push_array], LLVM::FALSE
-        @data[:entries].each do |entry|
-          entry.build builder, start_input, modes, failed_block
-          builder.call builder.output_functions[:append_to_array]
+      block :_entry do
+        push_array LLVM::FALSE
+        @_data[:entries].each do |entry|
+          entry.build @_builder, @_start_input, @_modes, @_blocks[:_failed]
+          append_to_array
         end
+        br :_successful
       end
     end
     
     class ObjectData < ParsingExpression
-      def build(builder, start_input, modes, failed_block)
-        @data[:data].build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:make_object], builder.global_string_pointer(@data[:class_name])
+      block :_entry do
+        build :data, @_start_input, :_failed
+        make_object @_builder.global_string_pointer(@_data[:class_name])
+        br :_successful
       end
     end
     
     class LabelData < ParsingExpression
-      def build(builder, start_input, modes, failed_block)
-        builder.call builder.output_functions[:read_from_source], builder.global_string_pointer(@data[:name])
+      block :_entry do
+        read_from_source @_builder.global_string_pointer(@_data[:name])
+        br :_successful
       end
     end
   end

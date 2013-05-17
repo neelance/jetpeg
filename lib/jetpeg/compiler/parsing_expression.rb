@@ -114,6 +114,7 @@ module JetPEG
 
           builder = Compiler::Builder.new
           entry_block = function.basic_blocks.append "entry"
+          builder.parser = parser
           builder.traced = traced
           builder.rule_start_input = function.params[0]
           builder.output_functions = Hash[*OUTPUT_INTERFACE_SIGNATURES.keys.zip(function.params.to_a[2, OUTPUT_FUNCTION_POINTERS.size]).flatten]
@@ -169,6 +170,15 @@ module JetPEG
         @internal_match_functions[traced]
       end
 
+      @@blocks = Hash.new { |hash, key| hash[key] = {} }
+      def self.block(name, &block)
+        @@blocks[self][name] = block
+      end
+
+      def build(builder, start_input, modes, failed_block)
+        BuildContext.new.generate self, builder, @@blocks[self.class], @data, start_input, modes, failed_block
+      end
+
       def ==(other)
         self.class == other.class && self.data == other.data
       end
@@ -202,6 +212,82 @@ module JetPEG
           @data[name].parent = self
         end
         self
+      end
+    end
+
+    class BuildContext
+      def generate(current, builder, ruby_blocks, data, start_input, modes, failed_block)
+        @_current = current
+        @_builder = builder
+        @_data = data
+        @_start_input = start_input
+        @_modes = modes
+        @_failed = failed_block
+        @_has_return_value = false
+        @_end_input = @_start_input
+
+        @_blocks = {}
+        ruby_blocks.each_key do |name|
+          @_blocks[name] = @_builder.create_block name.to_s
+        end
+        @_blocks[:_successful] ||= @_builder.create_block("_successful")
+        @_blocks[:_failed] = failed_block
+
+        @_builder.br @_blocks[:_entry]
+
+        ruby_blocks.each do |name, ruby_block|
+          @_builder.position_at_end @_blocks[name]
+          instance_eval(&ruby_block)
+        end
+
+        @_builder.position_at_end @_blocks[:_successful]
+        return @_end_input, @_has_return_value
+      end
+
+      OUTPUT_INTERFACE_SIGNATURES.each_key do |name|
+        define_method name do |*args|
+          @_builder.call @_builder.output_functions[name], *args
+        end
+      end
+
+      LLVM::Builder.instance_methods(false).each do |name|
+        define_method name do |*args|
+          @_builder.__send__ name, *args
+        end
+      end
+
+      def build(child_name, start_input, failed_block)
+        @_data[child_name].build @_builder, start_input, @_modes, @_blocks[failed_block]
+      end
+
+      def free_local_value(child_name)
+        @_data[child_name].free_local_value @_builder
+      end
+
+      remove_method :br
+      def br(block)
+        @_builder.br @_blocks[block]
+      end
+
+      remove_method :cond
+      def cond(value, true_block, false_block)
+        @_builder.cond value, @_blocks[true_block], @_blocks[false_block]
+      end
+
+      remove_method :icmp
+      def icmp(pred, lhs, rhs)
+        @_builder.icmp pred, lhs, rhs
+      end
+
+      remove_method :phi
+      def phi(type, branches)
+        phi = @_builder.phi type, {}
+        branches.each { |block, value| phi.add_incoming @_blocks[block] => value }
+        phi
+      end
+
+      def i64(value)
+        LLVM::Int64.from_i(value)
       end
     end
     
