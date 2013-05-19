@@ -175,6 +175,10 @@ module JetPEG
         @@blocks[self][name] = block
       end
 
+      def self.copy_blocks(from)
+        @@blocks[self] = @@blocks[from]
+      end
+
       def build(builder, start_input, modes, failed_block)
         BuildContext.new.generate self, builder, @@blocks[self.class], @data, start_input, modes, failed_block
       end

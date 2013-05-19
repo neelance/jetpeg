@@ -21,12 +21,11 @@ module JetPEG
       leftmost_leaves :self
 
       def build(builder, start_input, modes, failed_block)
-        input_char = builder.load start_input, "char"
         successful_block = builder.create_block "character_class_successful" unless @data[:inverted]
         
         @data[:selections].each do |selection|
           next_selection_block = builder.create_block "character_class_next_selection"
-          selection.build builder, start_input, input_char, (@data[:inverted] ? failed_block : successful_block), next_selection_block
+          selection.build builder, start_input, (@data[:inverted] ? failed_block : successful_block), next_selection_block
           builder.position_at_end next_selection_block
         end
         
@@ -41,7 +40,8 @@ module JetPEG
     end
     
     class CharacterClassSingleCharacter < ParsingExpression
-      def build(builder, start_input, input_char, successful_block, failed_block)
+      def build(builder, start_input, successful_block, failed_block)
+        input_char = builder.load start_input, "char"
         successful = builder.icmp :eq, input_char, LLVM::Int8.from_i(@data[:character].ord), "matching"
         builder.cond successful, successful_block, builder.trace_failure_reason(failed_block, start_input, @data[:character])
       end
@@ -54,7 +54,8 @@ module JetPEG
     end
     
     class CharacterClassRange < ParsingExpression
-      def build(builder, start_input, input_char, successful_block, failed_block)
+      def build(builder, start_input, successful_block, failed_block)
+        input_char = builder.load start_input, "char"
         expectation = "#{@data[:begin_char].data[:character]}-#{@data[:end_char].data[:character]}"
         begin_char_successful = builder.create_block "character_class_range_begin_char_successful"
         successful = builder.icmp :uge, input_char, LLVM::Int8.from_i(@data[:begin_char].data[:character].ord), "begin_matching"

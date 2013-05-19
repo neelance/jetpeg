@@ -3,21 +3,22 @@ module JetPEG
     class Label < ParsingExpression
       leftmost_leaves :child
 
-      def build(builder, start_input, modes, failed_block)
-        child_end_input, has_return_value = @data[:child].build builder, start_input, modes, failed_block
+      block :_entry do
+        @_end_input, @_has_return_value = build :child, @_start_input, :_failed
         
-        if not has_return_value or data[:name] == "@"
-          builder.call builder.output_functions[:pop] if has_return_value
-          builder.call builder.output_functions[:push_input_range], start_input, child_end_input
+        if not @_has_return_value or @_data[:name] == "@"
+          pop if @_has_return_value
+          push_input_range @_start_input, @_end_input
         end
 
-        if @data[:is_local]
-          builder.call builder.output_functions[:locals_push]
-        elsif data[:name] != "@"
-          builder.call builder.output_functions[:make_label], builder.global_string_pointer(data[:name])
+        if @_data[:is_local]
+          locals_push
+        elsif @_data[:name] != "@"
+          make_label @_builder.global_string_pointer(@_data[:name])
         end
         
-        return child_end_input, !@data[:is_local]
+        @_has_return_value = !@_data[:is_local]
+        br :_successful
       end
       
       def get_local_label(name, stack_index)
@@ -38,6 +39,8 @@ module JetPEG
     end
     
     class RuleCallLabel < Label
+      copy_blocks Label
+
       def initialize(data)
         super name: data[:child].data[:name], child: data[:child]
       end
@@ -53,24 +56,26 @@ module JetPEG
     class ObjectCreator < ParsingExpression
       leftmost_leaves :child
 
-      def build(builder, start_input, modes, failed_block)
-        end_input, has_return_value = @data[:child].build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:push_empty] if not has_return_value
-        builder.call builder.output_functions[:set_as_source] if @data[:data]
-        @data[:data].build builder, start_input, modes, failed_block if @data[:data]
-        builder.call builder.output_functions[:make_object], builder.global_string_pointer(@data[:class_name])
-        return end_input, true
+      block :_entry do
+        @_end_input, @child_has_return_value = build :child, @_start_input, :_failed
+        push_empty if not @child_has_return_value
+        set_as_source if @_data[:data]
+        build :data, @_start_input, :_failed if @_data[:data]
+        make_object @_builder.global_string_pointer(@_data[:class_name])
+        @_has_return_value = true
+        br :_successful
       end
     end
     
     class ValueCreator < ParsingExpression
       leftmost_leaves :child
 
-      def build(builder, start_input, modes, failed_block)
-        end_input, has_return_value = @data[:child].build builder, start_input, modes, failed_block
-        builder.call builder.output_functions[:push_empty] if not has_return_value
-        builder.call builder.output_functions[:make_value], builder.global_string_pointer(@data[:code]), builder.global_string_pointer(parser.options[:filename]), LLVM::Int64.from_i(@data[:code].line)
-        return end_input, true
+      block :_entry do
+        @_end_input, @child_has_return_value = build :child, @_start_input, :_failed
+        push_empty if not @child_has_return_value
+        make_value @_builder.global_string_pointer(@_data[:code]), @_builder.global_string_pointer(@_builder.parser.options[:filename]), i64(@_data[:code].line)
+        @_has_return_value = true
+        br :_successful
       end
     end
   end
