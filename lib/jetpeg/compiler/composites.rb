@@ -71,16 +71,12 @@ module JetPEG
       block :_entry do
         @first_child_end_input, @_has_return_value = build :child, @_start_input, @_data[:at_least_once] ? :_failed : :first_failed
         push_array LLVM::TRUE if @_has_return_value
-        br :after_first
-      end
-
-      block :after_first do
         br :loop
       end
-        
+
       block :loop do
         @loop_input_phi = phi LLVM_STRING,
-          :after_first => @first_child_end_input
+          :_entry => @first_child_end_input
         @input = @loop_input_phi
         
         @glue_has_return_value = false

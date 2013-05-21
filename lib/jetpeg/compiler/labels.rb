@@ -47,9 +47,10 @@ module JetPEG
     end
     
     class LocalValue < ParsingExpression
-      def build(builder, start_input, modes, failed_block)
-        builder.call builder.output_functions[:locals_load], LLVM::Int64.from_i(get_local_label(@data[:name], 0))
-        return start_input, true
+      block :_entry do
+        locals_load i64(@_current.get_local_label(@_data[:name], 0))
+        @_has_return_value = true
+        br :_successful
       end
     end
     

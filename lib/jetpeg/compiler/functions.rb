@@ -57,9 +57,9 @@ module JetPEG
     end
 
     class StringValue < ParsingExpression
-      def build(builder, start_input, modes, failed_block)
-        builder.call builder.output_functions[:push_string], builder.global_string_pointer(@data[:string])
-        return start_input, false
+      block :_entry do
+        push_string @_builder.global_string_pointer(@_data[:string])
+        br :_successful
       end
     end
   end

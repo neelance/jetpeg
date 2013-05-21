@@ -236,12 +236,14 @@ module JetPEG
         end
         @_blocks[:_successful] ||= @_builder.create_block("_successful")
         @_blocks[:_failed] = failed_block
+        @_end_blocks = @_blocks.dup
 
         @_builder.br @_blocks[:_entry]
 
         ruby_blocks.each do |name, ruby_block|
           @_builder.position_at_end @_blocks[name]
           instance_eval(&ruby_block)
+          @_end_blocks[name] = @_builder.insert_block
         end
 
         @_builder.position_at_end @_blocks[:_successful]
@@ -286,7 +288,7 @@ module JetPEG
       remove_method :phi
       def phi(type, branches)
         phi = @_builder.phi type, {}
-        branches.each { |block, value| phi.add_incoming @_blocks[block] => value }
+        branches.each { |block, value| phi.add_incoming @_end_blocks[block] => value }
         phi
       end
 
@@ -305,8 +307,8 @@ module JetPEG
     end
     
     class EmptyParsingExpression < ParsingExpression
-      def build(builder, start_input, modes, failed_block)
-        return start_input, false
+      block :_entry do
+        br :_successful
       end
     end
   end
