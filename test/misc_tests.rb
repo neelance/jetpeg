@@ -18,11 +18,11 @@ class MiscTests < Test::Unit::TestCase
   end
   
   def test_failure_tracing
-    rule = JetPEG::Compiler.compile_rule '"a" "b" "c"'
+    rule = JetPEG::Compiler.compile_rule '"a" "bbb" "c"'
     assert !rule.parse("aXc")
     assert rule.parser.failure_reason.is_a? JetPEG::ParsingError
     assert rule.parser.failure_reason.position == 1
-    assert rule.parser.failure_reason.expectations == ["b"]
+    assert rule.parser.failure_reason.expectations == ["bbb"]
     
     rule = JetPEG::Compiler.compile_rule '"a" [b2-5] "c"'
     assert !rule.parse("aXc")

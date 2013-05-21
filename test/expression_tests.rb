@@ -176,7 +176,7 @@ class ExpressionsTests < Test::Unit::TestCase
   def test_recursive_rule
     grammar = JetPEG::Compiler.compile_grammar '
       rule test
-        "(" test ")" / ""
+        "(" test ")" / ( )
       end
     '
     assert grammar.parse_rule(:test, "")
