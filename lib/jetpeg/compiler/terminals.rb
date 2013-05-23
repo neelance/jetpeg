@@ -1,35 +1,33 @@
 module JetPEG
   module Compiler
     class StringTerminal < ParsingExpression
-      def build(builder, start_input, modes, failed_block)
-        end_input, _ = @data[:chars].build builder, start_input, modes, failed_block
-        return end_input, false
+      block :_entry do
+        @_end_input, _ = build :chars, @_start_input, :_failed
+        br :_successful
       end
     end
 
     class CharacterSequence < ParsingExpression
       leftmost_leaves :char
 
-      def build(builder, start_input, modes, failed_block)
-        char_end_input, _ = @data[:char].build builder, start_input, modes, failed_block
-        end_input, _ = @data[:rest].build builder, char_end_input, modes, failed_block
-        return end_input, false
+      block :_entry do
+        @char_end_input, _ = build :char, @_start_input, :_failed
+        @_end_input, _ = build :rest, @char_end_input, :_failed
+        br :_successful
       end
     end
 
     class Character < ParsingExpression
       leftmost_leaves :self
 
-      def build(builder, start_input, modes, failed_block)
-        successful_block = builder.create_block "successful"
-
-        char = @data[:char].gsub(/\\./) { |str| Compiler.translate_escaped_character str[1] }
-        successful = builder.icmp :eq, builder.load(start_input), LLVM::Int8.from_i(char.ord), "failed"
-        builder.cond successful, successful_block, failed_block #builder.trace_failure_reason(failed_block, start_input, string)
+      block :_entry do
+        @char = @_data[:char].gsub(/\\./) { |str| Compiler.translate_escaped_character str[1] }
+        successful = icmp :eq, load(@_start_input), LLVM::Int8.from_i(@char.ord)
+        cond successful, :_successful, :_failed
+      end
         
-        builder.position_at_end successful_block
-        end_input = builder.gep start_input, LLVM::Int(1), "new_input"
-        return end_input, false
+      block :_successful do
+        @_end_input = gep @_start_input, LLVM::Int(1)
       end
     end
     
