@@ -110,7 +110,7 @@ rule char_sequence
 end
 
 rule character
-  !"\"" char:( "\\\\" / "\\\"" / . ) <Character>
+  !"\"" char:( "\\" . / . ) <Character>
 end
 
 rule character_class_single_character
