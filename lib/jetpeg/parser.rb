@@ -270,7 +270,7 @@ module JetPEG
   end
   
   class JitParser < Parser
-    attr_reader :failure_reason, :mode_names
+    attr_reader :failure_reason, :mode_indices
     
     def initialize(rules, options = {})
       super(nil, options)
@@ -298,8 +298,7 @@ module JetPEG
       end
       
       @mod = LLVM::Module.new "Parser"
-      @mode_names = @rules.values.map(&:all_mode_names).flatten.uniq
-      @mode_struct = LLVM::Type.struct(([LLVM::Int1] * @mode_names.size), true, "mode_struct")
+      @mode_indices = Hash.new { |hash, key| hash[key] = hash.size }
       
       malloc_counter = nil
       free_counter = nil
@@ -310,7 +309,7 @@ module JetPEG
         free_counter.initializer = LLVM::Int64.from_i(0)
       end
 
-      @rules.each_value { |rule| rule.set_runtime @mod, @mode_struct }
+      @rules.each_value { |rule| rule.set_runtime @mod }
       @rules.each_value { |rule| rule.match_function if rule.is_root }
       @mod.verify!
     end

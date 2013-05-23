@@ -1,13 +1,12 @@
 module JetPEG
   module Compiler
     class ParsingExpression
-      attr_accessor :data, :parent, :rule_name, :parameters, :is_root, :local_label_source, :all_mode_names
+      attr_accessor :data, :parent, :rule_name, :parameters, :is_root, :local_label_source
       
       def initialize(data)
         @data = data || {}
 
         previous_child = nil
-        @all_mode_names = []
         children = []
         @data.values.each do |value|
           children << value if value.is_a? ParsingExpression
@@ -17,7 +16,6 @@ module JetPEG
           child.parent = self
           child.local_label_source = previous_child
           previous_child = child
-          @all_mode_names.concat child.all_mode_names
         end
         
         @rule_name = nil
@@ -63,9 +61,8 @@ module JetPEG
         # nothing to do
       end
 
-      def set_runtime(mod, mode_struct)
+      def set_runtime(mod)
         @mod = mod
-        @mode_struct = mode_struct
         @match_function = nil
         @internal_match_functions = {}
       end
@@ -87,12 +84,12 @@ module JetPEG
           builder.cond force_traced, traced_block, not_traced_block
 
           builder.position_at_end not_traced_block
-          rule_end_input = builder.call internal_match_function(false), start_ptr, @mode_struct.null, *output_functions
+          rule_end_input = builder.call internal_match_function(false), start_ptr, LLVM::Type.array(LLVM::Int1, 64).null, *output_functions
           successful = builder.icmp :eq, rule_end_input, end_ptr
           builder.cond successful, successful_block, traced_block
           
           builder.position_at_end traced_block
-          rule_end_input = builder.call internal_match_function(true), start_ptr, @mode_struct.null, *output_functions
+          rule_end_input = builder.call internal_match_function(true), start_ptr, LLVM::Type.array(LLVM::Int1, 64).null, *output_functions
           successful = builder.icmp :eq, rule_end_input, end_ptr
           builder.cond successful, successful_block, failed_block
           
@@ -108,7 +105,7 @@ module JetPEG
 
       def internal_match_function(traced)
         if @internal_match_functions[traced].nil?
-          function = @mod.functions.add "#{@rule_name}_internal_match", [LLVM_STRING, @mode_struct, *OUTPUT_FUNCTION_POINTERS], LLVM_STRING
+          function = @mod.functions.add "#{@rule_name}_internal_match", [LLVM_STRING, LLVM::Type.array(LLVM::Int1, 64), *OUTPUT_FUNCTION_POINTERS], LLVM_STRING
           function.linkage = :private
           @internal_match_functions[traced] = function
 
