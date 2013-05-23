@@ -22,7 +22,7 @@ rule creator
 end
 
 rule data
-  string:quoted_string <StringData> /
+  string:( "\"" @:( !"\"" ( "\\\\" / "\\\"" / . ) )* "\"" ) <StringData> /
   ( "true" value:$true / "false" value:$false ) <BooleanData> /
   "{" entries:( ws label:alphanumeric_char+ ":" ws :data ){ "," }* ws "}" <HashData> /
   "[" entries:( ws data ){ "," }* ws "]" <ArrayData> /
@@ -99,13 +99,18 @@ rule rule_name
 end
 
 rule terminal
-  "\"" content:( !"\"" ( "\\\\" / "\\\"" / . ) )* "\"" <StringTerminal> /
+  "\"" chars:char_sequence "\"" <StringTerminal> /
   "[" ( "^" inverted:$true )? selections:( character_class_range / character_class_single_character )+ "]" <CharacterClassTerminal> /
   "." <CharacterClassTerminal { selections: [ <CharacterClassEscapedCharacter { character: "0" }> ], inverted: true }>
 end
 
-rule quoted_string
-  "\"" @:( !"\"" ( "\\\\" / "\\\"" / . ) )* "\""
+rule char_sequence
+  char:character rest:char_sequence <CharacterSequence> /
+  character
+end
+
+rule character
+  !"\"" char:( "\\\\" / "\\\"" / . ) <Character>
 end
 
 rule character_class_single_character
