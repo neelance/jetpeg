@@ -22,7 +22,7 @@ rule creator
 end
 
 rule data
-  string:( "\"" @:( !"\"" ( "\\\\" / "\\\"" / . ) )* "\"" ) <StringData> /
+  string:( "\"" @:( !"\"" ( "\\" . / . ) )* "\"" ) <StringData> /
   ( "true" value:$true / "false" value:$false ) <BooleanData> /
   "{" entries:( ws label:alphanumeric_char+ ":" ws :data ){ "," }* ws "}" <HashData> /
   "[" entries:( ws data ){ "," }* ws "]" <ArrayData> /
@@ -71,7 +71,7 @@ rule parenthesized_expression
 end
 
 rule argument
-  "\"" string:( !"\"" ( "\\\\" / "\\\"" / . ) )* "\"" <StringValue> /
+  "\"" string:( !"\"" ( "\\" . / . ) )* "\"" <StringValue> /
   function /
   local_value /
   choice[$false]
@@ -101,7 +101,7 @@ end
 rule terminal
   "\"" chars:char_sequence "\"" <StringTerminal> /
   "[" ( "^" inverted:$true )? selections:( character_class_range / character_class_single_character )+ "]" <CharacterClassTerminal> /
-  "." <CharacterClassTerminal { selections: [ <CharacterClassEscapedCharacter { character: "0" }> ], inverted: true }>
+  "." <CharacterClassTerminal { selections: [ <CharacterClassSingleCharacter { character: "\0" }> ], inverted: true }>
 end
 
 rule char_sequence
@@ -114,8 +114,7 @@ rule character
 end
 
 rule character_class_single_character
-  "\\" character:. <CharacterClassEscapedCharacter> /
-  ( !"]" ) character:. <CharacterClassSingleCharacter>
+  ( !"]" ) character:( "\\" . / . ) <CharacterClassSingleCharacter>
 end
 
 rule character_class_range

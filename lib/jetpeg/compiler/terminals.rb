@@ -21,8 +21,7 @@ module JetPEG
       leftmost_leaves :self
 
       block :_entry do
-        @char = @_data[:char].gsub(/\\./) { |str| Compiler.translate_escaped_character str[1] }
-        successful = icmp :eq, load(@_start_input), LLVM::Int8.from_i(@char.ord)
+        successful = icmp :eq, load(@_start_input), LLVM::Int8.from_i(Compiler.unescape_character(@_data[:char]).ord)
         cond successful, :_successful, :_failed
       end
         
@@ -58,16 +57,8 @@ module JetPEG
     class CharacterClassSingleCharacter < ParsingExpression
       block :_entry do
         @input_char = load @_start_input, "char"
-        @successful = icmp :eq, @input_char, LLVM::Int8.from_i(@_data[:character].ord)
+        @successful = icmp :eq, @input_char, LLVM::Int8.from_i(Compiler.unescape_character(@_data[:character]).ord)
         @_builder.cond @successful, @_blocks[:_successful], @_builder.trace_failure_reason(@_blocks[:_failed], @_start_input, @_data[:character])
-      end
-    end
-    
-    class CharacterClassEscapedCharacter < CharacterClassSingleCharacter
-      copy_blocks CharacterClassSingleCharacter
-
-      def initialize(data)
-        super character: Compiler.translate_escaped_character(data[:character])
       end
     end
     
