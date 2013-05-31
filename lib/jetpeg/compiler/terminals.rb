@@ -1,6 +1,8 @@
 module JetPEG
   module Compiler
     class StringTerminal < ParsingExpression
+      leftmost_leaves :self
+
       block :_entry do
         @_end_input, _ = build :chars, @_start_input, :_failed
         br :_successful
@@ -33,24 +35,31 @@ module JetPEG
     class CharacterClassTerminal < ParsingExpression
       leftmost_leaves :self
 
-      def build(builder, start_input, modes, failed_block)
-        matched_block = builder.create_block "character_class_matched"
-        successful_block = builder.create_block "character_class_successful"
-        
-        @data[:selections].each do |selection|
-          next_selection_block = builder.create_block "character_class_next_selection"
-          selection.build builder, start_input, modes, next_selection_block
-          builder.br matched_block
-          builder.position_at_end next_selection_block
-        end
-        builder.br(@data[:inverted] ? successful_block : failed_block)
+      block :_entry do
+        build :selection, @_start_input, :no_match
+        br :_successful if not @_data[:inverted]
+        br :_failed if @_data[:inverted]
+      end
 
-        builder.position_at_end matched_block
-        builder.br(@data[:inverted] ? failed_block : successful_block)
+      block :no_match do
+        br :_failed if not @_data[:inverted]
+        br :_successful if @_data[:inverted]
+      end
 
-        builder.position_at_end successful_block
-        end_input = builder.gep start_input, LLVM::Int(1), "new_input"
-        return end_input, false
+      block :_successful do
+        @_end_input = gep @_start_input, LLVM::Int(1)
+      end
+    end
+
+    class CharacterClassSelection < ParsingExpression
+      block :_entry do
+        build :selector, @_start_input, :no_match
+        br :_successful
+      end
+
+      block :no_match do
+        build :rest, @_start_input, :_failed
+        br :_successful
       end
     end
     

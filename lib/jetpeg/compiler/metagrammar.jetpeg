@@ -100,8 +100,8 @@ end
 
 rule terminal
   "\"" chars:char_sequence "\"" <StringTerminal> /
-  "[" ( "^" inverted:$true )? selections:( character_class_range / character_class_single_character )+ "]" <CharacterClassTerminal> /
-  "." <CharacterClassTerminal { selections: [ <CharacterClassSingleCharacter { character: "\0" }> ], inverted: true }>
+  "[" ( "^" inverted:$true )? selection:character_class_selection "]" <CharacterClassTerminal> /
+  "." <CharacterClassTerminal { selection: <CharacterClassSingleCharacter { character: "\0" }>, inverted: true }>
 end
 
 rule char_sequence
@@ -113,12 +113,18 @@ rule character
   !"\"" char:( "\\" . / . ) <Character>
 end
 
-rule character_class_single_character
-  ( !"]" ) character:( "\\" . / . ) <CharacterClassSingleCharacter>
+rule character_class_selection
+  selector:character_class_selector rest:character_class_selection <CharacterClassSelection> /
+  character_class_selector
 end
 
-rule character_class_range
-  begin_char:character_class_single_character "-" end_char:character_class_single_character <CharacterClassRange>
+rule character_class_selector
+  begin_char:character_class_single_character "-" end_char:character_class_single_character <CharacterClassRange> /
+  character_class_single_character
+end
+
+rule character_class_single_character
+  ( !"]" ) character:( "\\" . / . ) <CharacterClassSingleCharacter>
 end
 
 rule keyword
