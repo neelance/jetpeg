@@ -14,7 +14,7 @@ module JetPEG
         if @_data[:is_local]
           locals_push
         elsif @_data[:name] != "@"
-          make_label @_builder.global_string_pointer(@_data[:name])
+          make_label string(@_data[:name])
         end
         
         @_has_return_value = !@_data[:is_local]
@@ -62,7 +62,7 @@ module JetPEG
         push_empty if not @child_has_return_value
         set_as_source if @_data[:data]
         build :data, @_start_input, :_failed if @_data[:data]
-        make_object @_builder.global_string_pointer(@_data[:class_name])
+        make_object string(@_data[:class_name])
         @_has_return_value = true
         br :_successful
       end
@@ -74,7 +74,7 @@ module JetPEG
       block :_entry do
         @_end_input, @child_has_return_value = build :child, @_start_input, :_failed
         push_empty if not @child_has_return_value
-        make_value @_builder.global_string_pointer(@_data[:code]), @_builder.global_string_pointer(@_builder.parser.options[:filename]), i64(@_data[:code].line)
+        make_value string(@_data[:code]), string(@_filename), i64(@_data[:code].line)
         @_has_return_value = true
         br :_successful
       end

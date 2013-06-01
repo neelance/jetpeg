@@ -84,7 +84,7 @@ module JetPEG
         pop if @glue_has_return_value
 
         @child_end_input, _ = build :child, @input, :break
-        @loop_input_phi.add_incoming @_builder.insert_block => @child_end_input
+        add_incoming @loop_input_phi, @child_end_input
         append_to_array if @_has_return_value
         br :loop
       end
@@ -115,7 +115,7 @@ module JetPEG
         
       block :loop2 do
         @child_end_input, @child_has_return_value = build :child, @input_phi, :_failed
-        @input_phi.add_incoming @_builder.insert_block => @child_end_input
+        add_incoming @input_phi, @child_end_input
         append_to_array if @child_has_return_value
         @_has_return_value = @until_has_return_value || @child_has_return_value
         br :loop1
@@ -147,20 +147,20 @@ module JetPEG
       leftmost_leaves :self
 
       block :_entry do
-        @referenced = @_builder.parser[@_data[:name].to_sym]
+        @referenced = @_parser[@_data[:name].to_sym]
         @arguments = @_data[:arguments] || []
         raise CompilationError.new("Undefined rule \"#{@_data[:name]}\".", @_current.rule) if @referenced.nil?
         raise CompilationError.new("Wrong argument count for rule \"#{@_data[:name]}\".", @_current.rule) if @referenced.parameters.size != @arguments.size
 
         @is_direct_recursion = (@referenced == @_current.rule ? LLVM::TRUE : LLVM::FALSE)
-        @is_left_recursion = icmp :eq, @_start_input, @_builder.rule_start_input
+        @is_left_recursion = icmp :eq, @_start_input, @_rule_start_input
         @is_direct_left_recursion = self.and @is_direct_recursion, @is_left_recursion
         cond @is_direct_left_recursion, :direct_left_recursion, :no_direct_left_recursion
       end
         
       block :direct_left_recursion do
-        store LLVM::TRUE, @_builder.direct_left_recursion_occurred
-        @in_recursion_loop = icmp :ne, @_builder.left_recursion_previous_end_input, LLVM_STRING.null
+        store LLVM::TRUE, @_direct_left_recursion_occurred
+        @in_recursion_loop = icmp :ne, @_left_recursion_previous_end_input, LLVM_STRING.null
         cond @in_recursion_loop, :in_recursion_loop, :_failed
       end
 
@@ -172,7 +172,7 @@ module JetPEG
       block :no_direct_left_recursion do
         @arguments.each { |arg| arg.build @_builder, @_start_input, @_modes, @_blocks[:_failed] }
         @arguments.size.times { locals_push }
-        @call_end_input = call @referenced.internal_match_function(@_builder.traced), @_start_input, @_modes, *@_builder.output_functions.values
+        @call_end_input = call @referenced.internal_match_function(@_traced), @_start_input, @_modes, *@_builder.output_functions.values
         @arguments.size.times { locals_pop }
         
         @rule_successful = icmp :ne, @call_end_input, LLVM_STRING.null
@@ -181,7 +181,7 @@ module JetPEG
         
       block :_successful do
         @_end_input = phi LLVM_STRING,
-          :in_recursion_loop => @_builder.left_recursion_previous_end_input,
+          :in_recursion_loop => @_left_recursion_previous_end_input,
           :no_direct_left_recursion => @call_end_input
         @_has_return_value = @referenced.rule_has_return_value?
       end

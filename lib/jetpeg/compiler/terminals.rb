@@ -71,7 +71,7 @@ module JetPEG
       end
 
       block :_failed do
-        trace_failure @_start_input, @_builder.global_string_pointer(@_data[:character].inspect[1..-2]), LLVM::TRUE if @_builder.traced
+        trace_failure @_start_input, string(@_data[:character].inspect[1..-2]), LLVM::TRUE if @_traced
       end
     end
     
@@ -89,7 +89,7 @@ module JetPEG
 
       block :_failed do
         @expectation = "#{@_data[:begin_char].data[:character]}-#{@_data[:end_char].data[:character]}"
-        trace_failure @_start_input, @_builder.global_string_pointer(@expectation.inspect[1..-2]), LLVM::TRUE if @_builder.traced
+        trace_failure @_start_input, string(@expectation.inspect[1..-2]), LLVM::TRUE if @_traced
       end
     end
   end

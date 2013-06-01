@@ -221,13 +221,20 @@ module JetPEG
     class BuildContext
       def generate(current, builder, ruby_blocks, data, start_input, modes, failed_block)
         @_current = current
-        @_builder = builder
         @_data = data
         @_start_input = start_input
         @_modes = modes
         @_has_return_value = false
         @_end_input = @_start_input
 
+        @_builder = builder
+        @_traced = builder.traced
+        @_parser = builder.parser
+        @_filename = builder.parser.options[:filename]
+        @_rule_start_input = builder.rule_start_input
+        @_direct_left_recursion_occurred = builder.direct_left_recursion_occurred
+        @_left_recursion_previous_end_input = builder.left_recursion_previous_end_input
+        
         @_blocks = {}
         ruby_blocks.each_key do |name|
           @_blocks[name] = @_builder.function.basic_blocks.append name.to_s
@@ -293,8 +300,16 @@ module JetPEG
         phi
       end
 
+      def add_incoming(phi, value)
+        phi.add_incoming @_builder.insert_block => value
+      end
+
       def i64(value)
         LLVM::Int64.from_i(value)
+      end
+
+      def string(value)
+        @_builder.global_string_pointer value
       end
     end
     

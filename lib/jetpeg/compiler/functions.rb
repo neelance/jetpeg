@@ -55,7 +55,7 @@ module JetPEG
 
     class StringValue < ParsingExpression
       block :_entry do
-        push_string @_builder.global_string_pointer(@_data[:string])
+        push_string string(@_data[:string])
         br :_successful
       end
     end

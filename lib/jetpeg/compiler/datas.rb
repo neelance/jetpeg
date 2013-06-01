@@ -2,7 +2,7 @@ module JetPEG
   module Compiler
     class StringData < ParsingExpression
       block :_entry do
-        push_string @_builder.global_string_pointer(@_data[:string])
+        push_string string(@_data[:string])
         br :_successful
       end
     end
@@ -18,7 +18,7 @@ module JetPEG
       block :_entry do
         @_data[:entries].each do |entry|
           entry[:data].build @_builder, @_start_input, @_modes, @_blocks[:_failed]
-          make_label @_builder.global_string_pointer(entry[:label])
+          make_label string(entry[:label])
         end
         merge_labels LLVM::Int64.from_i(@_data[:entries].size)
         br :_successful
@@ -39,14 +39,14 @@ module JetPEG
     class ObjectData < ParsingExpression
       block :_entry do
         build :data, @_start_input, :_failed
-        make_object @_builder.global_string_pointer(@_data[:class_name])
+        make_object string(@_data[:class_name])
         br :_successful
       end
     end
     
     class LabelData < ParsingExpression
       block :_entry do
-        read_from_source @_builder.global_string_pointer(@_data[:name])
+        read_from_source string(@_data[:name])
         br :_successful
       end
     end
