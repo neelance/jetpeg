@@ -72,15 +72,16 @@ module JetPEG
           @match_function = @mod.functions.add "#{@rule_name}_match", [LLVM_STRING, LLVM_STRING, LLVM::Int1, *OUTPUT_FUNCTION_POINTERS], LLVM::Int1
           @match_function.linkage = :external
         
-          entry_block = @match_function.basic_blocks.append "rule_entry"
+          entry_block      = @match_function.basic_blocks.append "rule_entry"
           successful_block = @match_function.basic_blocks.append "rule_successful"
-          failed_block = @match_function.basic_blocks.append "rule_failed"
-          start_ptr, end_ptr, force_traced, *output_functions = @match_function.params.to_a
+          failed_block     = @match_function.basic_blocks.append "rule_failed"
+          not_traced_block = @match_function.basic_blocks.append "not_traced"
+          traced_block     = @match_function.basic_blocks.append "traced"
           
           builder = Compiler::Builder.new
+          start_ptr, end_ptr, force_traced, *output_functions = @match_function.params.to_a
+
           builder.position_at_end entry_block
-          not_traced_block = builder.create_block "not_traced"
-          traced_block = builder.create_block "traced"
           builder.cond force_traced, traced_block, not_traced_block
 
           builder.position_at_end not_traced_block
@@ -109,9 +110,12 @@ module JetPEG
           function.linkage = :private
           @internal_match_functions[traced] = function
 
+          entry_block  = function.basic_blocks.append "entry"
+          failed_block = function.basic_blocks.append "failed"
+
           builder = Compiler::Builder.new
-          entry_block = function.basic_blocks.append "entry"
           builder.parser = parser
+          builder.function = function
           builder.traced = traced
           builder.rule_start_input = function.params[0]
           builder.output_functions = Hash[*OUTPUT_INTERFACE_SIGNATURES.keys.zip(function.params.to_a[2, OUTPUT_FUNCTION_POINTERS.size]).flatten]
@@ -119,22 +123,20 @@ module JetPEG
           builder.position_at_end entry_block
           builder.direct_left_recursion_occurred = builder.alloca LLVM::Int1, "direct_left_recursion_occurred"
           builder.call builder.output_functions[:trace_enter], builder.global_string_pointer(@rule_name.to_s) if traced
-          recursion_loop_block = builder.create_block "recursion_loop"
+          recursion_loop_block = function.basic_blocks.append "recursion_loop"
           builder.br recursion_loop_block
 
           builder.position_at_end recursion_loop_block
           builder.left_recursion_previous_end_input = builder.phi LLVM_STRING, { entry_block => LLVM_STRING.null }, "left_recursion_previous_end_input"
           builder.store LLVM::FALSE, builder.direct_left_recursion_occurred
-          
-          failed_block = builder.create_block "failed"
           end_input, @rule_has_return_value = build builder, function.params[0], function.params[1], failed_block
           
-          direct_left_recursion_occurred_block = builder.create_block "direct_left_recursion_occurred"
-          in_left_recursion_block = builder.create_block "in_left_recursion_block"
-          left_recursion_not_finished_block = builder.create_block "left_recursion_not_finished"
-          recursion_block = builder.create_block "recursion"
-          no_recursion_block = builder.create_block "no_recursion"
-
+          direct_left_recursion_occurred_block = function.basic_blocks.append "direct_left_recursion_occurred"
+          in_left_recursion_block              = function.basic_blocks.append "in_left_recursion_block"
+          left_recursion_not_finished_block    = function.basic_blocks.append "left_recursion_not_finished"
+          recursion_block                      = function.basic_blocks.append "recursion"
+          no_recursion_block                   = function.basic_blocks.append "no_recursion"
+          
           builder.cond builder.load(builder.direct_left_recursion_occurred, "direct_left_recursion_occurred"), direct_left_recursion_occurred_block, no_recursion_block
 
           builder.position_at_end direct_left_recursion_occurred_block
@@ -223,16 +225,15 @@ module JetPEG
         @_data = data
         @_start_input = start_input
         @_modes = modes
-        @_failed = failed_block
         @_has_return_value = false
         @_end_input = @_start_input
 
         @_blocks = {}
         ruby_blocks.each_key do |name|
-          @_blocks[name] = @_builder.create_block name.to_s
+          @_blocks[name] = @_builder.function.basic_blocks.append name.to_s
         end
-        @_blocks[:_successful] ||= @_builder.create_block("_successful")
-        @_blocks[:_failed] = failed_block
+        @_blocks[:_successful] ||= @_builder.function.basic_blocks.append "_successful"
+        @_blocks[:_failed]     ||= @_builder.function.basic_blocks.append "_failed"
         @_end_blocks = @_blocks.dup
 
         @_builder.br @_blocks[:_entry]
@@ -242,6 +243,9 @@ module JetPEG
           instance_eval(&ruby_block)
           @_end_blocks[name] = @_builder.insert_block
         end
+
+        @_builder.position_at_end @_blocks[:_failed]
+        @_builder.br failed_block
 
         @_builder.position_at_end @_blocks[:_successful]
         return @_end_input, @_has_return_value

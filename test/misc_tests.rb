@@ -17,19 +17,19 @@ class MiscTests < Test::Unit::TestCase
     assert grammar.parse_rule(:test2, "def")
   end
   
-  # def test_failure_tracing
+  def test_failure_tracing
   #   rule = JetPEG::Compiler.compile_rule '"a" "bbb" "c"'
   #   assert !rule.parse("aXc")
   #   assert rule.parser.failure_reason.is_a? JetPEG::ParsingError
   #   assert rule.parser.failure_reason.position == 1
   #   assert rule.parser.failure_reason.expectations == ["bbb"]
     
-  #   rule = JetPEG::Compiler.compile_rule '"a" [b2-5] "c"'
-  #   assert !rule.parse("aXc")
-  #   assert rule.parser.failure_reason.is_a? JetPEG::ParsingError
-  #   assert rule.parser.failure_reason.position == 1
-  #   assert rule.parser.failure_reason.expectations == ["2-5", "b"]
-  # end
+    rule = JetPEG::Compiler.compile_rule '"a" [b2-5] "c"'
+    assert !rule.parse("aXc")
+    assert rule.parser.failure_reason.is_a? JetPEG::ParsingError
+    assert rule.parser.failure_reason.position == 1
+    assert rule.parser.failure_reason.expectations == ["2-5", "b"]
+  end
   
   def test_argument_errors
     assert_raise ArgumentError do

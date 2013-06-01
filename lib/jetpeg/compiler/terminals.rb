@@ -67,21 +67,29 @@ module JetPEG
       block :_entry do
         @input_char = load @_start_input, "char"
         @successful = icmp :eq, @input_char, LLVM::Int8.from_i(Compiler.unescape_character(@_data[:character]).ord)
-        @_builder.cond @successful, @_blocks[:_successful], @_builder.trace_failure_reason(@_blocks[:_failed], @_start_input, @_data[:character])
+        cond @successful, :_successful, :_failed
+      end
+
+      block :_failed do
+        trace_failure @_start_input, @_builder.global_string_pointer(@_data[:character].inspect[1..-2]), LLVM::TRUE if @_builder.traced
       end
     end
     
     class CharacterClassRange < ParsingExpression
       block :_entry do
         @input_char = load @_start_input, "char"
-        @expectation = "#{@_data[:begin_char].data[:character]}-#{@_data[:end_char].data[:character]}"
         @successful = icmp :uge, @input_char, LLVM::Int8.from_i(@_data[:begin_char].data[:character].ord)
-        @_builder.cond @successful, @_blocks[:begin_char_successful], @_builder.trace_failure_reason(@_blocks[:_failed], @_start_input, @expectation)
+        cond @successful, :begin_char_successful, :_failed
       end
-      
+    
       block :begin_char_successful do
         @successful = icmp :ule, @input_char, LLVM::Int8.from_i(@_data[:end_char].data[:character].ord)
-        @_builder.cond @successful, @_blocks[:_successful], @_builder.trace_failure_reason(@_blocks[:_failed], @_start_input, @expectation)
+        cond @successful, :_successful, :_failed
+      end
+
+      block :_failed do
+        @expectation = "#{@_data[:begin_char].data[:character]}-#{@_data[:end_char].data[:character]}"
+        trace_failure @_start_input, @_builder.global_string_pointer(@expectation.inspect[1..-2]), LLVM::TRUE if @_builder.traced
       end
     end
   end

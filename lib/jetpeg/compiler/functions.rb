@@ -12,20 +12,26 @@ module JetPEG
           return start_input, true
 
         when "match"
-          exit_block = builder.create_block "match_exit"
+          successful_block = builder.function.basic_blocks.append "match_successful"
+          trace_failure_block = builder.function.basic_blocks.append "match_trace_failure"
 
           @data[:arguments][0].build builder, start_input, modes, failed_block
           end_input = builder.call builder.output_functions[:match], start_input
           successful = builder.icmp :ne, end_input, LLVM_STRING.null, "match_successful"
-          builder.cond successful, exit_block, builder.trace_failure_reason(failed_block, start_input, "$match failed", false) # TODO better failure message
-          
-          builder.position_at_end exit_block
+          builder.cond successful, successful_block, trace_failure_block
+
+          builder.position_at_end trace_failure_block
+          builder.call builder.output_functions[:trace_failure], start_input, builder.global_string_pointer("$match failed"), LLVM::FALSE if builder.traced # TODO better failure message
+          builder.br failed_block
+
+          builder.position_at_end successful_block
           return end_input, false
 
         when "error"
-          builder.br builder.trace_failure_reason(failed_block, start_input, @data[:arguments][0].data[:string], false)
+          builder.call builder.output_functions[:trace_failure], start_input, builder.global_string_pointer(@data[:arguments][0].data[:string]), LLVM::FALSE if builder.traced # TODO better failure message
+          builder.br failed_block
 
-          dummy_block = builder.create_block "error_dummy"
+          dummy_block = builder.function.basic_blocks.append "error_dummy"
           builder.position_at_end dummy_block
           return start_input, false
 
@@ -38,7 +44,7 @@ module JetPEG
           return @data[:arguments][1].build builder, start_input, new_modes, failed_block
 
         when "in_mode"
-          successful_block = builder.create_block "in_mode_successful"
+          successful_block = builder.function.basic_blocks.append "in_mode_successful"
           in_mode = builder.extract_value modes, parser.mode_indices[@data[:arguments][0].data[:string]], "in_mode_#{@data[:arguments][0].data[:string]}"
           builder.cond in_mode, successful_block, failed_block
           builder.position_at_end successful_block
