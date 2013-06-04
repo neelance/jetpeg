@@ -304,8 +304,24 @@ module JetPEG
         phi.add_incoming @_builder.insert_block => value
       end
 
+      def character_byte(child_name)
+        value = @_data[child_name]
+        char = if value[0] != "\\"
+          value
+        else
+          case value[1]
+          when "r" then "\r"
+          when "n" then "\n"
+          when "t" then "\t"
+          when "0" then "\0"
+          else value[1]
+          end
+        end
+        LLVM::Int8.from_i char.ord
+      end
+
       def i64(value)
-        LLVM::Int64.from_i(value)
+        LLVM::Int64.from_i value
       end
 
       def string(value)

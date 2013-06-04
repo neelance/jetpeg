@@ -92,17 +92,6 @@ module JetPEG
       end
       JitParser.new rules, options
     end
-    
-    def self.unescape_character(char)
-      return char if char[0] != "\\"
-      case char[1]
-      when "r" then "\r"
-      when "n" then "\n"
-      when "t" then "\t"
-      when "0" then "\0"
-      else char[1]
-      end
-    end
   end
 end
 

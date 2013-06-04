@@ -23,7 +23,7 @@ module JetPEG
       leftmost_leaves :self
 
       block :_entry do
-        successful = icmp :eq, load(@_start_input), LLVM::Int8.from_i(Compiler.unescape_character(@_data[:char]).ord)
+        successful = icmp :eq, load(@_start_input), character_byte(:char)
         cond successful, :_successful, :_failed
       end
         
@@ -66,30 +66,29 @@ module JetPEG
     class CharacterClassSingleCharacter < ParsingExpression
       block :_entry do
         @input_char = load @_start_input, "char"
-        @successful = icmp :eq, @input_char, LLVM::Int8.from_i(Compiler.unescape_character(@_data[:character]).ord)
+        @successful = icmp :eq, @input_char, character_byte(:char)
         cond @successful, :_successful, :_failed
       end
 
       block :_failed do
-        trace_failure @_start_input, string(@_data[:character].inspect[1..-2]), LLVM::TRUE if @_traced
+        trace_failure @_start_input, string(@_data[:char]), LLVM::TRUE if @_traced
       end
     end
     
     class CharacterClassRange < ParsingExpression
       block :_entry do
         @input_char = load @_start_input, "char"
-        @successful = icmp :uge, @input_char, LLVM::Int8.from_i(@_data[:begin_char].data[:character].ord)
+        @successful = icmp :uge, @input_char, character_byte(:begin_char)
         cond @successful, :begin_char_successful, :_failed
       end
     
       block :begin_char_successful do
-        @successful = icmp :ule, @input_char, LLVM::Int8.from_i(@_data[:end_char].data[:character].ord)
+        @successful = icmp :ule, @input_char, character_byte(:end_char)
         cond @successful, :_successful, :_failed
       end
 
       block :_failed do
-        @expectation = "#{@_data[:begin_char].data[:character]}-#{@_data[:end_char].data[:character]}"
-        trace_failure @_start_input, string(@expectation.inspect[1..-2]), LLVM::TRUE if @_traced
+        trace_failure @_start_input, string("#{@_data[:begin_char]}-#{@_data[:end_char]}"), LLVM::TRUE if @_traced
       end
     end
   end
