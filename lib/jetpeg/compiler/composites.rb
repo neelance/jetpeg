@@ -170,10 +170,10 @@ module JetPEG
       end
         
       block :no_direct_left_recursion do
-        @arguments.each { |arg| arg.build @_builder, @_start_input, @_modes, @_blocks[:_failed] }
-        @arguments.size.times { locals_push }
+        build_all :arguments, @_start_input, :_failed
+        locals_push i64(@arguments.size)
         @call_end_input = call @referenced.internal_match_function(@_traced), @_start_input, @_modes, *@_builder.output_functions.values
-        @arguments.size.times { locals_pop }
+        locals_pop i64(@arguments.size)
         
         @rule_successful = icmp :ne, @call_end_input, LLVM_STRING.null
         cond @rule_successful, :_successful, :_failed

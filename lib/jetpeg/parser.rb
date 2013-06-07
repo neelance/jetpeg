@@ -65,9 +65,9 @@ module JetPEG
     make_value:       LLVM.Function([LLVM_STRING, LLVM_STRING, LLVM::Int64], LLVM.Void()),
     make_object:      LLVM.Function([LLVM_STRING], LLVM.Void()),
     pop:              LLVM.Function([], LLVM.Void()),
-    locals_push:      LLVM.Function([], LLVM.Void()),
+    locals_push:      LLVM.Function([LLVM::Int64], LLVM.Void()),
     locals_load:      LLVM.Function([LLVM::Int64], LLVM.Void()),
-    locals_pop:       LLVM.Function([], LLVM.Void()),
+    locals_pop:       LLVM.Function([LLVM::Int64], LLVM.Void()),
     match:            LLVM.Function([LLVM_STRING], LLVM_STRING),
     set_as_source:    LLVM.Function([], LLVM.Void()),
     read_from_source: LLVM.Function([LLVM_STRING], LLVM.Void()),
@@ -189,14 +189,14 @@ module JetPEG
         new_checked_ffi_function.call(:pop, [], :void) {
           output_stack.pop
         },
-        new_checked_ffi_function.call(:locals_push, [], :void) {
-          locals_stack.push output_stack.pop
+        new_checked_ffi_function.call(:locals_push, [:int64], :void) { |count|
+          count.times { locals_stack.push output_stack.pop }
         },
         new_checked_ffi_function.call(:locals_load, [:int64], :void) { |index|
           output_stack << locals_stack[-1 - index]
         },
-        new_checked_ffi_function.call(:locals_pop, [], :void) { |count|
-          locals_stack.pop
+        new_checked_ffi_function.call(:locals_pop, [:int64], :void) { |count|
+          locals_stack.pop count
         },
         new_checked_ffi_function.call(:match, [:pointer], :pointer) { |input_ptr|
           expected = output_stack.pop

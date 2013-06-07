@@ -12,7 +12,7 @@ module JetPEG
         end
 
         if @_data[:is_local]
-          locals_push
+          locals_push i64(1)
         elsif @_data[:name] != "@"
           make_label string(:name)
         end
@@ -30,7 +30,7 @@ module JetPEG
       end
       
       def free_local_value(builder)
-        builder.call builder.output_functions[:locals_pop] if @data[:is_local]
+        builder.call builder.output_functions[:locals_pop], LLVM::Int64.from_i(1) if @data[:is_local]
       end
     end
     

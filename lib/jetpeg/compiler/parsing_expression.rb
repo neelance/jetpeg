@@ -140,7 +140,7 @@ module JetPEG
           builder.cond in_left_recursion, in_left_recursion_block, recursion_block
 
           builder.position_at_end in_left_recursion_block
-          builder.call builder.output_functions[:locals_pop] if @rule_has_return_value
+          builder.call builder.output_functions[:locals_pop], LLVM::Int64.from_i(1) if @rule_has_return_value
           left_recursion_finished = builder.icmp :eq, end_input, builder.left_recursion_previous_end_input, "left_recursion_finished"
           builder.cond left_recursion_finished, no_recursion_block, left_recursion_not_finished_block
           
@@ -149,7 +149,7 @@ module JetPEG
           builder.cond left_recursion_failed, failed_block, recursion_block
 
           builder.position_at_end recursion_block
-          builder.call builder.output_functions[:locals_push] if @rule_has_return_value
+          builder.call builder.output_functions[:locals_push], LLVM::Int64.from_i(1) if @rule_has_return_value
           builder.left_recursion_previous_end_input.add_incoming recursion_block => end_input
           builder.br recursion_loop_block
           
@@ -271,7 +271,8 @@ module JetPEG
       end
 
       def build_all(child_name, start_input, failed_block)
-        @_data[child_name].each { |c| c.build @_builder, start_input, @_modes, @_blocks[failed_block] }
+        children = @_data[child_name]
+        children.each { |c| c.build @_builder, start_input, @_modes, @_blocks[failed_block] } if children
       end
 
       def free_local_value(child_name)
