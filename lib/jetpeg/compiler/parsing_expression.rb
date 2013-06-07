@@ -53,10 +53,6 @@ module JetPEG
         @local_label_source.get_local_label name, stack_index
       end
       
-      def has_local_value?
-        false
-      end
-      
       def free_local_value(builder)
         # nothing to do
       end

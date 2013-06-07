@@ -29,10 +29,6 @@ module JetPEG
         super name, stack_index
       end
       
-      def has_local_value?
-        @data[:is_local]
-      end
-      
       def free_local_value(builder)
         builder.call builder.output_functions[:locals_pop] if @data[:is_local]
       end
