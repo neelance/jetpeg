@@ -28,10 +28,6 @@ module JetPEG
         end
         super name, stack_index
       end
-      
-      def free_local_value(builder)
-        builder.call builder.output_functions[:locals_pop], LLVM::Int64.from_i(1) if @data[:is_local]
-      end
     end
     
     class LocalValue < ParsingExpression

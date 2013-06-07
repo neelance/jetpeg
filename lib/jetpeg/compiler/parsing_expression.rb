@@ -52,10 +52,6 @@ module JetPEG
         @local_label_source ||= parent
         @local_label_source.get_local_label name, stack_index
       end
-      
-      def free_local_value(builder)
-        # nothing to do
-      end
 
       def set_runtime(mod)
         @mod = mod
@@ -114,11 +110,11 @@ module JetPEG
           builder.function = function
           builder.traced = traced
           builder.rule_start_input = function.params[0]
-          builder.output_functions = Hash[*OUTPUT_INTERFACE_SIGNATURES.keys.zip(function.params.to_a[2, OUTPUT_FUNCTION_POINTERS.size]).flatten]
+          builder.output_functions = function.params.to_a[2, OUTPUT_FUNCTION_POINTERS.size]
 
           builder.position_at_end entry_block
           builder.direct_left_recursion_occurred = builder.alloca LLVM::Int1, "direct_left_recursion_occurred"
-          builder.call builder.output_functions[:trace_enter], builder.global_string_pointer(@rule_name.to_s) if traced
+          builder.call builder.output_functions[OUTPUT_INTERFACE_SIGNATURES.keys.index(:trace_enter)], builder.global_string_pointer(@rule_name.to_s) if traced
           recursion_loop_block = function.basic_blocks.append "recursion_loop"
           builder.br recursion_loop_block
 
@@ -140,7 +136,7 @@ module JetPEG
           builder.cond in_left_recursion, in_left_recursion_block, recursion_block
 
           builder.position_at_end in_left_recursion_block
-          builder.call builder.output_functions[:locals_pop], LLVM::Int64.from_i(1) if @rule_has_return_value
+          builder.call builder.output_functions[OUTPUT_INTERFACE_SIGNATURES.keys.index(:locals_pop)], LLVM::Int64.from_i(1) if @rule_has_return_value
           left_recursion_finished = builder.icmp :eq, end_input, builder.left_recursion_previous_end_input, "left_recursion_finished"
           builder.cond left_recursion_finished, no_recursion_block, left_recursion_not_finished_block
           
@@ -149,16 +145,16 @@ module JetPEG
           builder.cond left_recursion_failed, failed_block, recursion_block
 
           builder.position_at_end recursion_block
-          builder.call builder.output_functions[:locals_push], LLVM::Int64.from_i(1) if @rule_has_return_value
+          builder.call builder.output_functions[OUTPUT_INTERFACE_SIGNATURES.keys.index(:locals_push)], LLVM::Int64.from_i(1) if @rule_has_return_value
           builder.left_recursion_previous_end_input.add_incoming recursion_block => end_input
           builder.br recursion_loop_block
           
           builder.position_at_end no_recursion_block
-          builder.call builder.output_functions[:trace_leave], builder.global_string_pointer(@rule_name.to_s), LLVM::TRUE if traced
+          builder.call builder.output_functions[OUTPUT_INTERFACE_SIGNATURES.keys.index(:trace_leave)], builder.global_string_pointer(@rule_name.to_s), LLVM::TRUE if traced
           builder.ret end_input
           
           builder.position_at_end failed_block
-          builder.call builder.output_functions[:trace_leave], builder.global_string_pointer(@rule_name.to_s), LLVM::FALSE if traced
+          builder.call builder.output_functions[OUTPUT_INTERFACE_SIGNATURES.keys.index(:trace_leave)], builder.global_string_pointer(@rule_name.to_s), LLVM::FALSE if traced
           builder.ret LLVM_STRING.null
           builder.dispose
         end
@@ -174,8 +170,8 @@ module JetPEG
         @@blocks[self] = @@blocks[from]
       end
 
-      def build(builder, start_input, modes, failed_block)
-        BuildContext.new.generate self, builder, @@blocks[self.class], @data, start_input, modes, failed_block
+      def build(*args)
+        BuildContext.new.generate self, @@blocks[self.class], @data, *args
       end
 
       def ==(other)
@@ -215,7 +211,7 @@ module JetPEG
     end
 
     class BuildContext
-      def generate(current, builder, ruby_blocks, data, start_input, modes, failed_block)
+      def generate(current, ruby_blocks, data, builder, start_input, modes, failed_block)
         @_current = current
         @_data = data
         @_start_input = start_input
@@ -230,7 +226,8 @@ module JetPEG
         @_rule_start_input = builder.rule_start_input
         @_direct_left_recursion_occurred = builder.direct_left_recursion_occurred
         @_left_recursion_previous_end_input = builder.left_recursion_previous_end_input
-        
+        @_output_functions = builder.output_functions
+
         @_blocks = {}
         ruby_blocks.each_key do |name|
           @_blocks[name] = @_builder.function.basic_blocks.append name.to_s
@@ -254,9 +251,9 @@ module JetPEG
         return @_end_input, @_has_return_value
       end
 
-      OUTPUT_INTERFACE_SIGNATURES.each_key do |name|
+      OUTPUT_INTERFACE_SIGNATURES.keys.each_with_index do |name, index|
         define_method name do |*args|
-          @_builder.call @_builder.output_functions[name], *args
+          @_builder.call @_builder.output_functions[index], *args
         end
       end
 
@@ -276,7 +273,8 @@ module JetPEG
       end
 
       def free_local_value(child_name)
-        @_data[child_name].free_local_value @_builder
+        return if not @_data[child_name].data[:is_local]
+        @_builder.call @_output_functions[OUTPUT_INTERFACE_SIGNATURES.keys.index(:locals_pop)], LLVM::Int64.from_i(1)
       end
 
       remove_method :br
