@@ -65,42 +65,6 @@ rule primary
   local_value
 end
 
-rule parenthesized_expression
-  "(" ws ")" <EmptyParsingExpression { }> /
-  "(" ws child:choice[$false] ")" <ParenthesizedExpression>
-end
-
-rule function
-  "$true" <TrueFunction> /
-  "$false" <FalseFunction> /
-  "$match" "[" value:local_value "]" <MatchFunction> /
-  "$error" "[" msg:string "]" <ErrorFunction> /
-  "$enter_mode" "[" name:string "," ws child:choice[$false] "]" <EnterModeFunction> /
-  "$leave_mode" "[" name:string "," ws child:choice[$false] "]" <LeaveModeFunction> /
-  "$in_mode" "[" name:string "]" <InModeFunction>
-end
-
-rule local_value
-  "%" name:( alpha_char alphanumeric_char* ) <LocalValue>
-end
-
-rule rule_call
-  ":" name:rule_name :arguments? <Label { name: @name, child: <RuleCall { name: @name, arguments: @arguments }> }> /
-  name:rule_name :arguments? <RuleCall>
-end
-
-rule arguments
-  "[" (
-    :string <StringValue> /
-    function /
-    local_value
-  ){ "," ws }* "]"
-end
-
-rule rule_name
-  !keyword @:( alpha_char alphanumeric_char* )
-end
-
 rule terminal
   "\"" chars:char_sequence "\"" <StringTerminal> /
   "[" ( "^" inverted:$true )? selection:character_class_selection "]" <CharacterClassTerminal> /
@@ -128,6 +92,42 @@ end
 
 rule character_class_single_character
   !"]" ( "\\" . / . )
+end
+
+rule rule_call
+  ":" name:rule_name :arguments? <Label { name: @name, child: <RuleCall { name: @name, arguments: @arguments }> }> /
+  name:rule_name :arguments? <RuleCall>
+end
+
+rule arguments
+  "[" (
+    :string <StringValue> /
+    function /
+    local_value
+  ){ "," ws }* "]"
+end
+
+rule parenthesized_expression
+  "(" ws ")" <EmptyParsingExpression { }> /
+  "(" ws child:choice[$false] ")" <ParenthesizedExpression>
+end
+
+rule function
+  "$true" <TrueFunction> /
+  "$false" <FalseFunction> /
+  "$match" "[" value:local_value "]" <MatchFunction> /
+  "$error" "[" msg:string "]" <ErrorFunction> /
+  "$enter_mode" "[" name:string "," ws child:choice[$false] "]" <EnterModeFunction> /
+  "$leave_mode" "[" name:string "," ws child:choice[$false] "]" <LeaveModeFunction> /
+  "$in_mode" "[" name:string "]" <InModeFunction>
+end
+
+rule local_value
+  "%" name:( alpha_char alphanumeric_char* ) <LocalValue>
+end
+
+rule rule_name
+  !keyword @:( alpha_char alphanumeric_char* )
 end
 
 rule string
