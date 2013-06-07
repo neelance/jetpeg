@@ -22,7 +22,7 @@ rule creator
 end
 
 rule data
-  string:( "\"" @:( !"\"" ( "\\" . / . ) )* "\"" ) <StringData> /
+  :string <StringData> /
   ( "true" value:$true / "false" value:$false ) <BooleanData> /
   "{" entries:( ws label:alphanumeric_char+ ":" ws :data ){ "," }* ws "}" <HashData> /
   "[" entries:( ws data ){ "," }* ws "]" <ArrayData> /
@@ -70,15 +70,14 @@ rule parenthesized_expression
   "(" ws child:choice[$false] ")" <ParenthesizedExpression>
 end
 
-rule argument
-  "\"" string:( !"\"" ( "\\" . / . ) )* "\"" <StringValue> /
-  function /
-  local_value /
-  choice[$false]
-end
-
 rule function
-  "$" name:alphanumeric_char+ ( "[" arguments:argument{ "," ws }+ "]" )? <Function>
+  "$true" <TrueFunction> /
+  "$false" <FalseFunction> /
+  "$match" "[" value:local_value "]" <MatchFunction> /
+  "$error" "[" msg:string "]" <ErrorFunction> /
+  "$enter_mode" "[" name:string "," ws child:choice[$false] "]" <EnterModeFunction> /
+  "$leave_mode" "[" name:string "," ws child:choice[$false] "]" <LeaveModeFunction> /
+  "$in_mode" "[" name:string "]" <InModeFunction>
 end
 
 rule local_value
@@ -92,6 +91,12 @@ end
 
 rule rule_call
   name:rule_name arguments:( "[" argument{ "," ws }* "]" )? <RuleCall>
+end
+
+rule argument
+  :string <StringValue> /
+  function /
+  local_value
 end
 
 rule rule_name
@@ -125,6 +130,10 @@ end
 
 rule character_class_single_character
   !"]" ( "\\" . / . )
+end
+
+rule string
+  "\"" @:( !"\"" ( "\\" . / . ) )* "\""
 end
 
 rule keyword

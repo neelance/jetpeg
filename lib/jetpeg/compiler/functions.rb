@@ -1,55 +1,61 @@
 module JetPEG
   module Compiler
-    class Function < ParsingExpression
-      def build(builder, start_input, modes, failed_block)
-        case @data[:name]
-        when "true"
-          builder.call builder.output_functions[:push_boolean], LLVM::TRUE
-          return start_input, true
+    class TrueFunction < ParsingExpression
+      block :_entry do
+        push_boolean LLVM::TRUE
+        @_has_return_value = true
+        br :_successful
+      end
+    end
 
-        when "false"
-          builder.call builder.output_functions[:push_boolean], LLVM::FALSE
-          return start_input, true
+    class FalseFunction < ParsingExpression
+      block :_entry do
+        push_boolean LLVM::FALSE
+        @_has_return_value = true
+        br :_successful
+      end
+    end
 
-        when "match"
-          successful_block = builder.function.basic_blocks.append "match_successful"
-          trace_failure_block = builder.function.basic_blocks.append "match_trace_failure"
+    class MatchFunction < ParsingExpression
+      block :_entry do
+        build :value, @_start_input, :_failed
+        @_end_input = match @_start_input
+        @successful = icmp :ne, @_end_input, LLVM_STRING.null
+        cond @successful, :_successful, :_failed
+      end
 
-          @data[:arguments][0].build builder, start_input, modes, failed_block
-          end_input = builder.call builder.output_functions[:match], start_input
-          successful = builder.icmp :ne, end_input, LLVM_STRING.null, "match_successful"
-          builder.cond successful, successful_block, trace_failure_block
+      block :_failed do
+        trace_failure @_start_input, string("$match failed"), LLVM::FALSE if @_traced # TODO better failure message
+      end
+    end
 
-          builder.position_at_end trace_failure_block
-          builder.call builder.output_functions[:trace_failure], start_input, builder.global_string_pointer("$match failed"), LLVM::FALSE if builder.traced # TODO better failure message
-          builder.br failed_block
+    class ErrorFunction < ParsingExpression
+      block :_entry do
+        trace_failure @_start_input, string(@_data[:msg]), LLVM::FALSE if @_traced # TODO better failure message
+        br :_failed
+      end
+    end
 
-          builder.position_at_end successful_block
-          return end_input, false
+    class EnterModeFunction < ParsingExpression
+      block :_entry do
+        @_modes = insert_value @_modes, LLVM::TRUE, @_parser.mode_indices[@_data[:name]]
+        @_end_input, @_has_return_value = build :child, @_start_input, :_failed
+        br :_successful
+      end
+    end
 
-        when "error"
-          builder.call builder.output_functions[:trace_failure], start_input, builder.global_string_pointer(@data[:arguments][0].data[:string]), LLVM::FALSE if builder.traced # TODO better failure message
-          builder.br failed_block
+    class LeaveModeFunction < ParsingExpression
+      block :_entry do
+        @_modes = insert_value @_modes, LLVM::FALSE, @_parser.mode_indices[@_data[:name]]
+        @_end_input, @_has_return_value = build :child, @_start_input, :_failed
+        br :_successful
+      end
+    end
 
-          dummy_block = builder.function.basic_blocks.append "error_dummy"
-          builder.position_at_end dummy_block
-          return start_input, false
-
-        when "enter_mode"
-          new_modes = builder.insert_value modes, LLVM::TRUE, parser.mode_indices[@data[:arguments][0].data[:string]]
-          return @data[:arguments][1].build builder, start_input, new_modes, failed_block
-
-        when "leave_mode"
-          new_modes = builder.insert_value modes, LLVM::FALSE, parser.mode_indices[@data[:arguments][0].data[:string]]
-          return @data[:arguments][1].build builder, start_input, new_modes, failed_block
-
-        when "in_mode"
-          successful_block = builder.function.basic_blocks.append "in_mode_successful"
-          in_mode = builder.extract_value modes, parser.mode_indices[@data[:arguments][0].data[:string]], "in_mode_#{@data[:arguments][0].data[:string]}"
-          builder.cond in_mode, successful_block, failed_block
-          builder.position_at_end successful_block
-          return start_input, false
-        end
+    class InModeFunction < ParsingExpression
+      block :_entry do
+        @in_mode = extract_value @_modes, @_parser.mode_indices[@_data[:name]]
+        cond @in_mode, :_successful, :_failed
       end
     end
 
