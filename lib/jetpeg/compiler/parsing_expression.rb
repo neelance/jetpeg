@@ -329,6 +329,7 @@ module JetPEG
       end
 
       def string(value)
+        value = @_data[value] if value.is_a? Symbol
         @_builder.global_string_pointer value
       end
     end

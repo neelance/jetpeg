@@ -71,7 +71,7 @@ module JetPEG
       end
 
       block :_failed do
-        trace_failure @_start_input, string(@_data[:char]), LLVM::TRUE if @_traced
+        trace_failure @_start_input, string(:char), LLVM::TRUE if @_traced
       end
     end
     

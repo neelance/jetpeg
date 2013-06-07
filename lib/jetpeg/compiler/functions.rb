@@ -31,7 +31,7 @@ module JetPEG
 
     class ErrorFunction < ParsingExpression
       block :_entry do
-        trace_failure @_start_input, string(@_data[:msg]), LLVM::FALSE if @_traced # TODO better failure message
+        trace_failure @_start_input, string(:msg), LLVM::FALSE if @_traced # TODO better failure message
         br :_failed
       end
     end
@@ -61,7 +61,7 @@ module JetPEG
 
     class StringValue < ParsingExpression
       block :_entry do
-        push_string string(@_data[:string])
+        push_string string(:string)
         br :_successful
       end
     end

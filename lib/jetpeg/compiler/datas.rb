@@ -2,7 +2,7 @@ module JetPEG
   module Compiler
     class StringData < ParsingExpression
       block :_entry do
-        push_string string(@_data[:string])
+        push_string string(:string)
         br :_successful
       end
     end
@@ -25,7 +25,7 @@ module JetPEG
     class HashDataEntry < ParsingExpression
       block :_entry do
         build :data, @_start_input, :_failed
-        make_label string(@_data[:label])
+        make_label string(:label)
         br :_successful
       end
     end
@@ -49,14 +49,14 @@ module JetPEG
     class ObjectData < ParsingExpression
       block :_entry do
         build :data, @_start_input, :_failed
-        make_object string(@_data[:class_name])
+        make_object string(:class_name)
         br :_successful
       end
     end
     
     class LabelData < ParsingExpression
       block :_entry do
-        read_from_source string(@_data[:name])
+        read_from_source string(:name)
         br :_successful
       end
     end
