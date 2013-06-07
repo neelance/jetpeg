@@ -16,11 +16,16 @@ module JetPEG
     
     class HashData < ParsingExpression
       block :_entry do
-        @_data[:entries].each do |entry|
-          entry[:data].build @_builder, @_start_input, @_modes, @_blocks[:_failed]
-          make_label string(entry[:label])
-        end
+        build_all :entries, @_start_input, :_failed
         merge_labels LLVM::Int64.from_i(@_data[:entries].size)
+        br :_successful
+      end
+    end
+
+    class HashDataEntry < ParsingExpression
+      block :_entry do
+        build :data, @_start_input, :_failed
+        make_label string(@_data[:label])
         br :_successful
       end
     end
@@ -28,10 +33,15 @@ module JetPEG
     class ArrayData < ParsingExpression
       block :_entry do
         push_array LLVM::FALSE
-        @_data[:entries].each do |entry|
-          entry.build @_builder, @_start_input, @_modes, @_blocks[:_failed]
-          append_to_array
-        end
+        build_all :entries, @_start_input, :_failed
+        br :_successful
+      end
+    end
+    
+    class ArrayDataEntry < ParsingExpression
+      block :_entry do
+        build :data, @_start_input, :_failed
+        append_to_array
         br :_successful
       end
     end

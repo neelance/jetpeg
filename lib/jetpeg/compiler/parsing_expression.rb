@@ -274,6 +274,10 @@ module JetPEG
         @_data[child_name].build @_builder, start_input, @_modes, @_blocks[failed_block]
       end
 
+      def build_all(child_name, start_input, failed_block)
+        @_data[child_name].each { |c| c.build @_builder, start_input, @_modes, @_blocks[failed_block] }
+      end
+
       def free_local_value(child_name)
         @_data[child_name].free_local_value @_builder
       end

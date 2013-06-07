@@ -24,8 +24,12 @@ end
 rule data
   :string <StringData> /
   ( "true" value:$true / "false" value:$false ) <BooleanData> /
-  "{" entries:( ws label:alphanumeric_char+ ":" ws :data ){ "," }* ws "}" <HashData> /
-  "[" entries:( ws data ){ "," }* ws "]" <ArrayData> /
+  "{" entries:(
+    ws label:alphanumeric_char+ ":" ws :data <HashDataEntry>
+  ){ "," }* ws "}" <HashData> /
+  "[" entries:(
+    ws :data <ArrayDataEntry>
+  ){ "," }* ws "]" <ArrayData> /
   "<" class_name:alphanumeric_char+ ws :data ">" <ObjectData> /
   "@" name:alphanumeric_char+ <LabelData>
 end
