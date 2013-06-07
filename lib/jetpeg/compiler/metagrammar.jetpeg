@@ -59,7 +59,7 @@ end
 
 rule primary
   terminal /
-  rule_call_label /
+  rule_call /
   parenthesized_expression /
   function /
   local_value
@@ -84,19 +84,17 @@ rule local_value
   "%" name:( alpha_char alphanumeric_char* ) <LocalValue>
 end
 
-rule rule_call_label
-  ":" child:rule_call <RuleCallLabel> /
-  rule_call
-end
-
 rule rule_call
-  name:rule_name arguments:( "[" argument{ "," ws }* "]" )? <RuleCall>
+  ":" name:rule_name :arguments? <Label { name: @name, child: <RuleCall { name: @name, arguments: @arguments }> }> /
+  name:rule_name :arguments? <RuleCall>
 end
 
-rule argument
-  :string <StringValue> /
-  function /
-  local_value
+rule arguments
+  "[" (
+    :string <StringValue> /
+    function /
+    local_value
+  ){ "," ws }* "]"
 end
 
 rule rule_name

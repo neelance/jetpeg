@@ -38,14 +38,6 @@ module JetPEG
       end
     end
     
-    class RuleCallLabel < Label
-      copy_blocks Label
-
-      def initialize(data)
-        super name: data[:child].data[:name], child: data[:child]
-      end
-    end
-    
     class LocalValue < ParsingExpression
       block :_entry do
         locals_load i64(@_current.get_local_label(@_data[:name], 0))
