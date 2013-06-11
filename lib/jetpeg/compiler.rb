@@ -5,34 +5,6 @@ $VERBOSE = verbose
 
 LLVM_STRING = LLVM::Pointer(LLVM::Int8)
 
-class FFI::Struct
-  def inspect
-    "{ #{members.map{ |name| "#{name}=#{self[name].inspect}" }.join ", "} }"
-  end
-end
-
-class Hash
-  def map_hash
-    h = {}
-    self.each_key do |key|
-      h[key] = yield key, self[key]
-    end
-    h
-  end
-  
-  def map_hash!
-    self.each_key do |key|
-      self[key] = yield key, self[key]
-    end
-  end
-end
-
-class Module
-  def to_proc
-    lambda { |obj| obj.is_a? self }
-  end
-end
-
 module JetPEG
   class CompilationError < RuntimeError
     attr_reader :rule
