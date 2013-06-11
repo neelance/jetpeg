@@ -7,7 +7,7 @@ rule parsing_rule
 end
 
 rule rule_expression
-  ws? choice[$false]
+  ws? child:choice[$false] <Rule>
 end
 
 rule choice[%nested_choice]

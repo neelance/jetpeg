@@ -113,49 +113,12 @@ module JetPEG
           builder.output_functions = function.params.to_a[2, OUTPUT_FUNCTION_POINTERS.size]
 
           builder.position_at_end entry_block
-          builder.direct_left_recursion_occurred = builder.alloca LLVM::Int1, "direct_left_recursion_occurred"
-          builder.call builder.output_functions[OUTPUT_INTERFACE_SIGNATURES.keys.index(:trace_enter)], builder.global_string_pointer(@rule_name.to_s) if traced
-          recursion_loop_block = function.basic_blocks.append "recursion_loop"
-          builder.br recursion_loop_block
-
-          builder.position_at_end recursion_loop_block
-          builder.left_recursion_previous_end_input = builder.phi LLVM_STRING, { entry_block => LLVM_STRING.null }, "left_recursion_previous_end_input"
-          builder.store LLVM::FALSE, builder.direct_left_recursion_occurred
           end_input, @rule_has_return_value = build builder, function.params[0], function.params[1], failed_block
-          
-          direct_left_recursion_occurred_block = function.basic_blocks.append "direct_left_recursion_occurred"
-          in_left_recursion_block              = function.basic_blocks.append "in_left_recursion_block"
-          left_recursion_not_finished_block    = function.basic_blocks.append "left_recursion_not_finished"
-          recursion_block                      = function.basic_blocks.append "recursion"
-          no_recursion_block                   = function.basic_blocks.append "no_recursion"
-          
-          builder.cond builder.load(builder.direct_left_recursion_occurred, "direct_left_recursion_occurred"), direct_left_recursion_occurred_block, no_recursion_block
-
-          builder.position_at_end direct_left_recursion_occurred_block
-          in_left_recursion = builder.icmp :ne, builder.left_recursion_previous_end_input, LLVM_STRING.null, "in_left_recursion"
-          builder.cond in_left_recursion, in_left_recursion_block, recursion_block
-
-          builder.position_at_end in_left_recursion_block
-          builder.call builder.output_functions[OUTPUT_INTERFACE_SIGNATURES.keys.index(:locals_pop)], LLVM::Int64.from_i(1) if @rule_has_return_value
-          left_recursion_finished = builder.icmp :eq, end_input, builder.left_recursion_previous_end_input, "left_recursion_finished"
-          builder.cond left_recursion_finished, no_recursion_block, left_recursion_not_finished_block
-          
-          builder.position_at_end left_recursion_not_finished_block
-          left_recursion_failed = builder.icmp :ult, end_input, builder.left_recursion_previous_end_input, "left_recursion_failed"
-          builder.cond left_recursion_failed, failed_block, recursion_block
-
-          builder.position_at_end recursion_block
-          builder.call builder.output_functions[OUTPUT_INTERFACE_SIGNATURES.keys.index(:locals_push)], LLVM::Int64.from_i(1) if @rule_has_return_value
-          builder.left_recursion_previous_end_input.add_incoming recursion_block => end_input
-          builder.br recursion_loop_block
-          
-          builder.position_at_end no_recursion_block
-          builder.call builder.output_functions[OUTPUT_INTERFACE_SIGNATURES.keys.index(:trace_leave)], builder.global_string_pointer(@rule_name.to_s), LLVM::TRUE if traced
           builder.ret end_input
-          
+
           builder.position_at_end failed_block
-          builder.call builder.output_functions[OUTPUT_INTERFACE_SIGNATURES.keys.index(:trace_leave)], builder.global_string_pointer(@rule_name.to_s), LLVM::FALSE if traced
           builder.ret LLVM_STRING.null
+
           builder.dispose
         end
         @internal_match_functions[traced]
@@ -329,6 +292,51 @@ module JetPEG
       end
     end
     
+    class Rule < ParsingExpression
+      block :_entry do
+        @_builder.direct_left_recursion_occurred = alloca LLVM::Int1
+        trace_enter string(@_current.rule_name.to_s) if @_traced
+        br :recursion_loop
+      end
+
+      block :recursion_loop do
+        @_builder.left_recursion_previous_end_input = phi LLVM_STRING, :_entry => LLVM_STRING.null
+        store LLVM::FALSE, @_builder.direct_left_recursion_occurred
+        @_end_input, @_has_return_value = build :child, @_start_input, :_failed
+        cond load(@_builder.direct_left_recursion_occurred), :direct_left_recursion_occurred, :_successful
+      end
+
+      block :direct_left_recursion_occurred do
+        @in_left_recursion = icmp :ne, @_builder.left_recursion_previous_end_input, LLVM_STRING.null
+        cond @in_left_recursion, :in_left_recursion, :recursion
+      end
+
+      block :in_left_recursion do
+        locals_pop i64(1) if @_has_return_value
+        @left_recursion_finished = icmp :eq, @_end_input, @_builder.left_recursion_previous_end_input
+        cond @left_recursion_finished, :_successful, :left_recursion_not_finished
+      end
+        
+      block :left_recursion_not_finished do
+        @left_recursion_failed = icmp :ult, @_end_input, @_builder.left_recursion_previous_end_input
+        cond @left_recursion_failed, :_failed, :recursion
+      end
+
+      block :recursion do
+        locals_push i64(1) if @_has_return_value
+        add_incoming @_builder.left_recursion_previous_end_input, @_end_input
+        br :recursion_loop
+      end
+        
+      block :_successful do
+        trace_leave string(@_current.rule_name.to_s), LLVM::TRUE if @_traced
+      end
+        
+      block :_failed do
+        trace_leave string(@_current.rule_name.to_s), LLVM::FALSE if @_traced
+      end
+    end
+
     class Parameter
       attr_reader :name
       attr_accessor :value
