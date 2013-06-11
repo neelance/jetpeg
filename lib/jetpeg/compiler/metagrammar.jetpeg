@@ -1,6 +1,6 @@
 rule grammar
   ws? rules:(
-    "rule" ws :rule_name parameters:( "[" local_value{ "," ws }* "]" )? ws child:parsing_rule "end" ws
+    "rule" ws :rule_name parameters:( "[" local_value*[ "," ws ] "]" )? ws child:parsing_rule "end" ws
   )*
 end
 
@@ -28,10 +28,10 @@ rule data
   / ( "true" value:$true / "false" value:$false ) <BooleanData>
   / "{" entries:(
       ws label:alphanumeric_char+ ":" ws :data <HashDataEntry>
-    ){ "," }* ws "}" <HashData>
+    )*[ "," ] ws "}" <HashData>
   / "[" entries:(
       ws :data <ArrayDataEntry>
-    ){ "," }* ws "]" <ArrayData>
+    )*[ "," ] ws "]" <ArrayData>
   / "<" class_name:alphanumeric_char+ ws :data ">" <ObjectData>
   / "@" name:alphanumeric_char+ <LabelData>
 end
@@ -59,7 +59,7 @@ end
 rule repetition
   / child:primary "?" ws <Choice { first_child: @child, second_child: <EmptyParsingExpression { }> }>
   / child:primary "*->" until_expression:primary <Until>
-  / child:primary ( "{" ws glue_expression:expression "}" )? ( "*" at_least_once:$false / "+" at_least_once:$true ) ws <Repetition>
+  / child:primary ( "*" at_least_once:$false / "+" at_least_once:$true ) ( "[" ws glue_expression:expression "]" )? ws <Repetition>
   / primary ws
 end
 
@@ -110,7 +110,7 @@ rule arguments
     / :string <StringValue>
     / function
     / local_value
-  ){ "," ws }* "]"
+  )*[ "," ws ] "]"
 end
 
 rule parenthesized_expression

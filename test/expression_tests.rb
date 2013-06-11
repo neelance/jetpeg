@@ -104,7 +104,7 @@ class ExpressionsTests < Test::Unit::TestCase
   end
   
   def test_repetition_glue
-    rule = JetPEG::Compiler.compile_rule '"a"{ "," }*'
+    rule = JetPEG::Compiler.compile_rule '"a"*[ "," ]'
     assert rule.parse("")
     assert rule.parse("a")
     assert rule.parse("a,a,a")
@@ -114,7 +114,7 @@ class ExpressionsTests < Test::Unit::TestCase
     assert !rule.parse(",a,a")
     assert !rule.parse("a,,a")
     
-    rule = JetPEG::Compiler.compile_rule '"a"{ "," }+'
+    rule = JetPEG::Compiler.compile_rule '"a"+[ "," ]'
     assert rule.parse("a")
     assert rule.parse("a,a,a")
     assert !rule.parse("aa")
