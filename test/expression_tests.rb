@@ -56,7 +56,7 @@ class ExpressionsTests < Test::Unit::TestCase
   end
   
   def test_choice
-    rule = JetPEG::Compiler.compile_rule '"abc" / "def"'
+    rule = JetPEG::Compiler.compile_rule '/ "abc" / "def"'
     assert rule.parse("abc")
     assert rule.parse("def")
     assert !rule.parse("ab")

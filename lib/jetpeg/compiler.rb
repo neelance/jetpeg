@@ -40,7 +40,7 @@ module JetPEG
     end
 
     def self.compile_rule(code, options = {})
-      expression = metagrammar_parser.parse_rule :rule_expression, code
+      expression = metagrammar_parser.parse_rule :parsing_rule, code
       expression.rule_name = :rule
       JitParser.new({ :rule => expression }, options)
     rescue ParsingError => e

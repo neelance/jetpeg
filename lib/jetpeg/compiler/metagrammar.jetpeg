@@ -1,37 +1,39 @@
 rule grammar
-  ws? rules:parsing_rule*
+  ws? rules:(
+    "rule" ws :rule_name parameters:( "[" local_value{ "," ws }* "]" )? ws child:parsing_rule "end" ws
+  )*
 end
 
 rule parsing_rule
-  "rule" ws :rule_name parameters:( "[" local_value{ "," ws }* "]" )? ws child:rule_expression "end" ws
+  ws? child:expression <Rule>
 end
 
-rule rule_expression
-  ws? child:choice[$false] <Rule>
+rule expression
+  ( "/" ws )? choice[$false]
 end
 
 rule choice[%nested_choice]
-  first_child:creator "/" ws second_child:choice[$true] nested_choice:%nested_choice <Choice> /
-  creator
+  / first_child:creator "/" ws second_child:choice[$true] nested_choice:%nested_choice <Choice>
+  / creator
 end
 
 rule creator
-  child:sequence "<" class_name:alphanumeric_char+ ( ws :data )? ">" ws <ObjectCreator> /
-  child:sequence "{" :code "}" ws <ValueCreator> /
-  sequence
+  / child:sequence "<" class_name:alphanumeric_char+ ( ws :data )? ">" ws <ObjectCreator>
+  / child:sequence "{" :code "}" ws <ValueCreator>
+  / sequence
 end
 
 rule data
-  :string <StringData> /
-  ( "true" value:$true / "false" value:$false ) <BooleanData> /
-  "{" entries:(
-    ws label:alphanumeric_char+ ":" ws :data <HashDataEntry>
-  ){ "," }* ws "}" <HashData> /
-  "[" entries:(
-    ws :data <ArrayDataEntry>
-  ){ "," }* ws "]" <ArrayData> /
-  "<" class_name:alphanumeric_char+ ws :data ">" <ObjectData> /
-  "@" name:alphanumeric_char+ <LabelData>
+  / :string <StringData>
+  / ( "true" value:$true / "false" value:$false ) <BooleanData>
+  / "{" entries:(
+      ws label:alphanumeric_char+ ":" ws :data <HashDataEntry>
+    ){ "," }* ws "}" <HashData>
+  / "[" entries:(
+      ws :data <ArrayDataEntry>
+    ){ "," }* ws "]" <ArrayData>
+  / "<" class_name:alphanumeric_char+ ws :data ">" <ObjectData>
+  / "@" name:alphanumeric_char+ <LabelData>
 end
 
 rule code
@@ -39,45 +41,45 @@ rule code
 end
 
 rule sequence
-  first_child:labeled second_child:sequence <Sequence> /
-  labeled
+  / first_child:labeled second_child:sequence <Sequence>
+  / labeled
 end
 
 rule labeled
-  ( "%" is_local:$true )? name:( "@" / alpha_char alphanumeric_char* ) ":" child:lookahead <Label> /
-  lookahead
+  / ( "%" is_local:$true )? name:( "@" / alpha_char alphanumeric_char* ) ":" child:lookahead <Label>
+  / lookahead
 end
 
 rule lookahead
-  "&" child:repetition <PositiveLookahead> /
-  "!" child:repetition <NegativeLookahead> /
-  repetition
+  / "&" child:repetition <PositiveLookahead>
+  / "!" child:repetition <NegativeLookahead>
+  / repetition
 end
 
 rule repetition
-  child:primary "?" ws <Choice { first_child: @child, second_child: <EmptyParsingExpression { }> }> /
-  child:primary "*->" until_expression:primary <Until> /
-  child:primary ( "{" ws glue_expression:choice[$false] "}" )? ( "*" at_least_once:$false / "+" at_least_once:$true ) ws <Repetition> /
-  primary ws
+  / child:primary "?" ws <Choice { first_child: @child, second_child: <EmptyParsingExpression { }> }>
+  / child:primary "*->" until_expression:primary <Until>
+  / child:primary ( "{" ws glue_expression:expression "}" )? ( "*" at_least_once:$false / "+" at_least_once:$true ) ws <Repetition>
+  / primary ws
 end
 
 rule primary
-  terminal /
-  rule_call /
-  parenthesized_expression /
-  function /
-  local_value
+  / terminal
+  / rule_call
+  / parenthesized_expression
+  / function
+  / local_value
 end
 
 rule terminal
-  "\"" chars:char_sequence "\"" <StringTerminal> /
-  "[" ( "^" inverted:$true )? selection:character_class_selection "]" <CharacterClassTerminal> /
-  "." <CharacterClassTerminal { selection: <CharacterClassSingleCharacter { char: "\0" }>, inverted: true }>
+  / "\"" chars:char_sequence "\"" <StringTerminal>
+  / "[" ( "^" inverted:$true )? selection:character_class_selection "]" <CharacterClassTerminal>
+  / "." <CharacterClassTerminal { selection: <CharacterClassSingleCharacter { char: "\0" }>, inverted: true }>
 end
 
 rule char_sequence
-  char:character rest:char_sequence <CharacterSequence> /
-  character
+  / char:character rest:char_sequence <CharacterSequence>
+  / character
 end
 
 rule character
@@ -85,13 +87,13 @@ rule character
 end
 
 rule character_class_selection
-  selector:character_class_selector rest:character_class_selection <CharacterClassSelection> /
-  character_class_selector
+  / selector:character_class_selector rest:character_class_selection <CharacterClassSelection>
+  / character_class_selector
 end
 
 rule character_class_selector
-  begin_char:character_class_single_character "-" end_char:character_class_single_character <CharacterClassRange> /
-  char:character_class_single_character <CharacterClassSingleCharacter>
+  / begin_char:character_class_single_character "-" end_char:character_class_single_character <CharacterClassRange>
+  / char:character_class_single_character <CharacterClassSingleCharacter>
 end
 
 rule character_class_single_character
@@ -99,31 +101,31 @@ rule character_class_single_character
 end
 
 rule rule_call
-  ":" name:rule_name :arguments? <Label { name: @name, child: <RuleCall { name: @name, arguments: @arguments }> }> /
-  name:rule_name :arguments? <RuleCall>
+  / ":" name:rule_name :arguments? <Label { name: @name, child: <RuleCall { name: @name, arguments: @arguments }> }>
+  / name:rule_name :arguments? <RuleCall>
 end
 
 rule arguments
   "[" (
-    :string <StringValue> /
-    function /
-    local_value
+    / :string <StringValue>
+    / function
+    / local_value
   ){ "," ws }* "]"
 end
 
 rule parenthesized_expression
-  "(" ws ")" <EmptyParsingExpression { }> /
-  "(" ws child:choice[$false] ")" <ParenthesizedExpression>
+  / "(" ws ")" <EmptyParsingExpression { }>
+  / "(" ws child:expression ")" <ParenthesizedExpression>
 end
 
 rule function
-  "$true" <TrueFunction> /
-  "$false" <FalseFunction> /
-  "$match" "[" value:local_value "]" <MatchFunction> /
-  "$error" "[" msg:string "]" <ErrorFunction> /
-  "$enter_mode" "[" name:string "," ws child:choice[$false] "]" <EnterModeFunction> /
-  "$leave_mode" "[" name:string "," ws child:choice[$false] "]" <LeaveModeFunction> /
-  "$in_mode" "[" name:string "]" <InModeFunction>
+  / "$true" <TrueFunction>
+  / "$false" <FalseFunction>
+  / "$match" "[" value:local_value "]" <MatchFunction>
+  / "$error" "[" msg:string "]" <ErrorFunction>
+  / "$enter_mode" "[" name:string "," ws child:expression "]" <EnterModeFunction>
+  / "$leave_mode" "[" name:string "," ws child:expression "]" <LeaveModeFunction>
+  / "$in_mode" "[" name:string "]" <InModeFunction>
 end
 
 rule local_value
