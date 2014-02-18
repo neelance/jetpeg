@@ -1,6 +1,6 @@
 rule grammar
   ws? rules:(
-    "rule" ws :rule_name parameters:( "[" local_value*[ "," ws ] "]" )? ws child:parsing_rule "end" ws
+    'rule' ws :rule_name parameters:( '[' local_value*[ ',' ws ] ']' )? ws child:parsing_rule 'end' ws
   )*
 end
 
@@ -9,35 +9,35 @@ rule parsing_rule
 end
 
 rule expression
-  ( "/" ws )? choice[$false]
+  ( '/' ws )? choice[$false]
 end
 
 rule choice[%nested_choice]
-  / first_child:creator "/" ws second_child:choice[$true] nested_choice:%nested_choice <Choice>
+  / first_child:creator '/' ws second_child:choice[$true] nested_choice:%nested_choice <Choice>
   / creator
 end
 
 rule creator
-  / child:sequence "<" class_name:alphanumeric_char+ ( ws :data )? ">" ws <ObjectCreator>
-  / child:sequence "{" :code "}" ws <ValueCreator>
+  / child:sequence '<' class_name:alphanumeric_char+ ( ws :data )? '>' ws <ObjectCreator>
+  / child:sequence '{' :code '}' ws <ValueCreator>
   / sequence
 end
 
 rule data
   / :string <StringData>
-  / ( "true" value:$true / "false" value:$false ) <BooleanData>
-  / "{" entries:(
-      ws label:alphanumeric_char+ ":" ws :data <HashDataEntry>
-    )*[ "," ] ws "}" <HashData>
-  / "[" entries:(
+  / ( 'true' value:$true / 'false' value:$false ) <BooleanData>
+  / '{' entries:(
+      ws label:alphanumeric_char+ ':' ws :data <HashDataEntry>
+    )*[ ',' ] ws '}' <HashData>
+  / '[' entries:(
       ws :data <ArrayDataEntry>
-    )*[ "," ] ws "]" <ArrayData>
-  / "<" class_name:alphanumeric_char+ ws :data ">" <ObjectData>
-  / "@" name:alphanumeric_char+ <LabelData>
+    )*[ ',' ] ws ']' <ArrayData>
+  / '<' class_name:alphanumeric_char+ ws :data '>' <ObjectData>
+  / '@' name:alphanumeric_char+ <LabelData>
 end
 
 rule code
-  @:( ![{}] . / "{" code "}" )*
+  @:( ![{}] . / '{' code '}' )*
 end
 
 rule sequence
@@ -46,20 +46,20 @@ rule sequence
 end
 
 rule labeled
-  / ( "%" is_local:$true )? name:( "@" / alpha_char alphanumeric_char* ) ":" child:lookahead <Label>
+  / ( '%' is_local:$true )? name:( '@' / alpha_char alphanumeric_char* ) ':' child:lookahead <Label>
   / lookahead
 end
 
 rule lookahead
-  / "&" child:repetition <PositiveLookahead>
-  / "!" child:repetition <NegativeLookahead>
+  / '&' child:repetition <PositiveLookahead>
+  / '!' child:repetition <NegativeLookahead>
   / repetition
 end
 
 rule repetition
-  / child:primary "?" ws <Choice { first_child: @child, second_child: <EmptyParsingExpression { }> }>
-  / child:primary "*->" until_expression:primary <Until>
-  / child:primary ( "*" at_least_once:$false / "+" at_least_once:$true ) ( "[" ws glue_expression:expression "]" )? ws <Repetition>
+  / child:primary '?' ws <Choice { first_child: @child, second_child: <EmptyParsingExpression { }> }>
+  / child:primary '*->' until_expression:primary <Until>
+  / child:primary ( '*' at_least_once:$false / '+' at_least_once:$true ) ( '[' ws glue_expression:expression ']' )? ws <Repetition>
   / primary ws
 end
 
@@ -72,9 +72,9 @@ rule primary
 end
 
 rule terminal
-  / "\"" chars:char_sequence "\"" <StringTerminal>
-  / "[" ( "^" inverted:$true )? selection:character_class_selection "]" <CharacterClassTerminal>
-  / "." <CharacterClassTerminal { selection: <CharacterClassSingleCharacter { char: "\0" }>, inverted: true }>
+  / '\'' chars:char_sequence '\'' <StringTerminal>
+  / '[' ( '^' inverted:$true )? selection:character_class_selection ']' <CharacterClassTerminal>
+  / '.' <CharacterClassTerminal { selection: <CharacterClassSingleCharacter { char: '\0' }>, inverted: true }>
 end
 
 rule char_sequence
@@ -83,7 +83,7 @@ rule char_sequence
 end
 
 rule character
-  !"\"" char:( "\\" . / . ) <Character>
+  !'\'' char:( '\\' . / . ) <Character>
 end
 
 rule character_class_selection
@@ -92,44 +92,44 @@ rule character_class_selection
 end
 
 rule character_class_selector
-  / begin_char:character_class_single_character "-" end_char:character_class_single_character <CharacterClassRange>
+  / begin_char:character_class_single_character '-' end_char:character_class_single_character <CharacterClassRange>
   / char:character_class_single_character <CharacterClassSingleCharacter>
 end
 
 rule character_class_single_character
-  !"]" ( "\\" . / . )
+  !']' ( '\\' . / . )
 end
 
 rule rule_call
-  / ":" name:rule_name :arguments? <Label { name: @name, child: <RuleCall { name: @name, arguments: @arguments }> }>
+  / ':' name:rule_name :arguments? <Label { name: @name, child: <RuleCall { name: @name, arguments: @arguments }> }>
   / name:rule_name :arguments? <RuleCall>
 end
 
 rule arguments
-  "[" (
+  '[' (
     / :string <StringValue>
     / function
     / local_value
-  )*[ "," ws ] "]"
+  )*[ ',' ws ] ']'
 end
 
 rule parenthesized_expression
-  / "(" ws ")" <EmptyParsingExpression { }>
-  / "(" ws child:expression ")" <ParenthesizedExpression>
+  / '(' ws ')' <EmptyParsingExpression { }>
+  / '(' ws child:expression ')' <ParenthesizedExpression>
 end
 
 rule function
-  / "$true" <TrueFunction>
-  / "$false" <FalseFunction>
-  / "$match" "[" value:local_value "]" <MatchFunction>
-  / "$error" "[" msg:string "]" <ErrorFunction>
-  / "$enter_mode" "[" name:string "," ws child:expression "]" <EnterModeFunction>
-  / "$leave_mode" "[" name:string "," ws child:expression "]" <LeaveModeFunction>
-  / "$in_mode" "[" name:string "]" <InModeFunction>
+  / '$true' <TrueFunction>
+  / '$false' <FalseFunction>
+  / '$match' '[' value:local_value ']' <MatchFunction>
+  / '$error' '[' msg:string ']' <ErrorFunction>
+  / '$enter_mode' '[' name:string ',' ws child:expression ']' <EnterModeFunction>
+  / '$leave_mode' '[' name:string ',' ws child:expression ']' <LeaveModeFunction>
+  / '$in_mode' '[' name:string ']' <InModeFunction>
 end
 
 rule local_value
-  "%" name:( alpha_char alphanumeric_char* ) <LocalValue>
+  '%' name:( alpha_char alphanumeric_char* ) <LocalValue>
 end
 
 rule rule_name
@@ -137,11 +137,11 @@ rule rule_name
 end
 
 rule string
-  "\"" @:( !"\"" ( "\\" . / . ) )* "\""
+  '\'' @:( !'\'' ( '\\' . / . ) )* '\''
 end
 
 rule keyword
-  ( "rule" / "end" ) &single_ws
+  ( 'rule' / 'end' ) &single_ws
 end
 
 rule alpha_char
@@ -153,7 +153,7 @@ rule alphanumeric_char
 end
 
 rule ws
-  single_ws+ / &"]" / &"\0"
+  single_ws+ / &']' / &'\0'
 end
 
 rule single_ws
@@ -161,5 +161,5 @@ rule single_ws
 end
 
 rule line_comment
-  "#" [^\n]*
+  '#' [^\n]*
 end

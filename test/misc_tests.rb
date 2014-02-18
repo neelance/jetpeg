@@ -5,26 +5,26 @@ JetPEG::Parser.default_options[:track_malloc] = true
 
 class MiscTests < Test::Unit::TestCase
   def test_root_switching
-    grammar = JetPEG::Compiler.compile_grammar '
+    grammar = JetPEG::Compiler.compile_grammar "
       rule test1
-        "abc" / test2
+        'abc' / test2
       end
       rule test2
-        "def"
+        'def'
       end
-    '
+    "
     assert grammar.parse_rule(:test1, "abc")
     assert grammar.parse_rule(:test2, "def")
   end
   
   def test_failure_tracing
-  #   rule = JetPEG::Compiler.compile_rule '"a" "bbb" "c"'
+  #   rule = JetPEG::Compiler.compile_rule "'a' 'bbb' 'c'"
   #   assert !rule.parse("aXc")
   #   assert rule.parser.failure_reason.is_a? JetPEG::ParsingError
   #   assert rule.parser.failure_reason.position == 1
   #   assert rule.parser.failure_reason.expectations == ["bbb"]
     
-    rule = JetPEG::Compiler.compile_rule '"a" [b2-5] "c"'
+    rule = JetPEG::Compiler.compile_rule "'a' [b2-5] 'c'"
     assert !rule.parse("aXc")
     assert rule.parser.failure_reason.is_a? JetPEG::ParsingError
     assert rule.parser.failure_reason.position == 1
@@ -37,22 +37,22 @@ class MiscTests < Test::Unit::TestCase
     end
     
     assert_raise ArgumentError do
-      rule = JetPEG::Compiler.compile_rule '"a"'
+      rule = JetPEG::Compiler.compile_rule "'a'"
       rule.parse true
     end
   end
   
   def test_compilation_errors
     assert_raise JetPEG::CompilationError do
-      JetPEG::Compiler.compile_rule 'missing_rule'
+      JetPEG::Compiler.compile_rule "missing_rule"
     end
     
     assert_raise JetPEG::CompilationError do
-      JetPEG::Compiler.compile_grammar '
+      JetPEG::Compiler.compile_grammar "
         rule test[%a, %b]
           test[%a]
         end
-      '
+      "
     end
   end
   
