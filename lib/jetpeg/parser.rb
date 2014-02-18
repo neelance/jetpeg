@@ -6,7 +6,7 @@ require 'llvm/transforms/scalar'
 require 'llvm/transforms/ipo'
 $VERBOSE = verbose
 
-LLVM.init_x86
+LLVM.init_jit
 
 module JetPEG
   
