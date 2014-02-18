@@ -43,8 +43,12 @@ type InputRange struct {
 	End   int
 }
 
+func (r *InputRange) Bytes() []byte {
+	return r.Input[r.Start:r.End]
+}
+
 func (r *InputRange) String() string {
-	return string(r.Input[r.Start:r.End])
+	return string(r.Bytes())
 }
 
 type ParsingError struct {
@@ -284,11 +288,24 @@ func localsPop(count C.int64_t) {
 }
 
 //export match
-func match(input uintptr) uintptr {
+func match(absPos uintptr) uintptr {
+	pos := absPos - inputOffset
 	if Debug {
-		fmt.Printf("match(%d)\n", input-inputOffset)
+		fmt.Printf("match(%d)\n", pos)
 	}
-	panic("match not supported")
+	var expected []byte
+	switch e := popOutput().(type) {
+	case *InputRange:
+		expected = e.Bytes()
+	case string:
+		expected = []byte(e)
+	default:
+		panic("invalid type for match")
+	}
+	if bytes.HasPrefix(input[pos:], expected) {
+		return absPos + uintptr(len(expected))
+	}
+	return 0
 }
 
 //export setAsSource
@@ -322,8 +339,8 @@ func traceLeave(name *C.char, successful C.bool) {
 }
 
 //export traceFailure
-func traceFailure(input uintptr, reason *C.char, isExpectation C.bool) {
-	pos := int(input - inputOffset)
+func traceFailure(absPos uintptr, reason *C.char, isExpectation C.bool) {
+	pos := int(absPos - inputOffset)
 	if Debug {
 		fmt.Printf("traceFailure(%d, %q, %t  )\n", pos, C.GoString(reason), isExpectation)
 	}
