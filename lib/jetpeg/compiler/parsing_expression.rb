@@ -266,9 +266,8 @@ module JetPEG
         phi.add_incoming @_builder.insert_block => value
       end
 
-      def character_byte(child_name)
-        value = @_data[child_name]
-        char = if value[0] != "\\"
+      def unescape_char(value)
+        if value[0] != "\\"
           value
         else
           case value[1]
@@ -279,15 +278,19 @@ module JetPEG
           else value[1]
           end
         end
-        LLVM::Int8.from_i char.ord
+      end
+
+      def character_byte(child_name)
+        LLVM::Int8.from_i unescape_char(@_data[child_name]).ord
       end
 
       def i64(value)
         LLVM::Int64.from_i value
       end
 
-      def string(value)
+      def string(value, unescape=false)
         value = @_data[value] if value.is_a? Symbol
+        value = value.gsub(/\\./) { |c| unescape_char(c) } if unescape
         @_builder.global_string_pointer value
       end
     end

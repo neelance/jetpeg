@@ -2,7 +2,7 @@ module JetPEG
   module Compiler
     class StringData < ParsingExpression
       block :_entry do
-        push_string string(:string)
+        push_string string(:string, true)
         br :_successful
       end
     end

@@ -8,6 +8,15 @@ class ExpressionsTests < Test::Unit::TestCase
     rule = JetPEG::Compiler.compile_rule "'abc'"
     assert rule.parse("abc")
     assert !rule.parse("ab")
+    assert !rule.parse("Abc")
+    assert !rule.parse("abC")
+    assert !rule.parse("abcX")
+
+    rule = JetPEG::Compiler.compile_rule "\"abc\""
+    assert rule.parse("abc")
+    assert rule.parse("Abc")
+    assert rule.parse("abC")
+    assert !rule.parse("ab")
     assert !rule.parse("Xbc")
     assert !rule.parse("abX")
     assert !rule.parse("abcX")

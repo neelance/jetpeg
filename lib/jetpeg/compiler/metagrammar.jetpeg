@@ -72,18 +72,19 @@ rule primary
 end
 
 rule terminal
-  / '\'' chars:char_sequence '\'' <StringTerminal>
+  / '\'' chars:char_sequence['\'', $true] '\'' <StringTerminal>
+  / '"' chars:char_sequence['"', $false] '"' <StringTerminal>
   / '[' ( '^' inverted:$true )? selection:character_class_selection ']' <CharacterClassTerminal>
-  / '.' <CharacterClassTerminal { selection: <CharacterClassSingleCharacter { char: '\0' }>, inverted: true }>
+  / '.' <CharacterClassTerminal { selection: <CharacterClassSingleCharacter { char: '\\0' }>, inverted: true }>
 end
 
-rule char_sequence
-  / char:character rest:char_sequence <CharacterSequence>
-  / character
+rule char_sequence[%quote, %case_sensitive]
+  / !$match[%quote] char:character[%case_sensitive] rest:char_sequence[%quote, %case_sensitive] <CharacterSequence>
+  / !$match[%quote] character[%case_sensitive]
 end
 
-rule character
-  !'\'' char:( '\\' . / . ) <Character>
+rule character[%case_sensitive]
+  char:( '\\' . / . ) case_sensitive:%case_sensitive <Character>
 end
 
 rule character_class_selection

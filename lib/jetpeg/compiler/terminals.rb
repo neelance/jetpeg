@@ -23,8 +23,16 @@ module JetPEG
       leftmost_leaves :self
 
       block :_entry do
-        successful = icmp :eq, load(@_start_input), character_byte(:char)
-        cond successful, :_successful, :_failed
+        c = unescape_char(@_data[:char])
+        if not @_data[:case_sensitive] and c.swapcase != c # TODO transform to DSL
+          successful1 = icmp :eq, load(@_start_input), LLVM::Int8.from_i(c.downcase.ord)
+          successful2 = icmp :eq, load(@_start_input), LLVM::Int8.from_i(c.upcase.ord)
+          successful = self.or successful1, successful2
+          cond successful, :_successful, :_failed
+        else
+          successful = icmp :eq, load(@_start_input), character_byte(:char)
+          cond successful, :_successful, :_failed
+        end
       end
         
       block :_successful do
