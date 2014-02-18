@@ -1,8 +1,11 @@
 package jetpeg
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/axw/gollvm/llvm"
+	"sort"
+	"strings"
 	"unsafe"
 )
 
@@ -35,8 +38,39 @@ void traceFailure(size_t, char*, bool);
 import "C"
 
 type InputRange struct {
+	Input []byte
 	Start int
 	End   int
+}
+
+func (r *InputRange) String() string {
+	return string(r.Input[r.Start:r.End])
+}
+
+type ParsingError struct {
+	Input        []byte
+	Position     int
+	Expectations []string
+	OtherReasons []string
+}
+
+func (e *ParsingError) Error() string {
+	before := e.Input[:e.Position]
+	line := bytes.Count(before, []byte{'\n'}) + 1
+	column := len(before) - bytes.LastIndex(before, []byte{'\n'})
+	if column == len(before)+1 {
+		column = len(before)
+	}
+
+	reasons := e.OtherReasons
+	if len(e.Expectations) != 0 {
+		reasons = append(reasons, "expected one of "+strings.Join(e.Expectations, ", "))
+	}
+	prefixOffset := len(before) - 20
+	if prefixOffset < 0 {
+		prefixOffset = 0
+	}
+	return fmt.Sprintf("at line %d, column %d (byte %d, after %q): %s", line, column, e.Position, string(before[prefixOffset:]), strings.Join(reasons, " / "))
 }
 
 // callbacks rely on global variables since Go has no easy way of passing closures to C and the JetPEG backend has no support for passing the parser object yet
@@ -46,6 +80,9 @@ var input []byte
 var inputOffset uintptr
 var outputStack []interface{}
 var localsStack []interface{}
+var failurePosition int
+var failureExpectations []string
+var failureOtherReasons []string
 
 func init() {
 	if err := llvm.InitializeNativeTarget(); err != nil {
@@ -91,9 +128,23 @@ func Parse(grammarPath string, ruleName string, rawInput []byte) (interface{}, e
 		llvm.NewGenericValueFromPointer(unsafe.Pointer(C.traceFailure)),
 	})
 	if result.Int(false) == 0 {
-		return nil, fmt.Errorf("parsing failed")
+		sort.Strings(failureExpectations)
+		sort.Strings(failureOtherReasons)
+		return nil, &ParsingError{input, failurePosition, filterDuplicates(failureExpectations), filterDuplicates(failureOtherReasons)}
 	}
 	return outputStack[0], nil
+}
+
+func filterDuplicates(s []string) []string {
+	var r []string
+	p := ""
+	for _, e := range s {
+		if e != p {
+			r = append(r, e)
+		}
+		p = e
+	}
+	return r
 }
 
 func pushOutput(v interface{}) {
@@ -119,13 +170,13 @@ func pushInputRange(from uintptr, to uintptr) {
 	if Debug {
 		fmt.Printf("pushInputRange(%d, %d)\n", from-inputOffset, to-inputOffset)
 	}
-	pushOutput(&InputRange{int(from - inputOffset), int(to - inputOffset)})
+	pushOutput(&InputRange{input, int(from - inputOffset), int(to - inputOffset)})
 }
 
 //export pushBoolean
 func pushBoolean(value C.bool) {
 	if Debug {
-		fmt.Printf("pushBoolean(%t)\n", bool(value))
+		fmt.Printf("pushBoolean(%t)\n", value)
 	}
 	pushOutput(bool(value))
 }
@@ -141,7 +192,7 @@ func pushString(value *C.char) {
 //export pushArray
 func pushArray(appendCurrent C.bool) {
 	if Debug {
-		fmt.Printf("pushArray(%t)\n", bool(appendCurrent))
+		fmt.Printf("pushArray(%t)\n", appendCurrent)
 	}
 	if appendCurrent {
 		pushOutput([]interface{}{popOutput()})
@@ -266,13 +317,27 @@ func traceEnter(name *C.char) {
 //export traceLeave
 func traceLeave(name *C.char, successful C.bool) {
 	if Debug {
-		fmt.Printf("traceLeave(%q, %t)\n", C.GoString(name), bool(successful))
+		fmt.Printf("traceLeave(%q, %t)\n", C.GoString(name), successful)
 	}
 }
 
 //export traceFailure
-func traceFailure(pos uintptr, reason *C.char, isExpectation C.bool) {
+func traceFailure(input uintptr, reason *C.char, isExpectation C.bool) {
+	pos := int(input - inputOffset)
 	if Debug {
-		fmt.Printf("traceFailure(%d, %q, %t  )\n", pos-inputOffset, C.GoString(reason), bool(isExpectation))
+		fmt.Printf("traceFailure(%d, %q, %t  )\n", pos, C.GoString(reason), isExpectation)
+	}
+	if pos > failurePosition {
+		failurePosition = pos
+		failureExpectations = nil
+		failureOtherReasons = nil
+	}
+	if pos == failurePosition {
+		switch isExpectation {
+		case true:
+			failureExpectations = append(failureExpectations, C.GoString(reason))
+		case false:
+			failureOtherReasons = append(failureOtherReasons, C.GoString(reason))
+		}
 	}
 }
