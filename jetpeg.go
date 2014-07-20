@@ -3,7 +3,7 @@ package jetpeg
 import (
 	"bytes"
 	"fmt"
-	"github.com/axw/gollvm/llvm"
+	"github.com/go-llvm/llvm"
 	"sort"
 	"strings"
 	"unsafe"
@@ -84,6 +84,7 @@ var input []byte
 var inputOffset uintptr
 var outputStack []interface{}
 var localsStack []interface{}
+var tempSource map[string]interface{}
 var failurePosition int
 var failureExpectations []string
 var failureOtherReasons []string
@@ -313,7 +314,7 @@ func setAsSource() {
 	if Debug {
 		fmt.Printf("setAsSource()\n")
 	}
-	panic("setAsSource not supported")
+	tempSource = popOutput().(map[string]interface{})
 }
 
 //export readFromSource
@@ -321,7 +322,7 @@ func readFromSource(name *C.char) {
 	if Debug {
 		fmt.Printf("readFromSource(%q)\n", C.GoString(name))
 	}
-	panic("readFromSource not supported")
+	pushOutput(tempSource[C.GoString(name)])
 }
 
 //export traceEnter
