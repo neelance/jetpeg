@@ -230,9 +230,10 @@ func mergeLabels(count C.int64_t) {
 	}
 	merged := make(map[string]interface{})
 	for i := 0; i < int(count); i++ {
-		m := popOutput().(map[string]interface{})
-		for k, v := range m {
-			merged[k] = v
+		if m, ok := popOutput().(map[string]interface{}); ok {
+			for k, v := range m {
+				merged[k] = v
+			}
 		}
 	}
 	pushOutput(merged)
